@@ -61,7 +61,7 @@ class RulesEngine:
             return txn
 
         for mapping in self.config.account_mappings:
-            if mapping.pattern in method:
+            if mapping.pattern.lower() in method.lower():
                 txn.account = mapping.account
                 return txn
 

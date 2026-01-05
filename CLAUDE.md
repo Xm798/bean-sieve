@@ -112,7 +112,7 @@ providers:
 - **Provider detection**: Checks extension first, then `filename_keywords`, then `content_keywords`
 - **Rules priority**: Rules earlier in the YAML have higher priority
 - **Formatting and linting**: MUST run `uv run ruff format` and `uv run ruff check` after modifying code, and fix all issues
-- **Config sync**: When modifying `bean-sieve.example.yaml`, check if user's `bean-sieve.yaml` needs corresponding updates
+- **Config sync**: When modifying `bean-sieve.example.yaml`, check if user's `bean-sieve.yaml` needs corresponding update. Also update JSON schema `bean-sieve.schema.json` if config structure changes.
 - **Doc sync**: If code changes deviate from this CLAUDE.md, update this file accordingly
 - **Design docs**: If design changes, update corresponding docs in `external/docs/`
 

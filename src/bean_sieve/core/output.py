@@ -15,9 +15,12 @@ class BeancountWriter:
         self,
         default_expense: str = "Expenses:FIXME",
         default_income: str = "Income:FIXME",
+        output_metadata: list[str] | None = None,
     ):
         self.default_expense = default_expense
         self.default_income = default_income
+        # Which metadata fields to include (None = all)
+        self.output_metadata = output_metadata
 
     def format_transaction(self, txn: Transaction) -> str:
         """Format a single transaction as Beancount entry."""
@@ -43,34 +46,59 @@ class BeancountWriter:
     def _format_metadata(self, txn: Transaction) -> list[str]:
         """Format transaction metadata."""
         meta = []
+        allowed = self.output_metadata  # None means all
+
+        def should_include(key: str) -> bool:
+            """Check if a metadata key should be included in output."""
+            return allowed is None or key in allowed
+
+        def is_empty_value(value: str) -> bool:
+            """Check if a string value is empty or meaningless."""
+            if not value:
+                return True
+            stripped = value.strip()
+            return stripped == "" or stripped == "/" or stripped == "-"
 
         # Standard metadata
-        if txn.time:
+        if should_include("time") and txn.time:
             meta.append(f'time: "{txn.time.strftime("%H:%M:%S")}"')
 
-        if txn.order_id:
+        if should_include("order_id") and txn.order_id:
             meta.append(f'order_id: "{txn.order_id}"')
 
-        if txn.metadata.get("reference"):
-            meta.append(f'reference: "{txn.metadata["reference"]}"')
+        if should_include("reference"):
+            ref = txn.metadata.get("reference")
+            if ref and not is_empty_value(ref):
+                meta.append(f'reference: "{ref}"')
 
-        # Match source
-        if txn.match_source:
-            source_str = txn.match_source.value
+        # Source: provider name + rule info (not "fixme")
+        if should_include("source"):
+            source_parts = []
+            if txn.provider:
+                source_parts.append(txn.provider)
             if txn.metadata.get("matched_rule"):
-                source_str = f"rule:{txn.metadata['matched_rule']}"
-            meta.append(f'source: "{source_str}"')
+                source_parts.append(f"rule:{txn.metadata['matched_rule']}")
+            elif txn.match_source == MatchSource.RULE:
+                source_parts.append("rule")
+            elif txn.match_source == MatchSource.PREDICT:
+                source_parts.append("predict")
+            if source_parts:
+                meta.append(f'source: "{":".join(source_parts)}"')
 
-        # Additional metadata from provider
+        # Additional metadata from provider (only if allowed)
         skip_keys = {"_ignored", "matched_rule", "reference", "original_payee"}
         for key, value in txn.metadata.items():
             if key in skip_keys:
                 continue
+            if not should_include(key):
+                continue
             if isinstance(value, str):
+                if is_empty_value(value):
+                    continue
                 meta.append(f'{key}: "{value}"')
             elif isinstance(value, bool):
                 meta.append(f"{key}: {str(value).upper()}")
-            elif isinstance(value, (int, float, Decimal)):
+            elif isinstance(value, int | float | Decimal):
                 meta.append(f"{key}: {value}")
 
         return meta
@@ -174,6 +202,7 @@ def write_output(
     source_info: str | None = None,
     default_expense: str = "Expenses:FIXME",
     default_income: str = "Income:FIXME",
+    output_metadata: list[str] | None = None,
 ) -> None:
     """
     Write reconcile result to Beancount file.
@@ -183,6 +212,7 @@ def write_output(
     writer = BeancountWriter(
         default_expense=default_expense,
         default_income=default_income,
+        output_metadata=output_metadata,
     )
     content = writer.format_result(result, source_info=source_info)
 

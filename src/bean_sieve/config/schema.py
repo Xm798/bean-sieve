@@ -15,6 +15,9 @@ class DefaultsConfig(BaseModel):
     expense_account: str = "Expenses:FIXME"
     income_account: str = "Income:FIXME"
     date_tolerance: Annotated[int, Field(ge=0, le=30)] = 2
+    # Metadata fields to include in output (None means include all)
+    # Common fields: time, order_id, source, category, method, peer_account, etc.
+    output_metadata: list[str] | None = None
 
 
 class AccountMapping(BaseModel):
