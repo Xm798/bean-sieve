@@ -11,6 +11,7 @@ from rich.table import Table
 
 from . import api
 from .config import load_config
+from .config.schema import Config
 from .config.wizard import (
     extract_payment_methods,
     load_accounts_from_ledger,
@@ -37,6 +38,30 @@ def parse_date_range(date_range: str | None) -> tuple[date, date] | None:
         ) from None
 
 
+def resolve_ledger_path(
+    ledger: str | None, config: Config | None, config_path: Path | None
+) -> Path:
+    """Resolve ledger path from CLI option or config file."""
+    if ledger:
+        return Path(ledger)
+
+    if config and config.defaults.ledger:
+        ledger_from_config = Path(config.defaults.ledger)
+        # Resolve relative paths relative to config file location
+        if config_path and not ledger_from_config.is_absolute():
+            ledger_from_config = config_path.parent / ledger_from_config
+        if not ledger_from_config.exists():
+            raise click.UsageError(
+                f"Ledger file not found: {ledger_from_config} "
+                f"(from config: {config.defaults.ledger})"
+            )
+        return ledger_from_config
+
+    raise click.UsageError(
+        "Ledger path required: use -l/--ledger option or set defaults.ledger in config"
+    )
+
+
 @click.group()
 @click.version_option(package_name="bean-sieve")
 def main():
@@ -49,9 +74,8 @@ def main():
 @click.option(
     "-l",
     "--ledger",
-    required=True,
     type=click.Path(exists=True),
-    help="Beancount ledger path",
+    help="Beancount ledger path (or set defaults.ledger in config)",
 )
 @click.option(
     "-c",
@@ -92,8 +116,9 @@ def reconcile(
     try:
         # Parse inputs
         file_paths = [Path(f) for f in files]
-        ledger_path = Path(ledger)
         config_file = Path(config_path) if config_path else None
+        config = load_config(config_file) if config_file else None
+        ledger_path = resolve_ledger_path(ledger, config, config_file)
         output_path = None if dry_run else Path(output)
         dr = parse_date_range(date_range)
 
@@ -172,9 +197,8 @@ def parse(files, provider, output_format, output):
 @click.option(
     "-l",
     "--ledger",
-    required=True,
     type=click.Path(exists=True),
-    help="Beancount ledger path",
+    help="Beancount ledger path (or set defaults.ledger in config)",
 )
 @click.option(
     "-c",
@@ -193,12 +217,10 @@ def check(files, ledger, config_path, provider, date_range):
     """
     try:
         file_paths = [Path(f) for f in files]
-        ledger_path = Path(ledger)
         config_file = Path(config_path) if config_path else None
-        dr = parse_date_range(date_range)
-
-        # Load config and parse
         config = load_config(config_file) if config_file else None
+        ledger_path = resolve_ledger_path(ledger, config, config_file)
+        dr = parse_date_range(date_range)
         transactions = api.parse_statements(file_paths, provider)
 
         if dr:
@@ -246,9 +268,8 @@ def list_providers_cmd():
 @click.option(
     "-l",
     "--ledger",
-    required=True,
     type=click.Path(exists=True),
-    help="Beancount ledger path (for account list)",
+    help="Beancount ledger path (or set defaults.ledger in config)",
 )
 @click.option("-p", "--provider", help="Provider ID")
 @click.option(
@@ -268,13 +289,15 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
     """
     try:
         file_paths = [Path(f) for f in files]
-        ledger_path = Path(ledger)
         output_path = Path(output)
 
-        # Load existing config to skip already-configured patterns
+        # Load existing config (also used to resolve ledger path)
+        existing_config = load_config(output_path) if output_path.exists() else None
+        ledger_path = resolve_ledger_path(ledger, existing_config, output_path)
+
+        # Skip already-configured patterns
         existing_patterns: set[str] = set()
-        if output_path.exists():
-            existing_config = load_config(output_path)
+        if existing_config:
             existing_patterns = {
                 m.pattern
                 for m in existing_config.account_mappings

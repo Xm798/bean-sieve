@@ -10,6 +10,7 @@ from ruamel.yaml import YAML
 class DefaultsConfig(BaseModel):
     """Default settings."""
 
+    ledger: str | None = None
     currency: str = "CNY"
     expense_account: str = "Expenses:FIXME"
     income_account: str = "Income:FIXME"
