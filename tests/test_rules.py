@@ -44,37 +44,8 @@ class TestRulesEngine:
         result = engine.apply(txn)
         assert result.account == "Liabilities:CreditCard:HXB"
 
-    def test_apply_account_mapping_by_card_suffix(self, sample_config):
-        """Test account mapping by card suffix."""
-        engine = RulesEngine(sample_config)
-        txn = Transaction(
-            date=date(2025, 1, 4),
-            amount=Decimal("99.00"),
-            currency="CNY",
-            description="Some transaction",
-            card_suffix="1234",
-            provider="hxb_credit",
-        )
-        result = engine.apply(txn)
-        assert result.account == "Liabilities:CreditCard:HXB:1234"
-
-    def test_method_takes_priority_over_card_suffix(self, sample_config):
-        """Test method mapping takes priority over card suffix."""
-        engine = RulesEngine(sample_config)
-        txn = Transaction(
-            date=date(2025, 1, 4),
-            amount=Decimal("99.00"),
-            currency="CNY",
-            description="Some transaction",
-            card_suffix="1234",
-            provider="alipay",
-            metadata={"method": "余额"},
-        )
-        result = engine.apply(txn)
-        assert result.account == "Assets:Current:Alipay"
-
-    def test_no_account_mapping_when_no_method_or_card(self, sample_config):
-        """Test no account mapped when both method and card_suffix are missing."""
+    def test_no_account_mapping_when_no_method(self, sample_config):
+        """Test no account mapped when method is missing."""
         engine = RulesEngine(sample_config)
         txn = Transaction(
             date=date(2025, 1, 4),
@@ -101,6 +72,30 @@ class TestRulesEngine:
         assert result.payee == "瑞幸咖啡"
         assert result.match_source == MatchSource.RULE
         assert result.confidence == 1.0
+
+    def test_apply_rule_payee_regex_condition(self):
+        """Test rule matching by payee regex condition."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(payee=".*公司.*"),
+                    action=RuleAction(contra_account="Income:Salary"),
+                    priority=100,
+                ),
+            ]
+        )
+        engine = RulesEngine(config)
+        txn = Transaction(
+            date=date(2025, 1, 4),
+            amount=Decimal("-10000.00"),
+            currency="CNY",
+            description="工资",
+            payee="北京某某科技有限公司",
+            provider="bank",
+        )
+        result = engine.apply(txn)
+        assert result.contra_account == "Income:Salary"
+        assert result.match_source == MatchSource.RULE
 
     def test_rule_priority(self):
         """Test that higher priority rules are applied first."""

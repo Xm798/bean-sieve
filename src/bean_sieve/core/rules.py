@@ -4,7 +4,7 @@ import contextlib
 import re
 from datetime import time
 
-from ..config.schema import AccountMapping, Config, Rule
+from ..config.schema import Config, Rule
 from .types import MatchSource, Transaction
 
 
@@ -20,12 +20,18 @@ class RulesEngine:
         # Sort rules by priority (higher first)
         self._rules = sorted(config.rules, key=lambda r: r.priority, reverse=True)
         # Compile regex patterns for performance
-        self._compiled_patterns: dict[int, re.Pattern] = {}
+        self._desc_patterns: dict[int, re.Pattern] = {}
+        self._payee_patterns: dict[int, re.Pattern] = {}
         for i, rule in enumerate(self._rules):
             if rule.condition.description:
                 with contextlib.suppress(re.error):
-                    self._compiled_patterns[i] = re.compile(
+                    self._desc_patterns[i] = re.compile(
                         rule.condition.description, re.IGNORECASE
+                    )
+            if rule.condition.payee:
+                with contextlib.suppress(re.error):
+                    self._payee_patterns[i] = re.compile(
+                        rule.condition.payee, re.IGNORECASE
                     )
 
     def apply(self, txn: Transaction) -> Transaction:
@@ -46,37 +52,20 @@ class RulesEngine:
         return txn
 
     def _apply_account_mapping(self, txn: Transaction) -> Transaction:
-        """Apply account mapping based on field value."""
+        """Apply account mapping based on payment method."""
         if txn.account:
             return txn
 
+        method = txn.metadata.get("method", "")
+        if not method:
+            return txn
+
         for mapping in self.config.account_mappings:
-            value = self._get_field_value(txn, mapping.field)
-            if value and self._matches_pattern(value, mapping):
+            if mapping.pattern in method:
                 txn.account = mapping.account
                 return txn
 
         return txn
-
-    def _get_field_value(self, txn: Transaction, field: str) -> str:
-        """Get field value from transaction."""
-        if field == "method":
-            return txn.metadata.get("method", "")
-        elif field == "card_suffix":
-            return txn.card_suffix or ""
-        return ""
-
-    def _matches_pattern(self, value: str, mapping: AccountMapping) -> bool:
-        """Check if value matches the mapping pattern."""
-        if mapping.match == "exact":
-            return value == mapping.pattern
-        elif mapping.match == "regex":
-            try:
-                return bool(re.search(mapping.pattern, value))
-            except re.error:
-                return False
-        else:  # contains
-            return mapping.pattern in value
 
     def _matches_condition(self, txn: Transaction, rule: Rule, rule_idx: int) -> bool:
         """Check if transaction matches rule condition."""
@@ -84,7 +73,7 @@ class RulesEngine:
 
         # Description regex match
         if cond.description:
-            pattern = self._compiled_patterns.get(rule_idx)
+            pattern = self._desc_patterns.get(rule_idx)
             if pattern:
                 if not pattern.search(txn.description):
                     return False
@@ -93,9 +82,18 @@ class RulesEngine:
                 if cond.description.lower() not in txn.description.lower():
                     return False
 
-        # Payee exact match
-        if cond.payee and (not txn.payee or cond.payee.lower() != txn.payee.lower()):
-            return False
+        # Payee regex match
+        if cond.payee:
+            if not txn.payee:
+                return False
+            pattern = self._payee_patterns.get(rule_idx)
+            if pattern:
+                if not pattern.search(txn.payee):
+                    return False
+            else:
+                # Fallback to simple substring match
+                if cond.payee.lower() not in txn.payee.lower():
+                    return False
 
         # Card suffix match
         if cond.card_suffix and txn.card_suffix != cond.card_suffix:
