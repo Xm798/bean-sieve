@@ -3,8 +3,8 @@
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field
+from ruamel.yaml import YAML
 
 
 class DefaultsConfig(BaseModel):
@@ -145,12 +145,21 @@ class Config(BaseModel):
         )
 
 
+def get_yaml() -> YAML:
+    """Get a configured YAML instance that preserves comments and formatting."""
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    return yaml
+
+
 def load_config(path: Path) -> Config:
     """Load configuration from YAML file."""
     if not path.exists():
         return Config()
 
+    yaml = get_yaml()
     with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
+        data = yaml.load(f) or {}
 
     return Config.from_dict(data)

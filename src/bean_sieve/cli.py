@@ -330,7 +330,9 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
         # Merge with existing config and save
         import shutil
 
-        import yaml
+        from .config.schema import get_yaml
+
+        yaml = get_yaml()
 
         config_data: dict = {}
         if output_path.exists():
@@ -340,7 +342,7 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
             console.print(f"[dim]Backup saved to {backup_path}[/dim]")
 
             with open(output_path, encoding="utf-8") as f:
-                config_data = yaml.safe_load(f) or {}
+                config_data = yaml.load(f) or {}
 
         # Append new mappings
         if "account_mappings" not in config_data:
@@ -351,10 +353,8 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
                 {"pattern": pattern, "account": account}
             )
 
-        yaml_content = yaml.dump(
-            config_data, allow_unicode=True, default_flow_style=False, sort_keys=False
-        )
-        output_path.write_text(yaml_content, encoding="utf-8")
+        with open(output_path, "w", encoding="utf-8") as f:
+            yaml.dump(config_data, f)
         console.print(f"\n[green]Config written to:[/green] {output}")
 
     except Exception as e:
