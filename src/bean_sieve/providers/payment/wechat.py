@@ -79,6 +79,8 @@ class WechatProvider(BaseProvider):
     provider_id = "wechat"
     provider_name = "微信支付"
     supported_formats = [".csv", ".xlsx"]
+    filename_keywords = ["微信", "wechat", "weixin"]
+    content_keywords = ["微信支付账单明细", "微信支付账单"]
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse WeChat statement file (CSV or XLSX)."""

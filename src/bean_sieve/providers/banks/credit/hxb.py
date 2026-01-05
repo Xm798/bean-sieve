@@ -29,6 +29,8 @@ class HXBCreditProvider(BaseProvider):
     provider_id = "hxb_credit"
     provider_name = "华夏银行信用卡"
     supported_formats = [".eml"]
+    filename_keywords = ["华夏信用卡"]
+    content_keywords = ["华夏信用卡对账单"]
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse HXB credit card email statement."""

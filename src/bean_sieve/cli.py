@@ -5,10 +5,17 @@ from pathlib import Path
 
 import click
 from rich.console import Console
+from rich.markup import escape
+from rich.panel import Panel
 from rich.table import Table
 
 from . import api
 from .config import load_config
+from .config.wizard import (
+    extract_payment_methods,
+    load_accounts_from_ledger,
+    smart_sort_accounts,
+)
 from .providers import list_providers
 
 console = Console()
@@ -113,7 +120,7 @@ def reconcile(
                 console.print(f"\n[green]Output written to:[/green] {output_path}")
 
     except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] {escape(str(e))}")
         raise click.Abort() from None
 
 
@@ -156,7 +163,7 @@ def parse(files, provider, output_format, output):
         console.print(f"\n[bold]Total:[/bold] {len(transactions)} transactions")
 
     except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] {escape(str(e))}")
         raise click.Abort() from None
 
 
@@ -209,7 +216,7 @@ def check(files, ledger, config_path, provider, date_range):
         _display_check_result(match_result)
 
     except Exception as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] {escape(str(e))}")
         raise click.Abort() from None
 
 
@@ -232,6 +239,203 @@ def list_providers_cmd():
         table.add_row(p["id"], p["name"], p["formats"])
 
     console.print(table)
+
+
+@main.command("extract-accounts")
+@click.argument("files", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option(
+    "-l",
+    "--ledger",
+    required=True,
+    type=click.Path(exists=True),
+    help="Beancount ledger path (for account list)",
+)
+@click.option("-p", "--provider", help="Provider ID")
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(),
+    default="bean-sieve.yaml",
+    help="Output YAML file",
+)
+@click.option("--non-interactive", is_flag=True, help="Skip interactive selection")
+def extract_accounts(files, ledger, provider, output, non_interactive):
+    """
+    Extract payment methods and generate account mappings interactively.
+
+    Parses statement files, extracts unique payment methods (e.g., "建设银行信用卡(0800)"),
+    and lets you select corresponding accounts using fzf fuzzy search.
+    """
+    try:
+        file_paths = [Path(f) for f in files]
+        ledger_path = Path(ledger)
+        output_path = Path(output)
+
+        # Load existing config to skip already-configured patterns
+        existing_patterns: set[str] = set()
+        if output_path.exists():
+            existing_config = load_config(output_path)
+            existing_patterns = {
+                m.pattern
+                for m in existing_config.account_mappings
+                if m.field == "method"
+            }
+            if existing_patterns:
+                console.print(
+                    f"[dim]已有 {len(existing_patterns)} 个配置，将跳过[/dim]"
+                )
+
+        # Parse statements
+        console.print(f"[bold]Parsing {len(file_paths)} file(s)...[/bold]")
+        transactions = api.parse_statements(file_paths, provider)
+
+        if not transactions:
+            console.print("[yellow]No transactions found.[/yellow]")
+            return
+
+        # Extract payment methods (skip already configured, case-insensitive dedup)
+        methods = extract_payment_methods(transactions, existing_patterns)
+
+        if not methods:
+            console.print("[yellow]No new payment methods to configure.[/yellow]")
+            return
+
+        console.print(
+            Panel(
+                f"发现 [bold cyan]{len(methods)}[/bold cyan] 个新的支付方式",
+                title="Account Extraction",
+            )
+        )
+
+        # Load accounts from ledger
+        accounts, closed = load_accounts_from_ledger(ledger_path)
+        if not accounts:
+            console.print("[red]No accounts found in ledger.[/red]")
+            return
+
+        console.print(f"Loaded [cyan]{len(accounts)}[/cyan] accounts from ledger\n")
+
+        if non_interactive:
+            # Non-interactive mode: just output template
+            _output_template(methods, output)
+            return
+
+        # Interactive mode with fzf
+        mappings = _interactive_select(methods, accounts, closed)
+
+        if not mappings:
+            console.print("[yellow]No mappings created.[/yellow]")
+            return
+
+        # Merge with existing config and save
+        import shutil
+
+        import yaml
+
+        config_data: dict = {}
+        if output_path.exists():
+            # Create backup before modifying
+            backup_path = output_path.with_suffix(".yaml.bak")
+            shutil.copy2(output_path, backup_path)
+            console.print(f"[dim]Backup saved to {backup_path}[/dim]")
+
+            with open(output_path, encoding="utf-8") as f:
+                config_data = yaml.safe_load(f) or {}
+
+        # Append new mappings
+        if "account_mappings" not in config_data:
+            config_data["account_mappings"] = []
+
+        for pattern, account in mappings:
+            config_data["account_mappings"].append(
+                {"pattern": pattern, "account": account}
+            )
+
+        yaml_content = yaml.dump(
+            config_data, allow_unicode=True, default_flow_style=False, sort_keys=False
+        )
+        output_path.write_text(yaml_content, encoding="utf-8")
+        console.print(f"\n[green]Config written to:[/green] {output}")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {escape(str(e))}")
+        raise click.Abort() from None
+
+
+CLOSED_MARKER = "[CLOSED]"
+
+
+def _interactive_select(methods, accounts, closed: set[str]) -> list[tuple[str, str]]:
+    """Interactive account selection using fzf."""
+    try:
+        from iterfzf import iterfzf
+    except ImportError:
+        console.print("[red]iterfzf not installed. Run: pip install iterfzf[/red]")
+        console.print("[yellow]Also ensure fzf is installed on your system.[/yellow]")
+        return []
+
+    mappings = []
+    total = len(methods)
+
+    for i, method in enumerate(methods, 1):
+        # Build header for fzf
+        header_lines = [f"[{i}/{total}] {method.raw}"]
+        # Only show hint if we detected card type (credit/debit)
+        if method.is_credit is not None:
+            card_type = "信用卡" if method.is_credit else "储蓄卡"
+            header_lines.append(f"  → {card_type}")
+        header = "\n".join(header_lines)
+
+        # Smart sort accounts (closed accounts go to the end)
+        sorted_accounts = smart_sort_accounts(accounts, method, closed)
+
+        # Mark closed accounts
+        display_accounts = [
+            acc + CLOSED_MARKER if acc in closed else acc for acc in sorted_accounts
+        ]
+
+        # Add special options
+        options = display_accounts + ["[s] 跳过", "[q] 退出"]
+
+        # fzf selection with header (half screen)
+        selected = iterfzf(
+            options,
+            prompt="选择账户 → ",
+            __extra__=["--header", header, "--height=50%"],
+        )
+
+        if selected is None or selected == "[q] 退出":
+            console.print("[yellow]已退出[/yellow]")
+            break
+        elif selected == "[s] 跳过":
+            console.print(f"[dim]{escape(method.raw)} → 已跳过[/dim]", emoji=False)
+            continue
+        else:
+            # Strip closed marker before saving
+            account = selected.removesuffix(CLOSED_MARKER)
+            mappings.append((method.raw, account))
+            console.print(
+                f"[green]{escape(method.raw)} → {escape(account)}[/green]", emoji=False
+            )
+
+    return mappings
+
+
+def _output_template(methods, output_path):
+    """Output non-interactive template."""
+    lines = ["# 发现以下支付方式，请补充对应账户：", "account_mappings:"]
+
+    for method in methods:
+        lines.append(f'  - pattern: "{method.raw}"')
+        lines.append(f'    account: ""  # 出现 {method.count} 次')
+
+    content = "\n".join(lines)
+
+    if output_path:
+        Path(output_path).write_text(content, encoding="utf-8")
+        console.print(f"[green]Template written to:[/green] {output_path}")
+    else:
+        console.print(content)
 
 
 def _display_result(result, verbose: bool = False):

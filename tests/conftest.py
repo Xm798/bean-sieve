@@ -76,8 +76,18 @@ def sample_config():
             AccountMapping(pattern="余额", account="Assets:Current:Alipay"),
             AccountMapping(pattern="零钱", account="Assets:Current:Wechat"),
             AccountMapping(pattern="华夏银行", account="Liabilities:CreditCard:HXB"),
-            AccountMapping(field="card_suffix", pattern="1234", match="exact", account="Liabilities:CreditCard:HXB:1234"),
-            AccountMapping(field="card_suffix", pattern="9270", match="exact", account="Liabilities:CreditCard:HXB:9270"),
+            AccountMapping(
+                field="card_suffix",
+                pattern="1234",
+                match="exact",
+                account="Liabilities:CreditCard:HXB:1234",
+            ),
+            AccountMapping(
+                field="card_suffix",
+                pattern="9270",
+                match="exact",
+                account="Liabilities:CreditCard:HXB:9270",
+            ),
         ],
         rules=[
             Rule(
