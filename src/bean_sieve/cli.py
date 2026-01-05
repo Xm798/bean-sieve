@@ -312,11 +312,7 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
         # Skip already-configured patterns
         existing_patterns: set[str] = set()
         if existing_config:
-            existing_patterns = {
-                m.pattern
-                for m in existing_config.account_mappings
-                if m.field == "method"
-            }
+            existing_patterns = {m.pattern for m in existing_config.account_mappings}
             if existing_patterns:
                 console.print(
                     f"[dim]已有 {len(existing_patterns)} 个配置，将跳过[/dim]"
