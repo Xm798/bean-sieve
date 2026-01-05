@@ -161,15 +161,19 @@ class AlipayProvider(BaseProvider):
 
     def _post_process(self, transactions: list[Transaction]) -> list[Transaction]:
         """
-        Post-process transactions to handle refunds and closed transactions.
+        Post-process transactions to handle special cases.
 
+        - Filter all zero-amount transactions (e.g., discounts like "碰一下立减")
         - Match refund transactions with original purchases and mark both as useless
         - Mark closed transactions as useless
         """
+        # First pass: filter zero-amount transactions
+        filtered = [txn for txn in transactions if txn.amount != 0]
+
         result = []
 
-        # Build index by order_id prefix for refund matching
-        for i, txn in enumerate(transactions):
+        # Second pass: handle refunds and closed transactions
+        for i, txn in enumerate(filtered):
             status = txn.metadata.get("status", "")
             tx_type = txn.metadata.get("tx_type", "")
             category = txn.metadata.get("category", "")
@@ -182,7 +186,7 @@ class AlipayProvider(BaseProvider):
             if status == "退款成功" and category == "退款":
                 # Try to find matching original transaction
                 matched = False
-                for j, other in enumerate(transactions):
+                for j, other in enumerate(filtered):
                     if (
                         i != j
                         and txn.order_id
