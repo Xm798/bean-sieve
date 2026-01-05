@@ -1,7 +1,7 @@
 """Configuration schema for Bean-Sieve."""
 
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from ruamel.yaml import YAML
@@ -18,12 +18,10 @@ class DefaultsConfig(BaseModel):
 
 
 class AccountMapping(BaseModel):
-    """Unified account mapping by field value."""
+    """Account mapping by payment method (metadata['method'])."""
 
-    field: Literal["method", "card_suffix"] = "method"
     pattern: str
     account: str
-    match: Literal["exact", "contains", "regex"] = "contains"
 
 
 class RuleCondition(BaseModel):
@@ -114,7 +112,7 @@ class Config(BaseModel):
             )
             action = RuleAction(
                 contra_account=rule_data.get("contra_account"),
-                payee=rule_data.get("payee"),
+                payee=rule_data.get("target_payee"),
                 tags=rule_data.get("tags", []),
                 flag=rule_data.get("flag", "*"),
                 ignore=rule_data.get("ignore", False),
