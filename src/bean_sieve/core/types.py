@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from beancount.core.data import TxnPosting
 from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+if TYPE_CHECKING:
+    from ..config import Config
 
 
 class MatchSource(str, Enum):
@@ -192,3 +196,21 @@ class ReconcileResult(BaseModel):
             f"{self.match_result.summary}, "
             f"Categorized: {categorized}/{len(self.processed)}"
         )
+
+
+@dataclass
+class ReconcileContext:
+    """
+    Context passed to provider lifecycle hooks.
+
+    Contains all information a provider might need during
+    pre/post reconciliation processing.
+    """
+
+    statement_paths: list[Path]
+    ledger_path: Path | None = None
+    config: Config | None = None
+    date_range: tuple[date, date] | None = None
+    account_filter: str | None = None
+    output_path: Path | None = None
+    extra: dict[str, Any] = field(default_factory=dict)

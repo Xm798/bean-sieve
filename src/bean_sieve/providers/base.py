@@ -8,10 +8,14 @@ import quopri
 from abc import ABC, abstractmethod
 from email.header import decode_header
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup
 
-from ..core.types import Transaction
+from ..core.types import ReconcileContext, ReconcileResult, Transaction
+
+if TYPE_CHECKING:
+    pass
 
 
 class BaseProvider(ABC):
@@ -46,6 +50,72 @@ class BaseProvider(ABC):
     def can_handle(cls, file_path: Path) -> bool:
         """Check if this provider can handle the given file."""
         return file_path.suffix.lower() in cls.supported_formats
+
+    # === Lifecycle Hooks (override in subclasses as needed) ===
+
+    def pre_reconcile(
+        self,
+        transactions: list[Transaction],
+        context: ReconcileContext,  # noqa: ARG002
+    ) -> list[Transaction]:
+        """
+        Hook: Called before reconciliation.
+
+        Use this to transform transactions before they are matched
+        against the ledger. Default implementation returns unchanged.
+
+        Args:
+            transactions: Parsed transactions from this provider
+            context: Reconciliation context with config, paths, etc.
+
+        Returns:
+            Transformed list of transactions
+        """
+        return transactions
+
+    def post_reconcile(
+        self,
+        result: ReconcileResult,
+        context: ReconcileContext,  # noqa: ARG002
+    ) -> ReconcileResult:
+        """
+        Hook: Called after reconciliation.
+
+        Use this to transform or enrich the reconcile result.
+        For example, HXB provider uses this to match Bill transactions
+        to specific card accounts. Default implementation returns unchanged.
+
+        Args:
+            result: Reconciliation result with matched/missing transactions
+            context: Reconciliation context with config, paths, etc.
+
+        Returns:
+            Transformed ReconcileResult
+        """
+        return result
+
+    def post_output(
+        self,
+        content: str,
+        result: ReconcileResult,  # noqa: ARG002
+        context: ReconcileContext,  # noqa: ARG002
+    ) -> str:
+        """
+        Hook: Called after output generation.
+
+        Use this to append additional content to the generated output,
+        such as settlement entries or reconciliation summaries.
+        Default implementation returns unchanged.
+
+        Args:
+            content: Generated Beancount output content
+            result: Reconciliation result
+            context: Reconciliation context with config, paths, etc.
+
+        Returns:
+            Modified output content
+        """
+        return content
 
     # === Utility methods for subclasses ===
 

@@ -65,6 +65,17 @@ class PredictorConfig(BaseModel):
     training_data: str = "books/"
 
 
+class ProviderConfig(BaseModel):
+    """Provider-specific configuration."""
+
+    # Card suffix (last 4 digits) -> account name mapping
+    # Used by credit card providers like HXB to map transactions to specific card accounts
+    card_accounts: dict[str, str] = Field(default_factory=dict)
+
+    # Bill account for credit card settlements
+    bill_account: str = ""
+
+
 class Config(BaseModel):
     """Complete Bean-Sieve configuration."""
 
@@ -72,8 +83,13 @@ class Config(BaseModel):
     account_mappings: list[AccountMapping] = Field(default_factory=list)
     rules: list[Rule] = Field(default_factory=list)
     predictor: PredictorConfig = Field(default_factory=PredictorConfig)
+    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
 
     model_config = ConfigDict(validate_assignment=True)
+
+    def get_provider_config(self, provider_id: str) -> ProviderConfig:
+        """Get configuration for a specific provider."""
+        return self.providers.get(provider_id, ProviderConfig())
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":
@@ -111,13 +127,21 @@ class Config(BaseModel):
             )
 
         predictor_data = data.get("predictor", {})
-        predictor = PredictorConfig(**predictor_data) if predictor_data else PredictorConfig()
+        predictor = (
+            PredictorConfig(**predictor_data) if predictor_data else PredictorConfig()
+        )
+
+        providers = {
+            provider_id: ProviderConfig(**provider_data)
+            for provider_id, provider_data in data.get("providers", {}).items()
+        }
 
         return cls(
             defaults=defaults,
             account_mappings=account_mappings,
             rules=rules,
             predictor=predictor,
+            providers=providers,
         )
 
 
