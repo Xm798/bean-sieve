@@ -38,6 +38,20 @@ def parse_date_range(date_range: str | None) -> tuple[date, date] | None:
         ) from None
 
 
+DEFAULT_CONFIG_NAME = "bean-sieve.yaml"
+
+
+def resolve_config_path(config_path: str | None) -> Path | None:
+    """Resolve config file path, auto-detecting default if not specified."""
+    if config_path:
+        return Path(config_path)
+    # Auto-detect config in current directory
+    default_config = Path(DEFAULT_CONFIG_NAME)
+    if default_config.exists():
+        return default_config
+    return None
+
+
 def resolve_ledger_path(
     ledger: str | None, config: Config | None, config_path: Path | None
 ) -> Path:
@@ -116,7 +130,7 @@ def reconcile(
     try:
         # Parse inputs
         file_paths = [Path(f) for f in files]
-        config_file = Path(config_path) if config_path else None
+        config_file = resolve_config_path(config_path)
         config = load_config(config_file) if config_file else None
         ledger_path = resolve_ledger_path(ledger, config, config_file)
         output_path = None if dry_run else Path(output)
@@ -217,7 +231,7 @@ def check(files, ledger, config_path, provider, date_range):
     """
     try:
         file_paths = [Path(f) for f in files]
-        config_file = Path(config_path) if config_path else None
+        config_file = resolve_config_path(config_path)
         config = load_config(config_file) if config_file else None
         ledger_path = resolve_ledger_path(ledger, config, config_file)
         dr = parse_date_range(date_range)
