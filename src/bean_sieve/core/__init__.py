@@ -4,13 +4,20 @@ from .output import BeancountWriter, write_output
 from .predictor import SmartPredictor, apply_predictions
 from .rules import RulesEngine, apply_rules
 from .sieve import Sieve, SieveConfig, create_sieve
-from .types import MatchResult, MatchSource, ReconcileResult, Transaction
+from .types import (
+    MatchResult,
+    MatchSource,
+    ReconcileContext,
+    ReconcileResult,
+    Transaction,
+)
 
 __all__ = [
     # Types
     "Transaction",
     "MatchResult",
     "ReconcileResult",
+    "ReconcileContext",
     "MatchSource",
     # Sieve
     "Sieve",

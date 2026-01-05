@@ -11,6 +11,7 @@ from .config import Config, load_config
 from .core import (
     BeancountWriter,
     MatchResult,
+    ReconcileContext,
     ReconcileResult,
     RulesEngine,
     Sieve,
@@ -20,6 +21,7 @@ from .core import (
 )
 from .core.types import MatchSource
 from .providers import auto_detect_provider, get_provider, list_providers
+from .providers.base import BaseProvider
 
 
 def parse_statement(
@@ -207,6 +209,7 @@ def full_reconcile(
     Complete reconciliation workflow.
 
     This is the main entry point for the reconcile command.
+    Supports provider lifecycle hooks (pre_reconcile, post_reconcile, post_output).
 
     Args:
         statement_paths: List of statement files to process
@@ -224,6 +227,19 @@ def full_reconcile(
     # Load config
     config = load_config(config_path) if config_path else Config()
 
+    # Get provider instance for hooks
+    provider = _get_provider_for_hooks(statement_paths, provider_id)
+
+    # Create reconcile context for hooks
+    context = ReconcileContext(
+        statement_paths=statement_paths,
+        ledger_path=ledger_path,
+        config=config,
+        date_range=date_range,
+        account_filter=account_filter,
+        output_path=output_path,
+    )
+
     # Parse statements
     transactions = parse_statements(statement_paths, provider_id)
 
@@ -232,6 +248,10 @@ def full_reconcile(
         transactions = [
             t for t in transactions if date_range[0] <= t.date <= date_range[1]
         ]
+
+    # Pre-reconcile hook
+    if provider:
+        transactions = provider.pre_reconcile(transactions, context)
 
     # Load ledger
     sieve = load_ledger(
@@ -250,12 +270,43 @@ def full_reconcile(
         ledger_path=ledger_path if use_predictor else None,
     )
 
+    # Post-reconcile hook
+    if provider:
+        result = provider.post_reconcile(result, context)
+
     # Generate output
     if output_path:
         source_info = ", ".join(p.name for p in statement_paths)
-        generate_output(result, output_path, source_info=source_info, config=config)
+        content = generate_output(result, source_info=source_info, config=config)
+
+        # Post-output hook
+        if provider:
+            content = provider.post_output(content, result, context)
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(content)
 
     return result
+
+
+def _get_provider_for_hooks(
+    statement_paths: list[Path],
+    provider_id: str | None,
+) -> BaseProvider | None:
+    """
+    Get a provider instance for lifecycle hooks.
+
+    If provider_id is specified, returns that provider.
+    Otherwise, auto-detects from the first file (assumes all files use same provider).
+    """
+    if not statement_paths:
+        return None
+
+    if provider_id:
+        return get_provider(provider_id)
+
+    # Auto-detect from first file
+    return auto_detect_provider(statement_paths[0])
 
 
 __all__ = [
@@ -275,5 +326,6 @@ __all__ = [
     "Transaction",
     "MatchResult",
     "ReconcileResult",
+    "ReconcileContext",
     "Config",
 ]
