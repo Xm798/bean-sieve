@@ -184,6 +184,7 @@ def generate_output(
     writer = BeancountWriter(
         default_expense=config.defaults.expense_account,
         default_income=config.defaults.income_account,
+        output_metadata=config.defaults.output_metadata,
     )
 
     content = writer.format_result(result, source_info=source_info)
