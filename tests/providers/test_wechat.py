@@ -117,9 +117,10 @@ class TestWechatProvider:
 
     def test_can_handle(self):
         """Test file format detection."""
-        assert WechatProvider.can_handle(Path("statement.xlsx"))
-        assert WechatProvider.can_handle(Path("statement.csv"))
-        assert not WechatProvider.can_handle(Path("statement.eml"))
+        assert WechatProvider.can_handle(Path("wechat_statement.xlsx"))
+        assert WechatProvider.can_handle(Path("微信账单.csv"))
+        assert not WechatProvider.can_handle(Path("wechat_statement.eml"))
+        assert not WechatProvider.can_handle(Path("statement.xlsx"))  # no keyword
 
     def test_parse_xlsx_transactions(self, wechat_xlsx_file):
         """Test parsing transactions from XLSX file."""

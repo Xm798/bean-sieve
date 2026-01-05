@@ -76,9 +76,10 @@ class TestAlipayProvider:
 
     def test_can_handle(self):
         """Test file format detection."""
-        assert AlipayProvider.can_handle(Path("statement.csv"))
-        assert not AlipayProvider.can_handle(Path("statement.xlsx"))
-        assert not AlipayProvider.can_handle(Path("statement.eml"))
+        assert AlipayProvider.can_handle(Path("alipay_statement.csv"))
+        assert AlipayProvider.can_handle(Path("支付宝账单.csv"))
+        assert not AlipayProvider.can_handle(Path("alipay_statement.xlsx"))
+        assert not AlipayProvider.can_handle(Path("statement.csv"))  # no keyword
 
     def test_parse_transactions(self, alipay_csv_file):
         """Test parsing transactions from CSV file."""
