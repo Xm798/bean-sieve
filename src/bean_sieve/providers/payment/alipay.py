@@ -51,6 +51,8 @@ class AlipayProvider(BaseProvider):
     provider_id = "alipay"
     provider_name = "支付宝"
     supported_formats = [".csv"]
+    filename_keywords = ["支付宝", "alipay"]
+    content_keywords = ["支付宝交易记录明细", "支付宝（中国）"]
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse Alipay CSV statement file."""
@@ -102,7 +104,7 @@ class AlipayProvider(BaseProvider):
         item_name = row[4]
         tx_type_str = row[5]
         amount_str = row[6]
-        method = row[7]
+        method = row[7].split("&")[0].strip()
         status = row[8]
         order_id = row[9].strip() if len(row) > 9 else ""
         merchant_id = row[10].strip() if len(row) > 10 else ""

@@ -46,10 +46,62 @@ class BaseProvider(ABC):
         """
         pass
 
+    # Keywords for file detection (override in subclasses)
+    filename_keywords: list[str] = []  # e.g., ["微信", "wechat"]
+    content_keywords: list[str] = []  # e.g., ["微信支付账单明细"]
+
     @classmethod
     def can_handle(cls, file_path: Path) -> bool:
-        """Check if this provider can handle the given file."""
-        return file_path.suffix.lower() in cls.supported_formats
+        """
+        Check if this provider can handle the given file.
+
+        Detection priority:
+        1. Filename keywords (fast, no file read)
+        2. Content keywords (reads file header)
+        3. Fall back to extension check only if no keywords defined
+        """
+        # Check extension first
+        if file_path.suffix.lower() not in cls.supported_formats:
+            return False
+
+        # If keywords are defined, require match
+        if cls.filename_keywords or cls.content_keywords:
+            return cls._match_filename(file_path) or cls._match_content(file_path)
+
+        # No keywords defined, extension match is enough
+        return True
+
+    @classmethod
+    def _match_filename(cls, file_path: Path) -> bool:
+        """Check if filename contains any keyword."""
+        if not cls.filename_keywords:
+            return False
+        filename_lower = file_path.name.lower()
+        return any(kw.lower() in filename_lower for kw in cls.filename_keywords)
+
+    @classmethod
+    def _match_content(cls, file_path: Path) -> bool:
+        """Check if file content contains any keyword."""
+        if not cls.content_keywords:
+            return False
+        try:
+            # Read first 500 bytes for header detection
+            content = cls._read_file_header(file_path, 500)
+            return any(kw in content for kw in cls.content_keywords)
+        except Exception:
+            return False
+
+    @classmethod
+    def _read_file_header(cls, file_path: Path, size: int = 500) -> str:
+        """Read file header with encoding detection."""
+        # Try common encodings
+        for encoding in ["utf-8", "gbk", "gb2312", "utf-16"]:
+            try:
+                with open(file_path, encoding=encoding) as f:
+                    return f.read(size)
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        return ""
 
     # === Lifecycle Hooks (override in subclasses as needed) ===
 
