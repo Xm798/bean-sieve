@@ -1,11 +1,27 @@
 """Beancount output generator."""
 
+import datetime as dt
 from datetime import datetime
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
 
 from .types import MatchSource, ReconcileResult, Transaction
+
+
+def _sort_key(t: Transaction) -> tuple:
+    """Sort key for transactions: by date, then by time."""
+    return (t.date, t.time or dt.time.min)
+
+
+def _sort_transactions(
+    transactions: list[Transaction], sort_by_time: str | None
+) -> list[Transaction]:
+    """Sort transactions based on sort_by_time config."""
+    if not sort_by_time:
+        return transactions
+    reverse = sort_by_time == "desc"
+    return sorted(transactions, key=_sort_key, reverse=reverse)
 
 
 class BeancountWriter:
@@ -16,11 +32,14 @@ class BeancountWriter:
         default_expense: str = "Expenses:FIXME",
         default_income: str = "Income:FIXME",
         output_metadata: list[str] | None = None,
+        sort_by_time: str | None = "asc",
     ):
         self.default_expense = default_expense
         self.default_income = default_income
         # Which metadata fields to include (None = all)
         self.output_metadata = output_metadata
+        # Sort by datetime: "asc", "desc", or None (no sort)
+        self.sort_by_time = sort_by_time
 
     def format_transaction(self, txn: Transaction) -> str:
         """Format a single transaction as Beancount entry."""
@@ -147,18 +166,18 @@ class BeancountWriter:
         # Write each group
         if rule_txns:
             output.write(f"; --- Rule matched ({len(rule_txns)}) ---\n\n")
-            for txn in sorted(rule_txns, key=lambda t: t.date):
+            for txn in _sort_transactions(rule_txns, self.sort_by_time):
                 output.write(self.format_transaction(txn) + "\n\n")
 
         if predict_txns:
             output.write(f"; --- ML predicted ({len(predict_txns)}) ---\n\n")
-            for txn in sorted(predict_txns, key=lambda t: t.date):
+            for txn in _sort_transactions(predict_txns, self.sort_by_time):
                 output.write(self.format_transaction(txn) + "\n\n")
 
         if fixme_txns or unmatched:
             count = len(fixme_txns) + len(unmatched)
             output.write(f"; --- Needs review ({count}) ---\n\n")
-            for txn in sorted(fixme_txns + unmatched, key=lambda t: t.date):
+            for txn in _sort_transactions(fixme_txns + unmatched, self.sort_by_time):
                 output.write(self.format_transaction(txn) + "\n\n")
 
         return output.getvalue()

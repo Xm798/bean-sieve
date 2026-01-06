@@ -18,6 +18,10 @@ class DefaultsConfig(BaseModel):
     # Metadata fields to include in output (None means include all)
     # Common fields: time, order_id, source, category, method, peer_account, etc.
     output_metadata: list[str] | None = None
+    # Sort output by datetime: "asc" (ascending), "desc" (descending), or None (no sort)
+    sort_by_time: Annotated[str | None, Field(pattern=r"^(asc|desc)$")] = "asc"
+    # Default transaction flag: "*" (cleared) or "!" (pending)
+    flag: Annotated[str, Field(pattern=r"^[*!]$")] = "!"
 
 
 class AccountMapping(BaseModel):
