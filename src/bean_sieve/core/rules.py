@@ -219,6 +219,12 @@ class RulesEngine:
                 txn.metadata["original_payee"] = txn.payee
             txn.payee = action.payee
 
+        if action.description:
+            # Store original description before overriding
+            if txn.description and txn.description != action.description:
+                txn.metadata["original_description"] = txn.description
+            txn.description = action.description
+
         if action.tags:
             txn.tags.extend(action.tags)
 
