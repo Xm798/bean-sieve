@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 
 from ...core.preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
-from ...core.types import Transaction
+from ...core.types import ReconcileContext, Transaction
 from .. import register_provider
 from ..base import BaseProvider
 
@@ -165,42 +165,19 @@ class AlipayProvider(BaseProvider):
         Post-process transactions to handle special cases.
 
         - Filter all zero-amount transactions (e.g., discounts like "碰一下立减")
-        - Match refund transactions with original purchases and mark both as useless
         - Mark closed transactions as useless
         """
         # First pass: filter zero-amount transactions
         filtered = [txn for txn in transactions if txn.amount != 0]
 
         result = []
-
-        # Second pass: handle refunds and closed transactions
-        for i, txn in enumerate(filtered):
+        for txn in filtered:
             status = txn.metadata.get("status", "")
             tx_type = txn.metadata.get("tx_type", "")
-            category = txn.metadata.get("category", "")
 
             # Skip closed transactions that are marked as neutral
             if status == "交易关闭" and tx_type == "不计收支":
                 continue
-
-            # Handle refunds
-            if status == "退款成功" and category == "退款":
-                # Try to find matching original transaction
-                matched = False
-                for j, other in enumerate(filtered):
-                    if (
-                        i != j
-                        and txn.order_id
-                        and other.order_id
-                        and txn.order_id.startswith(other.order_id)
-                        and abs(txn.amount) == abs(other.amount)
-                    ):
-                        # Found matching refund pair, skip both
-                        matched = True
-                        break
-
-                if matched:
-                    continue
 
             result.append(txn)
 
@@ -269,3 +246,71 @@ class AlipayProvider(BaseProvider):
                 priority=80,
             ),
         ]
+
+    def pre_reconcile(
+        self,
+        transactions: list[Transaction],
+        context: ReconcileContext,  # noqa: ARG002
+    ) -> list[Transaction]:
+        """
+        Merge transactions with identical timestamps.
+
+        Taobao orders with multiple items are often recorded as separate
+        transactions with the same timestamp. This merges them for matching.
+        """
+        from collections import defaultdict
+
+        # Group by (date, time)
+        groups: dict[tuple, list[Transaction]] = defaultdict(list)
+        for txn in transactions:
+            key = (txn.date, txn.time)
+            groups[key].append(txn)
+
+        result = []
+        for group in groups.values():
+            if len(group) == 1:
+                result.append(group[0])
+            else:
+                result.append(self._merge_transactions(group))
+
+        return result
+
+    def _merge_transactions(self, txns: list[Transaction]) -> Transaction:
+        """Merge multiple transactions into one."""
+        first = txns[0]
+
+        # Sum amounts
+        total_amount = sum(t.amount for t in txns)
+
+        # Merge payees (unique, preserve order)
+        payees = []
+        seen_payees: set[str] = set()
+        for t in txns:
+            if t.payee and t.payee not in seen_payees:
+                payees.append(t.payee)
+                seen_payees.add(t.payee)
+        merged_payee = " ".join(payees) if payees else first.payee
+
+        # Merge descriptions (truncate to 8 chars each if too long)
+        descriptions = []
+        seen_desc: set[str] = set()
+        for t in txns:
+            if t.description and t.description not in seen_desc:
+                desc = t.description[:8] if len(t.description) > 8 else t.description
+                descriptions.append(desc)
+                seen_desc.add(t.description)
+        merged_desc = "/".join(descriptions)
+
+        return Transaction(
+            date=first.date,
+            time=first.time,
+            amount=total_amount,
+            currency=first.currency,
+            description=merged_desc,
+            payee=merged_payee,
+            order_id=None,  # Clear order_id for merged transactions
+            provider=first.provider,
+            source_file=first.source_file,
+            source_line=first.source_line,
+            metadata=first.metadata,
+        )
