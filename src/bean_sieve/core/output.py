@@ -33,6 +33,7 @@ class BeancountWriter:
         default_income: str = "Income:FIXME",
         output_metadata: list[str] | None = None,
         sort_by_time: str | None = "asc",
+        default_flag: str = "!",
     ):
         self.default_expense = default_expense
         self.default_income = default_income
@@ -40,15 +41,19 @@ class BeancountWriter:
         self.output_metadata = output_metadata
         # Sort by datetime: "asc", "desc", or None (no sort)
         self.sort_by_time = sort_by_time
+        # Default transaction flag: "*" (cleared) or "!" (pending)
+        self.default_flag = default_flag
 
     def format_transaction(self, txn: Transaction) -> str:
         """Format a single transaction as Beancount entry."""
         lines = []
 
         # Transaction header: date flag "payee" "narration"
+        # Use rule-set flag for rule-matched transactions, otherwise use default_flag
+        flag = txn.flag if txn.match_source == MatchSource.RULE else self.default_flag
         payee_str = f'"{txn.payee}"' if txn.payee else '""'
         narration = txn.description.replace('"', '\\"')
-        lines.append(f'{txn.date} {txn.flag} {payee_str} "{narration}"')
+        lines.append(f'{txn.date} {flag} {payee_str} "{narration}"')
 
         # Metadata
         meta_lines = self._format_metadata(txn)
