@@ -55,6 +55,9 @@ WECHAT_HEADER_LINES = 17
 # Regex to extract commission from remarks
 COMMISSION_REGEX = re.compile(r"\d+\.\d{2}")
 
+# Regex to extract rebate from remarks (已优惠¥10.00)
+REBATE_REGEX = re.compile(r"已优惠¥?(\d+\.?\d*)")
+
 
 @register_provider
 class WechatProvider(BaseProvider):
@@ -213,6 +216,16 @@ class WechatProvider(BaseProvider):
                 commission = Decimal(match.group())
                 amount = amount - commission
 
+        # Handle rebate in remarks (已优惠¥10.00)
+        # ¥ symbol indicates CNY rebate
+        rebate = Decimal("0")
+        rebate_currency: str | None = None
+        if "已优惠" in remarks and "¥" in remarks:
+            match = REBATE_REGEX.search(remarks)
+            if match:
+                rebate = Decimal(match.group(1))
+                rebate_currency = "CNY"
+
         # Determine sign based on order type
         # Convention: expense is positive, income is negative
         if order_type == WechatOrderType.INCOME:
@@ -240,6 +253,8 @@ class WechatProvider(BaseProvider):
                 "remarks": remarks,
                 "order_type": order_type_str,
                 "commission": str(commission) if commission else None,
+                "rebate": str(rebate) if rebate else None,
+                "rebate_currency": rebate_currency,
             },
         )
 
@@ -255,18 +270,7 @@ class WechatProvider(BaseProvider):
     def get_preset_rules(cls) -> list[PresetRule]:
         """Return preset rules for WeChat transactions."""
         return [
-            # 微信红包（零钱收付）
-            PresetRule(
-                rule_id="wechat_lucky_money",
-                name="微信红包",
-                provider="wechat",
-                condition=PresetRuleCondition(
-                    metadata={"tx_type": r"微信红包", "method": r"零钱"},
-                ),
-                action=PresetRuleAction(account_keyword="零钱"),
-                priority=100,
-            ),
-            # 已存入零钱（转账收款等）
+            # 已存入零钱
             PresetRule(
                 rule_id="wechat_to_balance",
                 name="零钱收款",
@@ -285,7 +289,7 @@ class WechatProvider(BaseProvider):
                 condition=PresetRuleCondition(
                     metadata={"status": r"已存入经营账户"},
                 ),
-                action=PresetRuleAction(account_keyword="Merchant"),
+                action=PresetRuleAction(account_keyword="经营账户"),
                 priority=90,
             ),
         ]
