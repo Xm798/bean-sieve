@@ -2,6 +2,7 @@
 
 from .output import BeancountWriter, write_output
 from .predictor import SmartPredictor, apply_predictions
+from .preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
 from .rules import RulesEngine, apply_rules
 from .sieve import Sieve, SieveConfig, create_sieve
 from .types import (
@@ -23,6 +24,10 @@ __all__ = [
     "Sieve",
     "SieveConfig",
     "create_sieve",
+    # Preset Rules
+    "PresetRule",
+    "PresetRuleCondition",
+    "PresetRuleAction",
     # Rules
     "RulesEngine",
     "apply_rules",

@@ -1,10 +1,13 @@
 """Rules engine for account mapping."""
 
+from __future__ import annotations
+
 import contextlib
 import re
 from datetime import time
 
 from ..config.schema import Config, Rule
+from .preset_rules import PresetRule
 from .types import MatchSource, Transaction
 
 
@@ -12,12 +15,27 @@ class RulesEngine:
     """
     Rules engine for matching transactions to accounts.
 
-    Applies user-defined rules in priority order.
+    Applies preset rules first, then user-defined rules in priority order.
     """
 
-    def __init__(self, config: Config):
+    def __init__(
+        self,
+        config: Config,
+        preset_rules: list[PresetRule] | None = None,
+    ):
         self.config = config
-        # Sort rules by priority (higher first)
+
+        # Preset rules (sorted by priority, higher first)
+        self._preset_rules = sorted(
+            preset_rules or [],
+            key=lambda r: r.priority,
+            reverse=True,
+        )
+        # Compile preset rule patterns
+        for rule in self._preset_rules:
+            rule.compile_patterns()
+
+        # User-defined rules (sorted by priority, higher first)
         self._rules = sorted(config.rules, key=lambda r: r.priority, reverse=True)
         # Compile regex patterns for performance
         self._desc_patterns: dict[int, re.Pattern] = {}
@@ -38,18 +56,64 @@ class RulesEngine:
         """
         Apply rules to a transaction to fill account mapping.
 
+        Order of application:
+        1. Preset rules (code-defined, keyword-based account lookup) - highest priority
+        2. Account mappings (based on payment method) - fallback
+        3. User-defined rules (YAML config)
+
         Returns the transaction with account fields populated.
         """
-        # First, try to get the asset/liability account from card mapping
-        txn = self._apply_account_mapping(txn)
+        # 1. Apply preset rules first (keyword-based account lookup)
+        txn = self._apply_preset_rules(txn)
 
-        # Then, try to match rules for contra account
+        # 2. Fallback to account mapping if preset rules didn't set account
+        if not txn.account:
+            txn = self._apply_account_mapping(txn)
+
+        # 3. Apply user-defined rules for contra account
         for i, rule in enumerate(self._rules):
             if self._matches_condition(txn, rule, i):
                 txn = self._apply_action(txn, rule)
                 break
 
         return txn
+
+    def _apply_preset_rules(self, txn: Transaction) -> Transaction:
+        """Apply preset rules to set account from keyword lookup."""
+        for preset in self._preset_rules:
+            if preset.matches(txn):
+                txn = self._apply_preset_action(txn, preset)
+                break  # First match wins
+        return txn
+
+    def _apply_preset_action(self, txn: Transaction, preset: PresetRule) -> Transaction:
+        """Apply preset rule action to transaction."""
+        action = preset.action
+
+        if action.ignore:
+            txn.metadata["_ignored"] = True
+            return txn
+
+        # Keyword-based account lookup
+        if action.account_keyword:
+            account = self._lookup_account_by_keyword(action.account_keyword)
+            if account:
+                txn.account = account
+                txn.metadata["matched_preset_rule"] = preset.rule_id
+
+        # Negate amount if specified (only if positive, to avoid double-negation)
+        if action.negate and txn.amount > 0:
+            txn.amount = -txn.amount
+
+        return txn
+
+    def _lookup_account_by_keyword(self, keyword: str) -> str | None:
+        """Lookup account from account_mappings by keyword."""
+        keyword_lower = keyword.lower()
+        for mapping in self.config.account_mappings:
+            if keyword_lower in mapping.pattern.lower():
+                return mapping.account
+        return None
 
     def _apply_account_mapping(self, txn: Transaction) -> Transaction:
         """Apply account mapping based on payment method."""
@@ -164,13 +228,25 @@ class RulesEngine:
         return txn
 
 
-def apply_rules(transactions: list[Transaction], config: Config) -> list[Transaction]:
+def apply_rules(
+    transactions: list[Transaction],
+    config: Config,
+    preset_rules: list[PresetRule] | None = None,
+) -> list[Transaction]:
     """
     Apply rules to a list of transactions.
 
     Convenience function for common usage.
+
+    Args:
+        transactions: List of transactions to process
+        config: Configuration with user-defined rules and account mappings
+        preset_rules: Optional list of preset rules from provider
+
+    Returns:
+        List of processed transactions (with ignored ones filtered out)
     """
-    engine = RulesEngine(config)
+    engine = RulesEngine(config, preset_rules=preset_rules)
     result = []
     for txn in transactions:
         processed = engine.apply(txn)

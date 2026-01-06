@@ -8,6 +8,7 @@ from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 
+from ...core.preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
 from ...core.types import Transaction
 from .. import register_provider
 from ..base import BaseProvider
@@ -123,7 +124,7 @@ class AlipayProvider(BaseProvider):
 
         # Determine sign based on transaction type
         # Convention: expense is positive, income is negative
-        if tx_type == AlipayTxType.INCOME:
+        if tx_type == AlipayTxType.INCOME and amount > 0:
             amount = -amount
 
         # Build description
@@ -204,3 +205,67 @@ class AlipayProvider(BaseProvider):
             result.append(txn)
 
         return result
+
+    @classmethod
+    def get_preset_rules(cls) -> list[PresetRule]:
+        """Return preset rules for Alipay transactions."""
+        return [
+            # 余额宝转入（资金流入余额宝，需要翻转金额符号）
+            PresetRule(
+                rule_id="alipay_yuebao_in",
+                name="余额宝转入",
+                provider="alipay",
+                condition=PresetRuleCondition(description=r"余额宝.*转入"),
+                action=PresetRuleAction(account_keyword="余额宝", negate=True),
+                priority=110,
+            ),
+            # 余额宝收益（资金流入余额宝，需要翻转金额符号）
+            PresetRule(
+                rule_id="alipay_yuebao_income",
+                name="余额宝收益",
+                provider="alipay",
+                condition=PresetRuleCondition(description=r"余额宝.*收益"),
+                action=PresetRuleAction(account_keyword="余额宝", negate=True),
+                priority=110,
+            ),
+            # 余额宝转出（资金流出余额宝）
+            PresetRule(
+                rule_id="alipay_yuebao_out",
+                name="余额宝转出",
+                provider="alipay",
+                condition=PresetRuleCondition(description=r"余额宝.*转出"),
+                action=PresetRuleAction(account_keyword="余额宝"),
+                priority=110,
+            ),
+            # 退款（只对正数金额翻转，避免双重翻转）
+            PresetRule(
+                rule_id="alipay_refund",
+                name="退款",
+                provider="alipay",
+                condition=PresetRuleCondition(description=r"^退款"),
+                action=PresetRuleAction(negate=True),
+                priority=100,
+            ),
+            # 花呗消费
+            PresetRule(
+                rule_id="alipay_huabei",
+                name="花呗消费",
+                provider="alipay",
+                condition=PresetRuleCondition(
+                    metadata={"method": r"花呗"},
+                ),
+                action=PresetRuleAction(account_keyword="花呗"),
+                priority=90,
+            ),
+            # 余额支付
+            PresetRule(
+                rule_id="alipay_balance",
+                name="余额支付",
+                provider="alipay",
+                condition=PresetRuleCondition(
+                    metadata={"method": r"^余额$"},
+                ),
+                action=PresetRuleAction(account_keyword="余额"),
+                priority=80,
+            ),
+        ]
