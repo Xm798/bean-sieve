@@ -255,12 +255,11 @@ def full_reconcile(
             t for t in transactions if date_range[0] <= t.date <= date_range[1]
         ]
 
-    # Pre-reconcile hook
-    if provider:
-        transactions = provider.pre_reconcile(transactions, context)
+    # Pre-reconcile hook: call for each provider's transactions
+    transactions = _apply_pre_reconcile_hooks(transactions, context, provider_id)
 
-    # Get preset rules from provider
-    preset_rules = provider.get_preset_rules() if provider else []
+    # Get preset rules from all providers involved
+    preset_rules = _collect_preset_rules(transactions, provider_id)
 
     # Load ledger
     sieve = load_ledger(
@@ -297,6 +296,66 @@ def full_reconcile(
             f.write(content)
 
     return result
+
+
+def _apply_pre_reconcile_hooks(
+    transactions: list[Transaction],
+    context: ReconcileContext,
+    provider_id: str | None,
+) -> list[Transaction]:
+    """
+    Apply pre_reconcile hooks for each provider's transactions.
+
+    Groups transactions by provider and calls each provider's pre_reconcile hook.
+    """
+    if provider_id:
+        # Single provider specified, use it for all
+        provider = get_provider(provider_id)
+        if provider:
+            return provider.pre_reconcile(transactions, context)
+        return transactions
+
+    # Group by provider
+    from collections import defaultdict
+
+    by_provider: dict[str, list[Transaction]] = defaultdict(list)
+    for txn in transactions:
+        by_provider[txn.provider].append(txn)
+
+    # Apply each provider's hook
+    result = []
+    for pid, txns in by_provider.items():
+        provider = get_provider(pid)
+        if provider:
+            txns = provider.pre_reconcile(txns, context)
+        result.extend(txns)
+
+    return result
+
+
+def _collect_preset_rules(
+    transactions: list[Transaction],
+    provider_id: str | None,
+) -> list:
+    """Collect preset rules from all providers involved."""
+    from .core.preset_rules import PresetRule
+
+    if provider_id:
+        provider = get_provider(provider_id)
+        return provider.get_preset_rules() if provider else []
+
+    # Collect from all unique providers
+    providers_seen: set[str] = set()
+    rules: list[PresetRule] = []
+
+    for txn in transactions:
+        if txn.provider and txn.provider not in providers_seen:
+            providers_seen.add(txn.provider)
+            provider = get_provider(txn.provider)
+            if provider:
+                rules.extend(provider.get_preset_rules())
+
+    return rules
 
 
 def _get_provider_for_hooks(
