@@ -188,6 +188,7 @@ def generate_output(
         default_expense=config.defaults.expense_account,
         default_income=config.defaults.income_account,
         output_metadata=config.defaults.output_metadata,
+        sort_by_time=config.defaults.sort_by_time,
     )
 
     content = writer.format_result(result, source_info=source_info)
