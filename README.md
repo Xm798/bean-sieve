@@ -134,6 +134,14 @@ rules:
     ignore: true
 ```
 
+## 账单下载方式
+
+### 银行
+
+#### 平安银行
+
+- 借记卡：[平安银行个人网上银行](https://bank.pingan.com.cn/m/main/index.html)
+
 ## 数据格式约定
 
 ### Transaction 字段
