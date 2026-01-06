@@ -101,19 +101,16 @@ class BeancountWriter:
             if ref and not is_empty_value(ref):
                 meta.append(f'reference: "{ref}"')
 
-        # Source: provider name + rule info (not "fixme")
-        if should_include("source"):
-            source_parts = []
-            if txn.provider:
-                source_parts.append(txn.provider)
+        # Source: provider name only
+        if should_include("source") and txn.provider:
+            meta.append(f'source: "{txn.provider}"')
+
+        # Match source for debug (rule pattern or predict)
+        if should_include("matched_rule"):
             if txn.metadata.get("matched_rule"):
-                source_parts.append(f"rule:{txn.metadata['matched_rule']}")
-            elif txn.match_source == MatchSource.RULE:
-                source_parts.append("rule")
+                meta.append(f'matched_rule: "{txn.metadata["matched_rule"]}"')
             elif txn.match_source == MatchSource.PREDICT:
-                source_parts.append("predict")
-            if source_parts:
-                meta.append(f'source: "{":".join(source_parts)}"')
+                meta.append('matched_rule: "predict"')
 
         # Additional metadata from provider (only if allowed)
         skip_keys = {"_ignored", "matched_rule", "reference", "original_payee"}
