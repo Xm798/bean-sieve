@@ -57,10 +57,10 @@ def resolve_ledger_path(
 ) -> Path:
     """Resolve ledger path from CLI option or config file."""
     if ledger:
-        return Path(ledger)
+        return Path(ledger).expanduser()
 
     if config and config.defaults.ledger:
-        ledger_from_config = Path(config.defaults.ledger)
+        ledger_from_config = Path(config.defaults.ledger).expanduser()
         # Resolve relative paths relative to config file location
         if config_path and not ledger_from_config.is_absolute():
             ledger_from_config = config_path.parent / ledger_from_config
