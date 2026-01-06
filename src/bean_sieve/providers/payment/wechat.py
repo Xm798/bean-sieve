@@ -11,6 +11,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from ...core.preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
 from ...core.types import Transaction
 from .. import register_provider
 from ..base import BaseProvider
@@ -249,3 +250,42 @@ class WechatProvider(BaseProvider):
             return WechatOrderType(order_type_str)
         except ValueError:
             return WechatOrderType.NEUTRAL
+
+    @classmethod
+    def get_preset_rules(cls) -> list[PresetRule]:
+        """Return preset rules for WeChat transactions."""
+        return [
+            # 微信红包（零钱收付）
+            PresetRule(
+                rule_id="wechat_lucky_money",
+                name="微信红包",
+                provider="wechat",
+                condition=PresetRuleCondition(
+                    metadata={"tx_type": r"微信红包", "method": r"零钱"},
+                ),
+                action=PresetRuleAction(account_keyword="零钱"),
+                priority=100,
+            ),
+            # 已存入零钱（转账收款等）
+            PresetRule(
+                rule_id="wechat_to_balance",
+                name="零钱收款",
+                provider="wechat",
+                condition=PresetRuleCondition(
+                    metadata={"status": r"已存入零钱"},
+                ),
+                action=PresetRuleAction(account_keyword="零钱"),
+                priority=90,
+            ),
+            # 已存入经营账户
+            PresetRule(
+                rule_id="wechat_to_merchant",
+                name="经营账户收款",
+                provider="wechat",
+                condition=PresetRuleCondition(
+                    metadata={"status": r"已存入经营账户"},
+                ),
+                action=PresetRuleAction(account_keyword="Merchant"),
+                priority=90,
+            ),
+        ]
