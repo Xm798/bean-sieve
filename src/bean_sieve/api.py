@@ -11,6 +11,7 @@ from .config import Config, load_config
 from .core import (
     BeancountWriter,
     MatchResult,
+    PresetRule,
     ReconcileContext,
     ReconcileResult,
     RulesEngine,
@@ -102,6 +103,7 @@ def reconcile(
     config: Config | None = None,
     use_predictor: bool = False,
     ledger_path: Path | None = None,
+    preset_rules: list[PresetRule] | None = None,
 ) -> ReconcileResult:
     """
     Reconcile transactions against ledger and apply rules.
@@ -112,6 +114,7 @@ def reconcile(
         config: Configuration with rules and account mappings
         use_predictor: Whether to use ML prediction for unmapped accounts
         ledger_path: Required if use_predictor is True
+        preset_rules: Preset rules from provider for automatic account lookup
 
     Returns:
         ReconcileResult with matched, missing, and processed transactions
@@ -124,8 +127,8 @@ def reconcile(
     # Process missing transactions
     missing = list(match_result.missing)
 
-    # Apply rules
-    rules_engine = RulesEngine(config)
+    # Apply rules (preset rules first, then user rules)
+    rules_engine = RulesEngine(config, preset_rules=preset_rules)
     processed = [rules_engine.apply(txn) for txn in missing]
 
     # Filter out ignored transactions
@@ -254,6 +257,9 @@ def full_reconcile(
     if provider:
         transactions = provider.pre_reconcile(transactions, context)
 
+    # Get preset rules from provider
+    preset_rules = provider.get_preset_rules() if provider else []
+
     # Load ledger
     sieve = load_ledger(
         ledger_path,
@@ -262,13 +268,14 @@ def full_reconcile(
         date_tolerance=config.defaults.date_tolerance,
     )
 
-    # Reconcile
+    # Reconcile (with preset rules)
     result = reconcile(
         transactions,
         sieve,
         config=config,
         use_predictor=use_predictor,
         ledger_path=ledger_path if use_predictor else None,
+        preset_rules=preset_rules,
     )
 
     # Post-reconcile hook

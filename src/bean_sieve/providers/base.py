@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 from ..core.types import ReconcileContext, ReconcileResult, Transaction
 
 if TYPE_CHECKING:
-    pass
+    from ..core.preset_rules import PresetRule
 
 
 class BaseProvider(ABC):
@@ -168,6 +168,21 @@ class BaseProvider(ABC):
             Modified output content
         """
         return content
+
+    # === Preset Rules ===
+
+    @classmethod
+    def get_preset_rules(cls) -> list[PresetRule]:
+        """
+        Return preset rules specific to this provider.
+
+        Override in subclasses to define rules that automatically
+        identify transaction types and lookup accounts from account_mappings.
+
+        Returns:
+            List of PresetRule objects
+        """
+        return []
 
     # === Utility methods for subclasses ===
 
