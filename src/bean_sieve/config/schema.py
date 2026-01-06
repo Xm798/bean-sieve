@@ -48,6 +48,7 @@ class RuleAction(BaseModel):
 
     contra_account: str | None = None
     payee: str | None = None
+    description: str | None = None
     tags: list[str] = Field(default_factory=list)
     flag: str = "*"
     ignore: bool = False
@@ -120,6 +121,7 @@ class Config(BaseModel):
             action = RuleAction(
                 contra_account=rule_data.get("contra_account"),
                 payee=rule_data.get("target_payee"),
+                description=rule_data.get("target_description"),
                 tags=rule_data.get("tags", []),
                 flag=rule_data.get("flag", "*"),
                 ignore=rule_data.get("ignore", False),
