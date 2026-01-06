@@ -261,6 +261,9 @@ def full_reconcile(
     # Get preset rules from all providers involved
     preset_rules = _collect_preset_rules(transactions, provider_id)
 
+    # Apply negate rules BEFORE matching (sign affects matching logic)
+    transactions = _apply_negate_rules(transactions, preset_rules)
+
     # Load ledger
     sieve = load_ledger(
         ledger_path,
@@ -356,6 +359,38 @@ def _collect_preset_rules(
                 rules.extend(provider.get_preset_rules())
 
     return rules
+
+
+def _apply_negate_rules(
+    transactions: list[Transaction],
+    preset_rules: list[PresetRule],
+) -> list[Transaction]:
+    """
+    Apply negate rules before matching.
+
+    This is needed because amount sign affects matching logic (income vs expense).
+    Negate rules must be applied before sieve.match() to correctly match
+    refunds and other sign-inverted transactions.
+    """
+    # Filter to only negate rules
+    negate_rules = [r for r in preset_rules if r.action.negate]
+    if not negate_rules:
+        return transactions
+
+    # Compile patterns once
+    for rule in negate_rules:
+        rule.compile_patterns()
+
+    result = []
+    for txn in transactions:
+        for rule in negate_rules:
+            if rule.matches(txn):
+                # Negate the amount
+                txn = txn.model_copy(update={"amount": -txn.amount})
+                break
+        result.append(txn)
+
+    return result
 
 
 def _get_provider_for_hooks(

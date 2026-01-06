@@ -86,9 +86,17 @@ class Sieve:
             ):
                 continue
 
-            # Process postings
+            # Process postings - only Asset/Liability accounts (cash flow side)
             for posting in entry.postings:
                 if account_filter and not posting.account.startswith(account_filter):
+                    continue
+
+                # Only match against Asset/Liability postings (not Expense/Income)
+                # Bank statements represent cash flow, which appears on balance sheet accounts
+                if not (
+                    posting.account.startswith("Assets:")
+                    or posting.account.startswith("Liabilities:")
+                ):
                     continue
 
                 txn_posting = TxnPosting(entry, posting)
@@ -101,6 +109,15 @@ class Sieve:
                     if key not in self._ledger_index:
                         self._ledger_index[key] = []
                     self._ledger_index[key].append(txn_posting)
+
+                    # Also index by total cost if there's a price (e.g., -14 USD @@ 98 CNY)
+                    # This allows matching statement CNY amount to ledger USD posting
+                    if posting.price:
+                        total_cost = abs(posting.units.number * posting.price.number)
+                        cost_key = (entry.date, total_cost.quantize(Decimal("0.01")))
+                        if cost_key not in self._ledger_index:
+                            self._ledger_index[cost_key] = []
+                        self._ledger_index[cost_key].append(txn_posting)
 
     def match(self, transactions: Iterable[Transaction]) -> MatchResult:
         """
@@ -183,8 +200,38 @@ class Sieve:
         # Amount must match (with tolerance)
         if posting.units:
             amount_diff = abs(abs(txn.amount) - abs(posting.units.number))
-            if amount_diff > self.config.amount_tolerance:
+            # Also check total cost if there's a price (e.g., -14 USD @@ 98 CNY)
+            if posting.price:
+                total_cost = abs(posting.units.number * posting.price.number)
+                cost_diff = abs(abs(txn.amount) - total_cost)
+                # Match if either units or total cost matches
+                if (
+                    amount_diff > self.config.amount_tolerance
+                    and cost_diff > self.config.amount_tolerance
+                ):
+                    return False
+            elif amount_diff > self.config.amount_tolerance:
                 return False
+
+            # Check amount sign matches the expected direction for Asset/Liability accounts
+            # Statement: negative = income (money in), positive = expense (money out)
+            # Asset posting: positive = debit (money in), negative = credit (money out)
+            # So signs should be OPPOSITE for a valid match
+            if posting.account.startswith("Assets:"):
+                # For assets: statement income (-) should match asset inflow (+)
+                #             statement expense (+) should match asset outflow (-)
+                stmt_is_income = txn.amount < 0
+                posting_is_inflow = posting.units.number > 0
+                if stmt_is_income != posting_is_inflow:
+                    return False
+            elif posting.account.startswith("Liabilities:"):
+                # For liabilities (credit cards): credits are negative, debits are positive
+                # Statement expense (+) should match liability credit (-) = using credit card
+                # Statement income (-) should match liability debit (+) = refund to credit card
+                stmt_is_expense = txn.amount > 0
+                posting_is_credit = posting.units.number < 0
+                if stmt_is_expense != posting_is_credit:
+                    return False
 
         # Date must be within tolerance
         date_diff = abs((txn.date - bean_txn.date).days)
