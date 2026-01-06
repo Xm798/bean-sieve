@@ -223,6 +223,15 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(negate=True),
                 priority=100,
             ),
+            # 收益发放（利息收入，需要翻转为负数表示收入）
+            PresetRule(
+                rule_id="alipay_interest",
+                name="收益发放",
+                provider="alipay",
+                condition=PresetRuleCondition(description=r"收益发放"),
+                action=PresetRuleAction(negate=True),
+                priority=100,
+            ),
             # 花呗消费
             PresetRule(
                 rule_id="alipay_huabei",
