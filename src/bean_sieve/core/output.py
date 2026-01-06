@@ -73,9 +73,13 @@ class BeancountWriter:
         """Format transaction metadata."""
         meta = []
         allowed = self.output_metadata  # None means all
+        # Force output 'method' when account not matched (for manual processing)
+        force_method = not txn.account
 
         def should_include(key: str) -> bool:
             """Check if a metadata key should be included in output."""
+            if key == "method" and force_method:
+                return True
             return allowed is None or key in allowed
 
         def is_empty_value(value: str) -> bool:
