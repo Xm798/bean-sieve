@@ -31,12 +31,14 @@ class BeancountWriter:
         self,
         default_expense: str = "Expenses:FIXME",
         default_income: str = "Income:FIXME",
+        default_rebate: str = "Rebate:FIXME",
         output_metadata: list[str] | None = None,
         sort_by_time: str | None = "asc",
         default_flag: str = "!",
     ):
         self.default_expense = default_expense
         self.default_income = default_income
+        self.default_rebate = default_rebate
         # Which metadata fields to include (None = all)
         self.output_metadata = output_metadata
         # Sort by datetime: "asc", "desc", or None (no sort)
@@ -136,11 +138,23 @@ class BeancountWriter:
         amount = -txn.amount  # Statement shows outflow as positive
         postings.append(f"{account}  {amount} {txn.currency}")
 
+        # Handle rebate if present (e.g., 已优惠¥10.00)
+        rebate_str = txn.metadata.get("rebate")
+        rebate = Decimal(rebate_str) if rebate_str else Decimal("0")
+
+        if rebate:
+            # Rebate posting (income-like, negative)
+            postings.append(f"{self.default_rebate}  -{rebate} {txn.currency}")
+            # Contra account includes rebate (total expense = paid + rebate)
+            contra_amount = txn.amount + rebate
+        else:
+            contra_amount = txn.amount
+
         # Contra account (expense/income)
         contra = txn.contra_account
         if not contra:
             contra = self.default_expense if txn.is_expense else self.default_income
-        postings.append(f"{contra}  {txn.amount} {txn.currency}")
+        postings.append(f"{contra}  {contra_amount} {txn.currency}")
 
         return postings
 
@@ -160,30 +174,9 @@ class BeancountWriter:
             output.write(f"; Source: {source_info}\n")
         output.write("; " + "=" * 60 + "\n\n")
 
-        # Group transactions by match source
-        fixme_txns = [t for t in transactions if t.match_source == MatchSource.FIXME]
-        rule_txns = [t for t in transactions if t.match_source == MatchSource.RULE]
-        predict_txns = [
-            t for t in transactions if t.match_source == MatchSource.PREDICT
-        ]
-        unmatched = [t for t in transactions if t.match_source is None]
-
-        # Write each group
-        if rule_txns:
-            output.write(f"; --- Rule matched ({len(rule_txns)}) ---\n\n")
-            for txn in _sort_transactions(rule_txns, self.sort_by_time):
-                output.write(self.format_transaction(txn) + "\n\n")
-
-        if predict_txns:
-            output.write(f"; --- ML predicted ({len(predict_txns)}) ---\n\n")
-            for txn in _sort_transactions(predict_txns, self.sort_by_time):
-                output.write(self.format_transaction(txn) + "\n\n")
-
-        if fixme_txns or unmatched:
-            count = len(fixme_txns) + len(unmatched)
-            output.write(f"; --- Needs review ({count}) ---\n\n")
-            for txn in _sort_transactions(fixme_txns + unmatched, self.sort_by_time):
-                output.write(self.format_transaction(txn) + "\n\n")
+        # Output all transactions sorted by time
+        for txn in _sort_transactions(transactions, self.sort_by_time):
+            output.write(self.format_transaction(txn) + "\n\n")
 
         return output.getvalue()
 
