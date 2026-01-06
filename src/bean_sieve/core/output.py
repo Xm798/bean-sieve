@@ -141,10 +141,11 @@ class BeancountWriter:
         # Handle rebate if present (e.g., 已优惠¥10.00)
         rebate_str = txn.metadata.get("rebate")
         rebate = Decimal(rebate_str) if rebate_str else Decimal("0")
+        rebate_currency = txn.metadata.get("rebate_currency") or txn.currency
 
         if rebate:
             # Rebate posting (income-like, negative)
-            postings.append(f"{self.default_rebate}  -{rebate} {txn.currency}")
+            postings.append(f"{self.default_rebate}  -{rebate} {rebate_currency}")
             # Contra account includes rebate (total expense = paid + rebate)
             contra_amount = txn.amount + rebate
         else:
