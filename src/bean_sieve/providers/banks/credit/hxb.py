@@ -151,14 +151,14 @@ class HXBCreditProvider(BaseProvider):
         context: ReconcileContext,
     ) -> list[Transaction]:
         """
-        Set account based on card_suffix from config.providers.hxb_credit.card_accounts.
+        Set account based on card_suffix from config.providers.hxb_credit.accounts.
         """
         provider_config = self._get_provider_config(context)
-        card_accounts = provider_config.card_accounts
+        accounts = provider_config.accounts
 
         for txn in transactions:
-            if txn.card_suffix and txn.card_suffix in card_accounts:
-                txn.account = card_accounts[txn.card_suffix]
+            if txn.card_suffix and txn.card_suffix in accounts:
+                txn.account = accounts[txn.card_suffix]
 
         return transactions
 
@@ -200,14 +200,14 @@ class HXBCreditProvider(BaseProvider):
             return ""
 
         provider_config = self._get_provider_config(context)
-        card_accounts = provider_config.card_accounts
+        accounts = provider_config.accounts
         bill_account = provider_config.bill_account or DEFAULT_BILL_ACCOUNT
         end_date = context.date_range[1]
 
         # Calculate per-card totals from processed transactions
         card_totals: dict[str, Decimal] = defaultdict(Decimal)
         for txn in result.processed:
-            if txn.account and txn.account in card_accounts.values():
+            if txn.account and txn.account in accounts.values():
                 # Extract card suffix from account name
                 card = self._extract_card_from_account(txn.account)
                 if card:
@@ -222,7 +222,7 @@ class HXBCreditProvider(BaseProvider):
 
         total = Decimal("0")
         for card in sorted(card_totals.keys()):
-            account = card_accounts.get(card, f"Liabilities:Credit:HXB:UNKNOWN-{card}")
+            account = accounts.get(card, f"Liabilities:Credit:HXB:UNKNOWN-{card}")
             amount = card_totals[card]
             total += amount
             lines.append(f"  {account:<50} {amount:>10.2f} CNY")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import tempfile
+import warnings
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -28,7 +29,7 @@ class PABDebitProvider(BaseProvider):
     provider_id = "pab_debit"
     provider_name = "平安银行借记卡"
     supported_formats = [".xls", ".xlsx"]
-    filename_keywords = ["平安银行", "平安借记卡"]
+    filename_pattern = re.compile(r"平安.*借记|借记.*平安")
     content_keywords = []  # Binary file, can't check content
 
     # Column indices (0-based, after header row)
@@ -62,13 +63,19 @@ class PABDebitProvider(BaseProvider):
 
     def _load_workbook(self, file_path: Path):
         """Load workbook, handling .xls files that are actually xlsx format."""
-        if file_path.suffix.lower() == ".xls":
-            # Some .xls files are actually xlsx format internally
-            # Copy to temp file with .xlsx extension for openpyxl
-            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-                shutil.copy(file_path, tmp.name)
-                return load_workbook(tmp.name)
-        return load_workbook(file_path)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Workbook contains no default style",
+                category=UserWarning,
+            )
+            if file_path.suffix.lower() == ".xls":
+                # Some .xls files are actually xlsx format internally
+                # Copy to temp file with .xlsx extension for openpyxl
+                with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+                    shutil.copy(file_path, tmp.name)
+                    return load_workbook(tmp.name)
+            return load_workbook(file_path)
 
     def _extract_card_suffix(self, sheet) -> str | None:
         """Extract card suffix from the first row account info."""
