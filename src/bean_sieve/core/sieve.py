@@ -119,9 +119,19 @@ class Sieve:
                             self._ledger_index[cost_key] = []
                         self._ledger_index[cost_key].append(txn_posting)
 
-    def match(self, transactions: Iterable[Transaction]) -> MatchResult:
+    def match(
+        self,
+        transactions: Iterable[Transaction],
+        covered_accounts: list[str] | None = None,
+    ) -> MatchResult:
         """
         Match statement transactions against loaded ledger entries.
+
+        Args:
+            transactions: Statement transactions to match
+            covered_accounts: Optional list of accounts to consider for Extra calculation.
+                If provided, only unmatched ledger entries in these accounts are reported
+                as Extra. If None, all unmatched entries are reported.
 
         Returns:
             MatchResult with matched pairs, missing, and extra transactions
@@ -140,11 +150,17 @@ class Sieve:
                 missing.append(txn)
 
         # Find extra ledger entries (not matched to any statement transaction)
-        extra = [
-            entry
-            for entry in self._ledger_entries
-            if id(entry) not in used_ledger_entries
-        ]
+        # If covered_accounts is specified, only consider entries in those accounts
+        extra = []
+        for entry in self._ledger_entries:
+            if id(entry) in used_ledger_entries:
+                continue
+            if (
+                covered_accounts is not None
+                and entry.posting.account not in covered_accounts
+            ):
+                continue
+            extra.append(entry)
 
         return MatchResult(matched=matched, missing=missing, extra=extra)
 

@@ -75,9 +75,11 @@ class PredictorConfig(BaseModel):
 class ProviderConfig(BaseModel):
     """Provider-specific configuration."""
 
-    # Card suffix (last 4 digits) -> account name mapping
-    # Used by credit card providers like HXB to map transactions to specific card accounts
-    card_accounts: dict[str, str] = Field(default_factory=dict)
+    # Pattern -> account mapping for this provider
+    # - Payment platforms: pattern matches metadata['method'] (e.g., "余额" -> Assets:Wallet:Alipay:Balance)
+    # - Bank cards: pattern matches card_suffix (e.g., "6666" -> Assets:Bank:PAB:6666)
+    # These accounts also define the coverage scope for Extra calculation during reconciliation
+    accounts: dict[str, str] = Field(default_factory=dict)
 
     # Bill account for credit card settlements
     bill_account: str = ""

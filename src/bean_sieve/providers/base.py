@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import email
 import quopri
+import re
 from abc import ABC, abstractmethod
 from email.header import decode_header
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup
 
+from ..config import Config
 from ..core.types import ReconcileContext, ReconcileResult, Transaction
 
 if TYPE_CHECKING:
@@ -47,6 +49,7 @@ class BaseProvider(ABC):
         pass
 
     # Keywords for file detection (override in subclasses)
+    filename_pattern: re.Pattern | None = None  # e.g., re.compile(r"平安.*借记")
     filename_keywords: list[str] = []  # e.g., ["微信", "wechat"]
     content_keywords: list[str] = []  # e.g., ["微信支付账单明细"]
 
@@ -64,8 +67,8 @@ class BaseProvider(ABC):
         if file_path.suffix.lower() not in cls.supported_formats:
             return False
 
-        # If keywords are defined, require match
-        if cls.filename_keywords or cls.content_keywords:
+        # If pattern/keywords are defined, require match
+        if cls.filename_pattern or cls.filename_keywords or cls.content_keywords:
             return cls._match_filename(file_path) or cls._match_content(file_path)
 
         # No keywords defined, extension match is enough
@@ -73,7 +76,10 @@ class BaseProvider(ABC):
 
     @classmethod
     def _match_filename(cls, file_path: Path) -> bool:
-        """Check if filename contains any keyword."""
+        """Check if filename matches pattern or contains any keyword."""
+        # Pattern takes priority over keywords
+        if cls.filename_pattern:
+            return bool(cls.filename_pattern.search(file_path.name))
         if not cls.filename_keywords:
             return False
         filename_lower = file_path.name.lower()
@@ -168,6 +174,32 @@ class BaseProvider(ABC):
             Modified output content
         """
         return content
+
+    # === Coverage Scope ===
+
+    def get_covered_accounts(
+        self,
+        transactions: list[Transaction],  # noqa: ARG002
+        config: Config,
+    ) -> list[str]:
+        """
+        Return list of accounts covered by this provider's statement.
+
+        Used to calculate Extra entries during reconciliation - only ledger
+        entries in these accounts are considered as potential "extra" entries.
+
+        Default implementation returns accounts from config.providers[provider_id].accounts.
+        Override in subclasses for custom logic.
+
+        Args:
+            transactions: Parsed transactions from this provider
+            config: Bean-Sieve configuration
+
+        Returns:
+            List of account names (e.g., ["Assets:Bank:PAB:6666"])
+        """
+        provider_config = config.get_provider_config(self.provider_id)
+        return list(provider_config.accounts.values())
 
     # === Preset Rules ===
 

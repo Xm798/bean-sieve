@@ -104,6 +104,7 @@ def reconcile(
     use_predictor: bool = False,
     ledger_path: Path | None = None,
     preset_rules: list[PresetRule] | None = None,
+    covered_accounts: list[str] | None = None,
 ) -> ReconcileResult:
     """
     Reconcile transactions against ledger and apply rules.
@@ -115,6 +116,7 @@ def reconcile(
         use_predictor: Whether to use ML prediction for unmapped accounts
         ledger_path: Required if use_predictor is True
         preset_rules: Preset rules from provider for automatic account lookup
+        covered_accounts: Accounts covered by this statement for Extra calculation
 
     Returns:
         ReconcileResult with matched, missing, and processed transactions
@@ -122,7 +124,7 @@ def reconcile(
     config = config or Config()
 
     # Match against ledger
-    match_result = sieve.match(transactions)
+    match_result = sieve.match(transactions, covered_accounts=covered_accounts)
 
     # Process missing transactions
     missing = list(match_result.missing)
@@ -264,6 +266,9 @@ def full_reconcile(
     # Apply negate rules BEFORE matching (sign affects matching logic)
     transactions = _apply_negate_rules(transactions, preset_rules)
 
+    # Collect covered accounts from providers
+    covered_accounts = _collect_covered_accounts(transactions, provider_id, config)
+
     # Load ledger
     sieve = load_ledger(
         ledger_path,
@@ -272,7 +277,7 @@ def full_reconcile(
         date_tolerance=config.defaults.date_tolerance,
     )
 
-    # Reconcile (with preset rules)
+    # Reconcile (with preset rules and covered accounts)
     result = reconcile(
         transactions,
         sieve,
@@ -280,6 +285,7 @@ def full_reconcile(
         use_predictor=use_predictor,
         ledger_path=ledger_path if use_predictor else None,
         preset_rules=preset_rules,
+        covered_accounts=covered_accounts if covered_accounts else None,
     )
 
     # Post-reconcile hook
@@ -391,6 +397,38 @@ def _apply_negate_rules(
         result.append(txn)
 
     return result
+
+
+def _collect_covered_accounts(
+    transactions: list[Transaction],
+    provider_id: str | None,
+    config: Config,
+) -> list[str]:
+    """
+    Collect covered accounts from all providers involved.
+
+    Returns the union of accounts from each provider's get_covered_accounts().
+    """
+    covered: set[str] = set()
+
+    if provider_id:
+        provider = get_provider(provider_id)
+        if provider:
+            covered.update(provider.get_covered_accounts(transactions, config))
+    else:
+        # Collect from all unique providers
+        from collections import defaultdict
+
+        by_provider: dict[str, list[Transaction]] = defaultdict(list)
+        for txn in transactions:
+            by_provider[txn.provider].append(txn)
+
+        for pid, txns in by_provider.items():
+            provider = get_provider(pid)
+            if provider:
+                covered.update(provider.get_covered_accounts(txns, config))
+
+    return list(covered)
 
 
 def _get_provider_for_hooks(
