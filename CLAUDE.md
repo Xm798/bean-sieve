@@ -22,6 +22,9 @@ uv run pytest -k "test_name"       # by name pattern
 uv run ruff check src/ tests/
 uv run ruff format src/ tests/
 
+# Type checking
+uv run pyright src/
+
 # CLI usage
 uv run bean-sieve reconcile <files> -l <ledger> -o pending.bean
 uv run bean-sieve parse <files> -f table
@@ -111,7 +114,7 @@ providers:
 - **Matching**: `Transaction.match_key` uses `order_id` if available, else `(date, abs_amount, card_suffix)`
 - **Provider detection**: Checks extension first, then `filename_keywords`, then `content_keywords`
 - **Rules priority**: Rules earlier in the YAML have higher priority
-- **Formatting and linting**: MUST run `uv run ruff format` and `uv run ruff check` after modifying code, and fix all issues
+- **Formatting and linting**: MUST run `uv run ruff format`, `uv run ruff check`, and `uv run pyright src/` after modifying code, and fix all issues
 - **Config sync**: When modifying `bean-sieve.example.yaml`, check if user's `bean-sieve.yaml` needs corresponding update. Also update JSON schema `bean-sieve.schema.json` if config structure changes.
 - **Doc sync**: If code changes deviate from this CLAUDE.md, update this file accordingly
 - **Design docs**: If design changes, update corresponding docs in `external/docs/`

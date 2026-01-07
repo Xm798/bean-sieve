@@ -101,6 +101,8 @@ class WechatProvider(BaseProvider):
 
         wb = load_workbook(file_path, read_only=True, data_only=True)
         ws = wb.active
+        if ws is None:
+            raise ValueError(f"No active sheet in {file_path}")
 
         for line_num, row in enumerate(ws.iter_rows(values_only=True)):
             # Skip header lines

@@ -53,7 +53,7 @@ class SmartPredictor:
 
             entries, errors, options = loader.load_file(str(self.ledger_path))
             self._model = PredictPostings()
-            self._model.train(entries)
+            self._model.train(entries)  # type: ignore[attr-defined]
             return True
         except Exception:
             return False

@@ -445,6 +445,7 @@ def _interactive_select(methods, accounts, closed: set[str]) -> list[tuple[str, 
             continue
         else:
             # Strip closed marker before saving
+            assert isinstance(selected, str)
             account = selected.removesuffix(CLOSED_MARKER)
             mappings.append((method.raw, account))
             console.print(

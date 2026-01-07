@@ -49,6 +49,8 @@ class PABDebitProvider(BaseProvider):
         """Parse PAB debit card Excel statement."""
         wb = self._load_workbook(file_path)
         sheet = wb.active
+        if sheet is None:
+            raise ValueError(f"No active sheet in {file_path}")
 
         transactions = []
         card_suffix = self._extract_card_suffix(sheet)
