@@ -213,6 +213,10 @@ class Sieve:
         posting = entry.posting
         bean_txn = entry.txn
 
+        # Account constraint: if transaction has a target account, must match exactly
+        if txn.account and posting.account != txn.account:
+            return False
+
         # Amount must match (with tolerance)
         if posting.units:
             amount_diff = abs(abs(txn.amount) - abs(posting.units.number))
