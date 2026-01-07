@@ -8,6 +8,7 @@ import quopri
 import re
 from abc import ABC, abstractmethod
 from email.header import decode_header
+from email.message import Message
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -232,7 +233,7 @@ class BaseProvider(ABC):
 
         return self._extract_html_from_message(msg)
 
-    def _extract_html_from_message(self, msg: email.message.Message) -> str:
+    def _extract_html_from_message(self, msg: Message) -> str:
         """Extract HTML from email message object."""
         if msg.is_multipart():
             for part in msg.walk():
@@ -249,7 +250,7 @@ class BaseProvider(ABC):
 
         return ""
 
-    def _decode_payload(self, part: email.message.Message) -> str:
+    def _decode_payload(self, part: Message) -> str:
         """Decode email payload with proper encoding handling."""
         payload = part.get_payload(decode=False)
         encoding = part.get("Content-Transfer-Encoding", "").lower()
@@ -257,6 +258,9 @@ class BaseProvider(ABC):
 
         if isinstance(payload, bytes):
             return payload.decode(charset, errors="replace")
+
+        if not isinstance(payload, str):
+            return ""
 
         if encoding == "base64":
             try:
@@ -274,7 +278,7 @@ class BaseProvider(ABC):
 
         return payload
 
-    def decode_subject(self, msg: email.message.Message) -> str:
+    def decode_subject(self, msg: Message) -> str:
         """Decode email subject with proper encoding handling."""
         subject = msg.get("Subject", "")
         if not subject:

@@ -104,7 +104,7 @@ class Sieve:
 
                 # Build index for fast lookup
                 # Index by (date, abs_amount) for fuzzy matching
-                if posting.units:
+                if posting.units and posting.units.number is not None:
                     key = (entry.date, abs(posting.units.number))
                     if key not in self._ledger_index:
                         self._ledger_index[key] = []
@@ -112,7 +112,7 @@ class Sieve:
 
                     # Also index by total cost if there's a price (e.g., -14 USD @@ 98 CNY)
                     # This allows matching statement CNY amount to ledger USD posting
-                    if posting.price:
+                    if posting.price and posting.price.number is not None:
                         total_cost = abs(posting.units.number * posting.price.number)
                         cost_key = (entry.date, total_cost.quantize(Decimal("0.01")))
                         if cost_key not in self._ledger_index:
@@ -218,11 +218,12 @@ class Sieve:
             return False
 
         # Amount must match (with tolerance)
-        if posting.units:
-            amount_diff = abs(abs(txn.amount) - abs(posting.units.number))
+        if posting.units and posting.units.number is not None:
+            units_number = posting.units.number
+            amount_diff = abs(abs(txn.amount) - abs(units_number))
             # Also check total cost if there's a price (e.g., -14 USD @@ 98 CNY)
-            if posting.price:
-                total_cost = abs(posting.units.number * posting.price.number)
+            if posting.price and posting.price.number is not None:
+                total_cost = abs(units_number * posting.price.number)
                 cost_diff = abs(abs(txn.amount) - total_cost)
                 # Match if either units or total cost matches
                 if (
@@ -241,7 +242,7 @@ class Sieve:
                 # For assets: statement income (-) should match asset inflow (+)
                 #             statement expense (+) should match asset outflow (-)
                 stmt_is_income = txn.amount < 0
-                posting_is_inflow = posting.units.number > 0
+                posting_is_inflow = units_number > 0
                 if stmt_is_income != posting_is_inflow:
                     return False
             elif posting.account.startswith("Liabilities:"):
@@ -249,7 +250,7 @@ class Sieve:
                 # Statement expense (+) should match liability credit (-) = using credit card
                 # Statement income (-) should match liability debit (+) = refund to credit card
                 stmt_is_expense = txn.amount > 0
-                posting_is_credit = posting.units.number < 0
+                posting_is_credit = units_number < 0
                 if stmt_is_expense != posting_is_credit:
                     return False
 

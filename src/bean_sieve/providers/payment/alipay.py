@@ -289,7 +289,7 @@ class AlipayProvider(BaseProvider):
         first = txns[0]
 
         # Sum amounts
-        total_amount = sum(t.amount for t in txns)
+        total_amount = sum((t.amount for t in txns), Decimal(0))
 
         # Merge payees (unique, preserve order)
         payees = []
