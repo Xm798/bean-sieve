@@ -251,6 +251,13 @@ def full_reconcile(
     # Parse statements
     transactions = parse_statements(statement_paths, provider_id)
 
+    # Infer date range from transactions if not explicitly provided
+    # This ensures Extra calculation only considers ledger entries within statement scope
+    if not date_range and transactions:
+        min_date = min(t.date for t in transactions)
+        max_date = max(t.date for t in transactions)
+        date_range = (min_date, max_date)
+
     # Filter by date range if specified
     if date_range:
         transactions = [
@@ -415,6 +422,7 @@ def _set_target_accounts(
     Set target account for transactions based on provider config.
 
     For bank card providers: use card_suffix to look up in providers.xxx.accounts
+    For payment platforms: use method to look up in providers.xxx.accounts
     This constrains matching to only consider the correct ledger account.
     """
     result = []
@@ -426,10 +434,17 @@ def _set_target_accounts(
 
         # Try to resolve account from provider config
         provider_config = config.get_provider_config(txn.provider)
+
+        # Try card_suffix first (for bank card providers)
         if txn.card_suffix and txn.card_suffix in provider_config.accounts:
             txn = txn.model_copy(
                 update={"account": provider_config.accounts[txn.card_suffix]}
             )
+        # Try method (for payment platform providers like Alipay/WeChat)
+        elif (
+            method := txn.metadata.get("method")
+        ) and method in provider_config.accounts:
+            txn = txn.model_copy(update={"account": provider_config.accounts[method]})
 
         result.append(txn)
 

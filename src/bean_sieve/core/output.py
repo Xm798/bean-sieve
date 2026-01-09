@@ -206,7 +206,9 @@ class BeancountWriter:
                 txn = entry.txn
                 posting = entry.posting
                 amount = posting.units.number if posting.units else "?"
-                output.write(f";   - {txn.date} {amount} @ {posting.account}\n")
+                # Build description: "payee | narration" or just narration
+                desc = f"{txn.payee} | {txn.narration}" if txn.payee else txn.narration
+                output.write(f';   - {txn.date} {amount} {posting.account} "{desc}"\n')
             if len(result.match_result.extra) > 10:
                 output.write(
                     f";   ... and {len(result.match_result.extra) - 10} more\n"

@@ -339,6 +339,6 @@ class TestWechatCashWithdraw:
 
         assert len(transactions) == 1
         txn = transactions[0]
-        # Cash withdraw should be income (negative amount)
-        assert txn.amount == Decimal("-100.00")
-        assert txn.is_income
+        # Cash withdraw should be expense (money leaving the account)
+        assert txn.amount == Decimal("100.00")
+        assert txn.is_expense

@@ -221,11 +221,22 @@ class Sieve:
         if posting.units and posting.units.number is not None:
             units_number = posting.units.number
             amount_diff = abs(abs(txn.amount) - abs(units_number))
-            # Also check total cost if there's a price (e.g., -14 USD @@ 98 CNY)
-            if posting.price and posting.price.number is not None:
+
+            # Check currency match or price conversion
+            if posting.units.currency != txn.currency:
+                # Different currency - must have price and total cost must match
+                if posting.price and posting.price.number is not None:
+                    total_cost = abs(units_number * posting.price.number)
+                    cost_diff = abs(abs(txn.amount) - total_cost)
+                    if cost_diff > self.config.amount_tolerance:
+                        return False
+                else:
+                    # No price conversion, currencies don't match
+                    return False
+            elif posting.price and posting.price.number is not None:
+                # Same currency with price - check total cost as alternative
                 total_cost = abs(units_number * posting.price.number)
                 cost_diff = abs(abs(txn.amount) - total_cost)
-                # Match if either units or total cost matches
                 if (
                     amount_diff > self.config.amount_tolerance
                     and cost_diff > self.config.amount_tolerance
