@@ -39,6 +39,7 @@ class WechatTxType(str, Enum):
     INTO_CASH = "转入零钱通"
     CASH_IN = "零钱充值"
     CASH_WITHDRAW = "零钱提现"
+    MERCHANT_WITHDRAW = "经营账户提现"
     CREDIT_CARD_REFUND = "信用卡还款"
     BUY_LICAITONG = "购买理财通"
     CASH_TO_LOOSE_CHANGE = "零钱通转出-到零钱"
@@ -197,9 +198,12 @@ class WechatProvider(BaseProvider):
         # Parse order type
         order_type = self._get_order_type(order_type_str)
         if order_type == WechatOrderType.NEUTRAL:
-            # For cash withdraw, treat as income (money coming to your wallet)
-            if tx_type_str == WechatTxType.CASH_WITHDRAW.value:
-                order_type = WechatOrderType.INCOME
+            # For withdrawals, treat as expense (money leaving the account)
+            if tx_type_str in (
+                WechatTxType.CASH_WITHDRAW.value,
+                WechatTxType.MERCHANT_WITHDRAW.value,
+            ):
+                order_type = WechatOrderType.EXPENSE
             else:
                 return None
 
