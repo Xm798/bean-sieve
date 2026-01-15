@@ -97,23 +97,6 @@ class TestBaseProviderHooks:
         result = provider.pre_reconcile(sample_transactions, sample_context)
         assert result == sample_transactions
 
-    def test_default_post_reconcile_returns_unchanged(
-        self, sample_result, sample_context
-    ):
-        """Test that default post_reconcile returns result unchanged."""
-
-        class TestProvider(BaseProvider):
-            provider_id = "test"
-            provider_name = "Test"
-            supported_formats = [".csv"]
-
-            def parse(self, _file_path: Path) -> list[Transaction]:
-                return []
-
-        provider = TestProvider()
-        result = provider.post_reconcile(sample_result, sample_context)
-        assert result == sample_result
-
     def test_default_post_output_returns_unchanged(self, sample_result, sample_context):
         """Test that default post_output returns content unchanged."""
 
@@ -175,45 +158,6 @@ class TestCustomHooks:
 
         result = provider.pre_reconcile(transactions, sample_context)
         assert "transformed" in result[0].tags
-
-    def test_custom_post_reconcile_enriches_result(self, sample_context):
-        """Test that custom post_reconcile can enrich result."""
-
-        class EnrichingProvider(BaseProvider):
-            provider_id = "enriching"
-            provider_name = "Enriching"
-            supported_formats = [".csv"]
-
-            def parse(self, _file_path: Path) -> list[Transaction]:
-                return []
-
-            def post_reconcile(
-                self,
-                result: ReconcileResult,
-                _context: ReconcileContext,
-            ) -> ReconcileResult:
-                # Set a specific account for all processed transactions
-                for txn in result.processed:
-                    if not txn.account:
-                        txn.account = "Assets:Bank:Default"
-                return result
-
-        provider = EnrichingProvider()
-        transactions = [
-            Transaction(
-                date=date(2025, 1, 15),
-                amount=Decimal("100.00"),
-                currency="CNY",
-                description="Test",
-            ),
-        ]
-        result = ReconcileResult(
-            match_result=MatchResult(matched=[], missing=transactions, extra=[]),
-            processed=transactions,
-        )
-
-        enriched = provider.post_reconcile(result, sample_context)
-        assert enriched.processed[0].account == "Assets:Bank:Default"
 
     def test_custom_post_output_appends_content(self, sample_context):
         """Test that custom post_output can append content."""

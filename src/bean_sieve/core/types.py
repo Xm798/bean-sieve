@@ -45,7 +45,7 @@ class Transaction(BaseModel):
 
     # Transaction identifiers
     payee: str | None = None
-    card_suffix: str | None = None
+    card_last4: str | None = None
     order_id: str | None = None
 
     # Source information
@@ -70,7 +70,7 @@ class Transaction(BaseModel):
         """Key for deduplication matching (prefers order_id)."""
         if self.order_id:
             return (self.order_id,)
-        return (self.date, abs(self.amount), self.card_suffix)
+        return (self.date, abs(self.amount), self.card_last4)
 
     @computed_field
     @property
@@ -102,7 +102,7 @@ class Transaction(BaseModel):
             "currency": self.currency,
             "description": self.description,
             "payee": self.payee,
-            "card_suffix": self.card_suffix,
+            "card_last4": self.card_last4,
             "order_id": self.order_id,
             "provider": self.provider,
             "source_file": str(self.source_file) if self.source_file else None,
@@ -133,7 +133,7 @@ class Transaction(BaseModel):
             currency=data["currency"],
             description=data["description"],
             payee=data.get("payee"),
-            card_suffix=data.get("card_suffix"),
+            card_last4=data.get("card_last4"),
             order_id=data.get("order_id"),
             provider=data.get("provider", ""),
             source_file=Path(data["source_file"]) if data.get("source_file") else None,

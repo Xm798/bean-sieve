@@ -559,7 +559,7 @@ def _output_csv(transactions, output_path):
     import csv
     import sys
 
-    fieldnames = ["date", "amount", "currency", "description", "payee", "card_suffix"]
+    fieldnames = ["date", "amount", "currency", "description", "payee", "card_last4"]
 
     @contextlib.contextmanager
     def open_output():
@@ -580,7 +580,7 @@ def _output_csv(transactions, output_path):
                     "currency": txn.currency,
                     "description": txn.description,
                     "payee": txn.payee or "",
-                    "card_suffix": txn.card_suffix or "",
+                    "card_last4": txn.card_last4 or "",
                 }
             )
 

@@ -160,7 +160,7 @@ class RulesEngine:
                     return False
 
         # Card suffix match
-        if cond.card_suffix and txn.card_suffix != cond.card_suffix:
+        if cond.card_last4 and txn.card_last4 != cond.card_last4:
             return False
 
         # Provider match

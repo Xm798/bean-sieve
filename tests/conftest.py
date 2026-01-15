@@ -25,7 +25,7 @@ def sample_transaction():
         currency="CNY",
         description="支付宝-瑞幸咖啡",
         payee="瑞幸咖啡",
-        card_suffix="1234",
+        card_last4="1234",
         provider="hxb_credit",
     )
 

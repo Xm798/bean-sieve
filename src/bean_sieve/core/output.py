@@ -139,6 +139,10 @@ class BeancountWriter:
         amount = -txn.amount  # Statement shows outflow as positive
         postings.append(f"{account}  {amount} {txn.currency}")
 
+        # Add card_last4 as posting-level metadata if present
+        if txn.card_last4:
+            postings.append(f'  card: "{txn.card_last4}"')
+
         # Handle rebate if present (e.g., 已优惠¥10.00)
         rebate_str = txn.metadata.get("rebate")
         rebate = Decimal(rebate_str) if rebate_str else Decimal("0")

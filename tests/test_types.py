@@ -52,7 +52,7 @@ class TestTransaction:
             amount=Decimal("99.00"),
             currency="CNY",
             description="Test",
-            card_suffix="1234",
+            card_last4="1234",
         )
         assert txn.match_key == (date(2025, 1, 4), Decimal("99.00"), "1234")
 

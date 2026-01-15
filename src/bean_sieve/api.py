@@ -217,7 +217,7 @@ def full_reconcile(
     Complete reconciliation workflow.
 
     This is the main entry point for the reconcile command.
-    Supports provider lifecycle hooks (pre_reconcile, post_reconcile, post_output).
+    Supports provider lifecycle hooks (pre_reconcile, post_output).
 
     Args:
         statement_paths: List of statement files to process
@@ -302,10 +302,6 @@ def full_reconcile(
         preset_rules=preset_rules,
         covered_accounts=covered_accounts if covered_accounts else None,
     )
-
-    # Post-reconcile hook
-    if provider:
-        result = provider.post_reconcile(result, context)
 
     # Generate output
     if output_path:
@@ -421,7 +417,7 @@ def _set_target_accounts(
     """
     Set target account for transactions based on provider config.
 
-    For bank card providers: use card_suffix to look up in providers.xxx.accounts
+    For bank card providers: use card_last4 to look up in providers.xxx.accounts
     For payment platforms: use method to look up in providers.xxx.accounts
     This constrains matching to only consider the correct ledger account.
     """
@@ -435,10 +431,10 @@ def _set_target_accounts(
         # Try to resolve account from provider config
         provider_config = config.get_provider_config(txn.provider)
 
-        # Try card_suffix first (for bank card providers)
-        if txn.card_suffix and txn.card_suffix in provider_config.accounts:
+        # Try card_last4 first (for bank card providers)
+        if txn.card_last4 and txn.card_last4 in provider_config.accounts:
             txn = txn.model_copy(
-                update={"account": provider_config.accounts[txn.card_suffix]}
+                update={"account": provider_config.accounts[txn.card_last4]}
             )
         # Try method (for payment platform providers like Alipay/WeChat)
         elif (
@@ -468,7 +464,7 @@ def _deduplicate_cross_statements(
     Pairing criteria:
     - Same date, amount, target account
     - Time within 5 minutes (if both have time), or same day (if no time)
-    - One is direct (card_suffix in provider's accounts), one is indirect (method)
+    - One is direct (card_last4 in provider's accounts), one is indirect (method)
     """
     if len(transactions) <= 1:
         return transactions
@@ -480,7 +476,7 @@ def _deduplicate_cross_statements(
     for txn in transactions:
         priority = _get_dedup_priority(txn, config)
         if priority >= 100:
-            # Direct record: card_suffix matches provider's accounts
+            # Direct record: card_last4 matches provider's accounts
             direct_records.append(txn)
         elif priority <= 10:
             # Indirect record: payment platform using external method
@@ -541,13 +537,13 @@ def _resolve_target_account(txn: Transaction, config: Config) -> str | None:
     """
     Resolve the target account for a transaction.
 
-    For bank card providers: use card_suffix to look up in providers.xxx.accounts
+    For bank card providers: use card_last4 to look up in providers.xxx.accounts
     For payment platforms: use metadata['method'] to look up in account_mappings
     """
     # First try provider's accounts (for bank card providers)
     provider_config = config.get_provider_config(txn.provider)
-    if txn.card_suffix and txn.card_suffix in provider_config.accounts:
-        return provider_config.accounts[txn.card_suffix]
+    if txn.card_last4 and txn.card_last4 in provider_config.accounts:
+        return provider_config.accounts[txn.card_last4]
 
     # Try metadata['method'] in account_mappings (for payment platforms)
     method = txn.metadata.get("method", "")
@@ -556,11 +552,11 @@ def _resolve_target_account(txn: Transaction, config: Config) -> str | None:
             if mapping.pattern in method or method in mapping.pattern:
                 return mapping.account
 
-    # Try card_suffix in all provider accounts
-    if txn.card_suffix:
+    # Try card_last4 in all provider accounts
+    if txn.card_last4:
         for pconfig in config.providers.values():
-            if txn.card_suffix in pconfig.accounts:
-                return pconfig.accounts[txn.card_suffix]
+            if txn.card_last4 in pconfig.accounts:
+                return pconfig.accounts[txn.card_last4]
 
     return None
 
@@ -570,12 +566,12 @@ def _get_dedup_priority(txn: Transaction, config: Config) -> int:
     Get deduplication priority for a transaction.
 
     Higher priority = more likely to be kept.
-    Direct records (card_suffix matches provider's accounts) have higher priority.
+    Direct records (card_last4 matches provider's accounts) have higher priority.
     """
     provider_config = config.get_provider_config(txn.provider)
 
-    # Direct record: card_suffix is in this provider's accounts
-    if txn.card_suffix and txn.card_suffix in provider_config.accounts:
+    # Direct record: card_last4 is in this provider's accounts
+    if txn.card_last4 and txn.card_last4 in provider_config.accounts:
         return 100
 
     # Indirect record: method points to another account (via account_mappings)

@@ -46,7 +46,7 @@ class PaymentMethod:
     raw: str  # Original text from statement
     count: int  # Number of occurrences
     bank_hint: str | None = None  # Extracted bank name
-    card_suffix: str | None = None  # Extracted card suffix (last 4 digits)
+    card_last4: str | None = None  # Extracted card suffix (last 4 digits)
     is_credit: bool | None = None  # True if credit card, False if debit
 
 
@@ -94,7 +94,7 @@ def _parse_method_info(pm: PaymentMethod) -> None:
     # Extract card suffix (last 4 digits in parentheses)
     suffix_match = re.search(r"\((\d{4})\)", pm.raw)
     if suffix_match:
-        pm.card_suffix = suffix_match.group(1)
+        pm.card_last4 = suffix_match.group(1)
 
     # Detect if credit card
     if "信用卡" in pm.raw or "贷记卡" in pm.raw:
@@ -172,7 +172,7 @@ def smart_sort_accounts(
         acc_lower = account.lower()
 
         # Match card suffix in account name
-        if method.card_suffix and method.card_suffix in account:
+        if method.card_last4 and method.card_last4 in account:
             s += 100
 
         # Match bank keywords

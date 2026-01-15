@@ -271,9 +271,9 @@ class Sieve:
             return False
 
         # Card suffix must match if present in both
-        if txn.card_suffix:
-            meta_card = bean_txn.meta.get("card_suffix") or bean_txn.meta.get("card")
-            if meta_card and meta_card != txn.card_suffix:
+        if txn.card_last4:
+            meta_card = bean_txn.meta.get("card_last4") or bean_txn.meta.get("card")
+            if meta_card and meta_card != txn.card_last4:
                 return False
 
         return True
