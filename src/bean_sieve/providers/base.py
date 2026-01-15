@@ -132,27 +132,6 @@ class BaseProvider(ABC):
         """
         return transactions
 
-    def post_reconcile(
-        self,
-        result: ReconcileResult,
-        context: ReconcileContext,  # noqa: ARG002
-    ) -> ReconcileResult:
-        """
-        Hook: Called after reconciliation.
-
-        Use this to transform or enrich the reconcile result.
-        For example, HXB provider uses this to match Bill transactions
-        to specific card accounts. Default implementation returns unchanged.
-
-        Args:
-            result: Reconciliation result with matched/missing transactions
-            context: Reconciliation context with config, paths, etc.
-
-        Returns:
-            Transformed ReconcileResult
-        """
-        return result
-
     def post_output(
         self,
         content: str,

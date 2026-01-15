@@ -53,11 +53,11 @@ class PABDebitProvider(BaseProvider):
             raise ValueError(f"No active sheet in {file_path}")
 
         transactions = []
-        card_suffix = self._extract_card_suffix(sheet)
+        card_last4 = self._extract_card_last4(sheet)
 
         # Skip header rows (row 1: account info, row 2: column headers)
         for row_idx, row in enumerate(sheet.iter_rows(min_row=3, values_only=True), 3):
-            txn = self._parse_row(row, row_idx, card_suffix, file_path)
+            txn = self._parse_row(row, row_idx, card_last4, file_path)
             if txn:
                 transactions.append(txn)
 
@@ -79,7 +79,7 @@ class PABDebitProvider(BaseProvider):
                     return load_workbook(tmp.name)
             return load_workbook(file_path)
 
-    def _extract_card_suffix(self, sheet) -> str | None:
+    def _extract_card_last4(self, sheet) -> str | None:
         """Extract card suffix from the first row account info."""
         first_row = sheet.cell(1, 1).value
         if first_row:
@@ -93,7 +93,7 @@ class PABDebitProvider(BaseProvider):
         self,
         row: tuple,
         row_idx: int,
-        card_suffix: str | None,
+        card_last4: str | None,
         file_path: Path,
     ) -> Transaction | None:
         """Parse a single transaction row."""
@@ -133,7 +133,7 @@ class PABDebitProvider(BaseProvider):
             currency="CNY",
             description=description,
             payee=counterparty,
-            card_suffix=card_suffix,
+            card_last4=card_last4,
             order_id=order_id,
             provider=self.provider_id,
             source_file=file_path,

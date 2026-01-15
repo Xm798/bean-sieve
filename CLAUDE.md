@@ -81,7 +81,6 @@ class MyProvider(BaseProvider):
 **Lifecycle Hooks** (optional, override in provider):
 
 - `pre_reconcile(transactions, context)` - transform before matching
-- `post_reconcile(result, context)` - enrich after matching
 - `post_output(content, result, context)` - append to output (e.g., settlement entries)
 
 ### Configuration (bean-sieve.yaml)

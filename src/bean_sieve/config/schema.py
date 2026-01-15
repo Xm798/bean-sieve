@@ -36,7 +36,7 @@ class RuleCondition(BaseModel):
 
     description: str | None = None
     payee: str | None = None
-    card_suffix: str | None = None
+    card_last4: str | None = None
     provider: str | None = None
     time_range: str | None = None
     min_amount: float | None = None
@@ -77,12 +77,9 @@ class ProviderConfig(BaseModel):
 
     # Pattern -> account mapping for this provider
     # - Payment platforms: pattern matches metadata['method'] (e.g., "余额" -> Assets:Wallet:Alipay:Balance)
-    # - Bank cards: pattern matches card_suffix (e.g., "6666" -> Assets:Bank:PAB:6666)
+    # - Bank cards: pattern matches card_last4 (e.g., "6666" -> Assets:Bank:PAB:6666)
     # These accounts also define the coverage scope for Extra calculation during reconciliation
     accounts: dict[str, str] = Field(default_factory=dict)
-
-    # Bill account for credit card settlements
-    bill_account: str = ""
 
 
 class Config(BaseModel):
@@ -114,7 +111,7 @@ class Config(BaseModel):
             condition = RuleCondition(
                 description=rule_data.get("description"),
                 payee=rule_data.get("payee"),
-                card_suffix=rule_data.get("card_suffix"),
+                card_last4=rule_data.get("card_last4"),
                 provider=rule_data.get("provider"),
                 time_range=rule_data.get("time"),
                 min_amount=rule_data.get("min_amount"),
