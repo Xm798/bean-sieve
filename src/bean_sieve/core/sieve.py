@@ -123,7 +123,7 @@ class Sieve:
         self,
         transactions: Iterable[Transaction],
         covered_accounts: list[str] | None = None,
-        covered_cards: list[str] | None = None,
+        covered_ranges: dict[str, list[tuple[date, date]]] | None = None,
     ) -> MatchResult:
         """
         Match statement transactions against loaded ledger entries.
@@ -133,9 +133,9 @@ class Sieve:
             covered_accounts: Optional list of accounts to consider for Extra calculation.
                 If provided, only unmatched ledger entries in these accounts are reported
                 as Extra. If None, all unmatched entries are reported.
-            covered_cards: Optional list of card_last4 values for Extra calculation.
-                If provided, only unmatched ledger entries with matching card_last4
-                metadata are reported as Extra. Used for per-card statements.
+            covered_ranges: Optional dict mapping card_last4 to list of (start, end) date
+                ranges. If provided, only ledger entries where (card, date) falls within
+                a covered range are reported as Extra. Used for per-card statements.
 
         Returns:
             MatchResult with matched pairs, missing, and extra transactions
@@ -164,14 +164,29 @@ class Sieve:
                 and entry.posting.account not in covered_accounts
             ):
                 continue
-            # Filter by covered cards (for per-card statements)
-            if covered_cards is not None:
-                entry_card = entry.txn.meta.get("card_last4")
-                if entry_card and entry_card not in covered_cards:
+            # Filter by covered ranges (for per-card statements)
+            if covered_ranges is not None:
+                account = entry.posting.account
+                entry_date = entry.txn.date
+                # Skip if account has covered ranges but date is not within any range
+                if account in covered_ranges and not self._in_covered_range(
+                    account, entry_date, covered_ranges
+                ):
                     continue
             extra.append(entry)
 
         return MatchResult(matched=matched, missing=missing, extra=extra)
+
+    def _in_covered_range(
+        self,
+        account: str,
+        entry_date: date,
+        covered_ranges: dict[str, list[tuple[date, date]]],
+    ) -> bool:
+        """Check if account+date falls within any covered range."""
+        if account not in covered_ranges:
+            return False
+        return any(start <= entry_date <= end for start, end in covered_ranges[account])
 
     def _find_match(self, txn: Transaction, used: set[int]) -> TxnPosting | None:
         """Find a matching ledger entry for the given transaction."""
