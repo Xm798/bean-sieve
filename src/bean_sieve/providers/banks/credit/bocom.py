@@ -36,8 +36,8 @@ class BOCOMCreditProvider(BaseProvider):
         html = self.extract_html_from_eml(file_path)
         soup = self.parse_html(html)
 
-        # Extract year from statement cycle
-        year = self._extract_year(soup)
+        # Extract statement period (e.g., 2025/10/14-2025/11/13)
+        statement_period = self._extract_statement_period(soup)
 
         transactions: list[Transaction] = []
         tables = soup.find_all("table")
@@ -67,7 +67,9 @@ class BOCOMCreditProvider(BaseProvider):
             # Parse each transaction row
             for cell_texts in trans_rows:
                 row_counter += 1
-                txn = self._parse_row(cell_texts, year, section, file_path, row_counter)
+                txn = self._parse_row(
+                    cell_texts, section, file_path, row_counter, statement_period
+                )
                 if txn:
                     transactions.append(txn)
 
@@ -87,18 +89,15 @@ class BOCOMCreditProvider(BaseProvider):
                 return "payment"
         return None
 
-    def _extract_year(self, soup) -> int:
-        """Extract year from statement cycle (e.g., '2025/10/14-2025/11/13')."""
+    def _extract_statement_period(self, soup) -> tuple[date, date] | None:
+        """Extract statement period (e.g., '2025/10/14-2025/11/13')."""
         text = soup.get_text()
-        # Look for statement cycle date pattern
-        match = re.search(r"(\d{4})/\d{2}/\d{2}-\d{4}/\d{2}/\d{2}", text)
+        match = re.search(r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})", text)
         if match:
-            return int(match.group(1))
-        # Fallback: try to find year in filename pattern
-        match = re.search(r"(\d{4})年", text)
-        if match:
-            return int(match.group(1))
-        return date.today().year
+            start = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+            end = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
+            return (start, end)
+        return None
 
     def _is_date(self, text: str) -> bool:
         """Check if text is a date in MM/DD format."""
@@ -107,10 +106,10 @@ class BOCOMCreditProvider(BaseProvider):
     def _parse_row(
         self,
         cells: list[str],
-        year: int,
         section: str | None,
         file_path: Path,
         row_idx: int,
+        statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
         """Parse a single transaction row."""
         try:
@@ -120,9 +119,9 @@ class BOCOMCreditProvider(BaseProvider):
             description = cells[4]
             amount_str = cells[5]  # e.g., "CNY9974.12" or "USD100.00"
 
-            # Parse dates
-            trans_date = self._parse_date(trans_date_str, year)
-            post_date = self._parse_date(post_date_str, year)
+            # Parse dates using statement period to determine correct year
+            trans_date = self._parse_date_with_period(trans_date_str, statement_period)
+            post_date = self._parse_date_with_period(post_date_str, statement_period)
 
             # Parse amount and currency
             amount, currency = self._parse_amount(amount_str)
@@ -142,6 +141,7 @@ class BOCOMCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx + 1,
+                statement_period=statement_period,
                 metadata={
                     "original_date": trans_date_str,
                     "section": section or "unknown",
@@ -150,10 +150,30 @@ class BOCOMCreditProvider(BaseProvider):
         except (IndexError, ValueError):
             return None
 
-    def _parse_date(self, date_str: str, year: int) -> date:
-        """Parse MM/DD date string with year context."""
-        month, day = date_str.split("/")
-        return date(year, int(month), int(day))
+    def _parse_date_with_period(
+        self, date_str: str, statement_period: tuple[date, date] | None
+    ) -> date:
+        """Parse MM/DD date string using statement period to determine year.
+
+        For cross-year periods (e.g., 12/14-1/13), uses start year for months
+        >= start month, and end year for months <= end month.
+        """
+        month, day = map(int, date_str.split("/"))
+
+        if not statement_period:
+            return date(date.today().year, month, day)
+
+        start, end = statement_period
+        # For cross-year periods, determine which year this month belongs to
+        if start.year != end.year:
+            # Cross-year: months >= start month use start year
+            if month >= start.month:
+                return date(start.year, month, day)
+            else:
+                return date(end.year, month, day)
+        else:
+            # Same year
+            return date(start.year, month, day)
 
     def _parse_amount(self, amount_str: str) -> tuple[Decimal | None, str]:
         """Parse amount string like 'CNY9974.12' or 'USD100.00'."""

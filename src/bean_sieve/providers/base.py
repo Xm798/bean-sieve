@@ -7,6 +7,7 @@ import email
 import quopri
 import re
 from abc import ABC, abstractmethod
+from datetime import date
 from email.header import decode_header
 from email.message import Message
 from pathlib import Path
@@ -223,6 +224,56 @@ class BaseProvider(ABC):
 
         cards = {txn.card_last4 for txn in transactions if txn.card_last4}
         return list(cards) if cards else None
+
+    def get_covered_ranges(
+        self,
+        transactions: list[Transaction],
+        config: Config,
+    ) -> dict[str, list[tuple[date, date]]] | None:
+        """
+        Return covered date ranges per account for Extra calculation.
+
+        Used to filter Extra entries - only ledger entries where
+        (account, date) falls within a covered range are reported as Extra.
+
+        Default behavior depends on per_card_statement:
+        - False: Returns None (no range filtering)
+        - True: Maps accounts to date ranges via card_last4 in transactions
+
+        Args:
+            transactions: Parsed transactions from this provider
+            config: Bean-Sieve configuration
+
+        Returns:
+            Dict mapping account name to list of (start, end) date ranges,
+            or None if no range filtering should be applied
+        """
+        if not self.per_card_statement:
+            return None
+
+        from collections import defaultdict
+
+        provider_config = config.get_provider_config(self.provider_id)
+        card_to_account = provider_config.accounts
+
+        # Collect date ranges per card
+        card_ranges: dict[str, list[tuple[date, date]]] = defaultdict(list)
+        seen: set[tuple[str, date, date]] = set()
+
+        for txn in transactions:
+            if txn.card_last4 and txn.statement_period:
+                key = (txn.card_last4, txn.statement_period[0], txn.statement_period[1])
+                if key not in seen:
+                    seen.add(key)
+                    card_ranges[txn.card_last4].append(txn.statement_period)
+
+        # Map to accounts
+        account_ranges: dict[str, list[tuple[date, date]]] = {}
+        for card, ranges in card_ranges.items():
+            if card in card_to_account:
+                account_ranges[card_to_account[card]] = ranges
+
+        return account_ranges if account_ranges else None
 
     # === Preset Rules ===
 

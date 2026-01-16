@@ -53,6 +53,9 @@ class Transaction(BaseModel):
     source_file: Path | None = None
     source_line: int | None = None
 
+    # Statement scope (for per-card statement providers)
+    statement_period: tuple[date, date] | None = None
+
     # Matching results (filled by rules/prediction)
     account: str | None = None
     contra_account: str | None = None
@@ -107,6 +110,14 @@ class Transaction(BaseModel):
             "provider": self.provider,
             "source_file": str(self.source_file) if self.source_file else None,
             "source_line": self.source_line,
+            "statement_period": (
+                [
+                    self.statement_period[0].isoformat(),
+                    self.statement_period[1].isoformat(),
+                ]
+                if self.statement_period
+                else None
+            ),
             "account": self.account,
             "contra_account": self.contra_account,
             "confidence": self.confidence,
@@ -138,6 +149,14 @@ class Transaction(BaseModel):
             provider=data.get("provider", ""),
             source_file=Path(data["source_file"]) if data.get("source_file") else None,
             source_line=data.get("source_line"),
+            statement_period=(
+                (
+                    date.fromisoformat(data["statement_period"][0]),
+                    date.fromisoformat(data["statement_period"][1]),
+                )
+                if data.get("statement_period")
+                else None
+            ),
             account=data.get("account"),
             contra_account=data.get("contra_account"),
             confidence=data.get("confidence", 0.0),
