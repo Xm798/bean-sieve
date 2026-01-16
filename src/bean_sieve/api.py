@@ -267,6 +267,9 @@ def full_reconcile(
     # Pre-reconcile hook: call for each provider's transactions
     transactions = _apply_pre_reconcile_hooks(transactions, context, provider_id)
 
+    # Apply provider output metadata config (posting_metadata, output_metadata)
+    transactions = _apply_provider_output_config(transactions, config)
+
     # Get preset rules from all providers involved
     preset_rules = _collect_preset_rules(transactions, provider_id)
 
@@ -349,6 +352,37 @@ def _apply_pre_reconcile_hooks(
         if provider:
             txns = provider.pre_reconcile(txns, context)
         result.extend(txns)
+
+    return result
+
+
+def _apply_provider_output_config(
+    transactions: list[Transaction],
+    config: Config,
+) -> list[Transaction]:
+    """
+    Apply provider-specific output metadata configuration.
+
+    Sets _posting_metadata and _output_metadata in txn.metadata based on
+    provider config. These are used by BeancountWriter to control output.
+    """
+    result = []
+    for txn in transactions:
+        provider_config = config.get_provider_config(txn.provider)
+
+        # Set posting_metadata from provider config
+        if provider_config.posting_metadata:
+            txn.metadata["_posting_metadata"] = provider_config.posting_metadata
+
+        # Merge output_metadata: global + provider
+        if provider_config.output_metadata:
+            global_meta = config.defaults.output_metadata or []
+            merged = list(global_meta) + [
+                m for m in provider_config.output_metadata if m not in global_meta
+            ]
+            txn.metadata["_output_metadata"] = merged
+
+        result.append(txn)
 
     return result
 

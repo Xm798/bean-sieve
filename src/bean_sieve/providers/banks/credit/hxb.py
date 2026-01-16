@@ -7,7 +7,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from ....core.types import ReconcileContext, Transaction
+from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
 
@@ -18,8 +18,6 @@ class HXBCreditProvider(BaseProvider):
     Provider for Huaxia Bank (华夏银行) credit card email statements.
 
     Parses .eml files containing base64-encoded HTML statements.
-    Lifecycle hooks:
-    - pre_reconcile: Store card_last4 in metadata for output
     """
 
     provider_id = "hxb_credit"
@@ -140,15 +138,3 @@ class HXBCreditProvider(BaseProvider):
         )
 
         return (txn, i)
-
-    def pre_reconcile(
-        self,
-        transactions: list[Transaction],
-        context: ReconcileContext,  # noqa: ARG002
-    ) -> list[Transaction]:
-        """Store card_last4 in metadata for output."""
-        for txn in transactions:
-            if txn.card_last4:
-                txn.metadata["card_last4"] = txn.card_last4
-
-        return transactions

@@ -80,6 +80,10 @@ class ProviderConfig(BaseModel):
     # - Bank cards: pattern matches card_last4 (e.g., "6666" -> Assets:Bank:PAB:6666)
     # These accounts also define the coverage scope for Extra calculation during reconciliation
     accounts: dict[str, str] = Field(default_factory=dict)
+    # Additional entry-level metadata fields to output (appended to global output_metadata)
+    output_metadata: list[str] = Field(default_factory=list)
+    # Posting-level metadata fields to output (only at provider level)
+    posting_metadata: list[str] = Field(default_factory=list)
 
 
 class Config(BaseModel):
