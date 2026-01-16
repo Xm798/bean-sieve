@@ -84,6 +84,10 @@ class ProviderConfig(BaseModel):
     output_metadata: list[str] = Field(default_factory=list)
     # Posting-level metadata fields to output (only at provider level)
     posting_metadata: list[str] = Field(default_factory=list)
+    # Rebate configuration: income account for rebate entries
+    rebate_income_account: str | None = None
+    # Rebate configuration: keywords to identify existing rebate transactions in ledger
+    rebate_keywords: list[str] = Field(default_factory=list)
 
 
 class Config(BaseModel):
