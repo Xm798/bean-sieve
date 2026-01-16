@@ -259,9 +259,13 @@ def full_reconcile(
 
     # Infer date range from transactions if not explicitly provided
     # This ensures Extra calculation only considers ledger entries within statement scope
+    # Expand by date_tolerance to ensure matching works for edge dates
     if not date_range and transactions:
-        min_date = min(t.date for t in transactions)
-        max_date = max(t.date for t in transactions)
+        from datetime import timedelta
+
+        tolerance = config.defaults.date_tolerance
+        min_date = min(t.date for t in transactions) - timedelta(days=tolerance)
+        max_date = max(t.date for t in transactions) + timedelta(days=tolerance)
         date_range = (min_date, max_date)
 
     # Filter by date range if specified
@@ -310,7 +314,7 @@ def full_reconcile(
         use_predictor=use_predictor,
         ledger_path=ledger_path if use_predictor else None,
         preset_rules=preset_rules,
-        covered_accounts=covered_accounts if covered_accounts else None,
+        covered_accounts=covered_accounts,
         covered_ranges=covered_ranges,
     )
 
