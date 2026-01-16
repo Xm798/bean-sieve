@@ -146,9 +146,9 @@ class HXBCreditProvider(BaseProvider):
         transactions: list[Transaction],
         context: ReconcileContext,  # noqa: ARG002
     ) -> list[Transaction]:
-        """Store card_last4 in metadata['card'] for output."""
+        """Store card_last4 in metadata for output."""
         for txn in transactions:
             if txn.card_last4:
-                txn.metadata["card"] = txn.card_last4
+                txn.metadata["card_last4"] = txn.card_last4
 
         return transactions
