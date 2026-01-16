@@ -209,24 +209,73 @@ class BeancountWriter:
         output.write("; --- Summary ---\n")
         output.write(f"; {result.match_result.summary}\n")
 
-        # Extra entries (in ledger but not in statement)
+        # Extra entries (in ledger but not in statement) - output in full
         if result.match_result.extra:
+            output.write("\n")
+            output.write("; " + "=" * 60 + "\n")
             output.write(
-                f"; \n; Extra entries in ledger ({len(result.match_result.extra)}):\n"
+                f"; Extra entries in ledger ({len(result.match_result.extra)})\n"
             )
-            for entry in result.match_result.extra[:10]:  # Limit output
-                txn = entry.txn
-                posting = entry.posting
-                amount = posting.units.number if posting.units else "?"
-                # Build description: "payee | narration" or just narration
-                desc = f"{txn.payee} | {txn.narration}" if txn.payee else txn.narration
-                output.write(f';   - {txn.date} {amount} {posting.account} "{desc}"\n')
-            if len(result.match_result.extra) > 10:
-                output.write(
-                    f";   ... and {len(result.match_result.extra) - 10} more\n"
-                )
+            output.write("; These exist in ledger but not found in statement\n")
+            output.write("; " + "=" * 60 + "\n\n")
+
+            for entry in result.match_result.extra:
+                output.write(self._format_extra_entry(entry) + "\n\n")
 
         return output.getvalue()
+
+    def _format_extra_entry(self, entry) -> str:
+        """Format an extra ledger entry with source file link."""
+        txn = entry.txn
+        lines = []
+
+        # Source file link comment
+        filename = txn.meta.get("filename")
+        lineno = txn.meta.get("lineno")
+        if filename and lineno:
+            lines.append(f"; Source: {filename}:{lineno}")
+
+        # Transaction header: date flag "payee" "narration"
+        flag = txn.flag
+        payee_str = f'"{txn.payee}"' if txn.payee else '""'
+        narration = (txn.narration or "").replace('"', '\\"')
+        lines.append(f'{txn.date} {flag} {payee_str} "{narration}"')
+
+        # Metadata (skip internal fields)
+        skip_meta = {"filename", "lineno", "__tolerances__"}
+        for key, value in txn.meta.items():
+            if key in skip_meta:
+                continue
+            if isinstance(value, str):
+                lines.append(f'  {key}: "{value}"')
+            elif isinstance(value, bool):
+                lines.append(f"  {key}: {str(value).upper()}")
+            elif value is not None:
+                lines.append(f"  {key}: {value}")
+
+        # Tags and links
+        if txn.tags:
+            for tag in txn.tags:
+                lines.append(f"  #{tag}")
+        if txn.links:
+            for link in txn.links:
+                lines.append(f"  ^{link}")
+
+        # All postings
+        for p in txn.postings:
+            if p.units:
+                posting_line = f"  {p.account}  {p.units.number} {p.units.currency}"
+            else:
+                posting_line = f"  {p.account}"
+            # Cost
+            if p.cost:
+                posting_line += f" {{{p.cost.number} {p.cost.currency}}}"
+            # Price
+            if p.price:
+                posting_line += f" @ {p.price.number} {p.price.currency}"
+            lines.append(posting_line)
+
+        return "\n".join(lines)
 
 
 def write_output(
