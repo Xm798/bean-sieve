@@ -54,6 +54,10 @@ class BaseProvider(ABC):
     filename_keywords: list[str] = []  # e.g., ["微信", "wechat"]
     content_keywords: list[str] = []  # e.g., ["微信支付账单明细"]
 
+    # Statement scope: True if bank sends separate statements per card
+    # When True, Extra calculation filters by card_last4 from transactions
+    per_card_statement: bool = False
+
     @classmethod
     def can_handle(cls, file_path: Path) -> bool:
         """
@@ -159,7 +163,7 @@ class BaseProvider(ABC):
 
     def get_covered_accounts(
         self,
-        transactions: list[Transaction],  # noqa: ARG002
+        transactions: list[Transaction],
         config: Config,
     ) -> list[str]:
         """
@@ -168,7 +172,10 @@ class BaseProvider(ABC):
         Used to calculate Extra entries during reconciliation - only ledger
         entries in these accounts are considered as potential "extra" entries.
 
-        Default implementation returns accounts from config.providers[provider_id].accounts.
+        Default behavior depends on per_card_statement:
+        - False: Returns all accounts from config.providers[provider_id].accounts
+        - True: Returns only accounts matching card_last4 values in transactions
+
         Override in subclasses for custom logic.
 
         Args:
@@ -179,7 +186,43 @@ class BaseProvider(ABC):
             List of account names (e.g., ["Assets:Bank:PAB:6666"])
         """
         provider_config = config.get_provider_config(self.provider_id)
-        return list(provider_config.accounts.values())
+        all_accounts = provider_config.accounts
+
+        if not self.per_card_statement:
+            return list(all_accounts.values())
+
+        # Filter accounts by card_last4 values in transactions
+        covered_cards = {txn.card_last4 for txn in transactions if txn.card_last4}
+        return [
+            account for card, account in all_accounts.items() if card in covered_cards
+        ]
+
+    def get_covered_cards(
+        self,
+        transactions: list[Transaction],
+    ) -> list[str] | None:
+        """
+        Return list of card_last4 values covered by this statement.
+
+        Used to calculate Extra entries during reconciliation - only ledger
+        entries with matching card_last4 metadata are considered as potential
+        "extra" entries.
+
+        Default behavior depends on per_card_statement:
+        - False: Returns None (no card filtering, all cards in account are covered)
+        - True: Extracts unique card_last4 values from transactions
+
+        Args:
+            transactions: Parsed transactions from this provider
+
+        Returns:
+            List of card suffixes, or None if all cards are covered
+        """
+        if not self.per_card_statement:
+            return None
+
+        cards = {txn.card_last4 for txn in transactions if txn.card_last4}
+        return list(cards) if cards else None
 
     # === Preset Rules ===
 

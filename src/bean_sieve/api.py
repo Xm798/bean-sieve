@@ -105,6 +105,7 @@ def reconcile(
     ledger_path: Path | None = None,
     preset_rules: list[PresetRule] | None = None,
     covered_accounts: list[str] | None = None,
+    covered_cards: list[str] | None = None,
 ) -> ReconcileResult:
     """
     Reconcile transactions against ledger and apply rules.
@@ -117,6 +118,7 @@ def reconcile(
         ledger_path: Required if use_predictor is True
         preset_rules: Preset rules from provider for automatic account lookup
         covered_accounts: Accounts covered by this statement for Extra calculation
+        covered_cards: Card suffixes covered by this statement for Extra calculation
 
     Returns:
         ReconcileResult with matched, missing, and processed transactions
@@ -124,7 +126,11 @@ def reconcile(
     config = config or Config()
 
     # Match against ledger
-    match_result = sieve.match(transactions, covered_accounts=covered_accounts)
+    match_result = sieve.match(
+        transactions,
+        covered_accounts=covered_accounts,
+        covered_cards=covered_cards,
+    )
 
     # Process missing transactions
     missing = list(match_result.missing)
@@ -284,8 +290,9 @@ def full_reconcile(
     # This constrains matching to only consider the correct ledger account
     transactions = _set_target_accounts(transactions, config)
 
-    # Collect covered accounts from providers
+    # Collect covered accounts and cards from providers
     covered_accounts = _collect_covered_accounts(transactions, provider_id, config)
+    covered_cards = _collect_covered_cards(transactions, provider_id)
 
     # Load ledger
     sieve = load_ledger(
@@ -295,7 +302,7 @@ def full_reconcile(
         date_tolerance=config.defaults.date_tolerance,
     )
 
-    # Reconcile (with preset rules and covered accounts)
+    # Reconcile (with preset rules and covered accounts/cards)
     result = reconcile(
         transactions,
         sieve,
@@ -304,6 +311,7 @@ def full_reconcile(
         ledger_path=ledger_path if use_predictor else None,
         preset_rules=preset_rules,
         covered_accounts=covered_accounts if covered_accounts else None,
+        covered_cards=covered_cards,
     )
 
     # Generate output
@@ -648,6 +656,44 @@ def _collect_covered_accounts(
                 covered.update(provider.get_covered_accounts(txns, config))
 
     return list(covered)
+
+
+def _collect_covered_cards(
+    transactions: list[Transaction],
+    provider_id: str | None,
+) -> list[str] | None:
+    """
+    Collect covered cards from all providers involved.
+
+    Returns the union of card_last4 values if any provider has per_card_statement=True.
+    Returns None if no provider uses per-card statements (all cards covered).
+    """
+    from collections import defaultdict
+
+    all_cards: set[str] = set()
+    has_per_card_provider = False
+
+    if provider_id:
+        provider = get_provider(provider_id)
+        if provider:
+            cards = provider.get_covered_cards(transactions)
+            if cards is not None:
+                has_per_card_provider = True
+                all_cards.update(cards)
+    else:
+        by_provider: dict[str, list[Transaction]] = defaultdict(list)
+        for txn in transactions:
+            by_provider[txn.provider].append(txn)
+
+        for pid, txns in by_provider.items():
+            provider = get_provider(pid)
+            if provider:
+                cards = provider.get_covered_cards(txns)
+                if cards is not None:
+                    has_per_card_provider = True
+                    all_cards.update(cards)
+
+    return list(all_cards) if has_per_card_provider else None
 
 
 def _get_provider_for_hooks(
