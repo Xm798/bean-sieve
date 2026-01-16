@@ -141,7 +141,7 @@ class BeancountWriter:
 
         # Add card_last4 as posting-level metadata if present
         if txn.card_last4:
-            postings.append(f'  card: "{txn.card_last4}"')
+            postings.append(f'  card_last4: "{txn.card_last4}"')
 
         # Handle rebate if present (e.g., 已优惠¥10.00)
         rebate_str = txn.metadata.get("rebate")
