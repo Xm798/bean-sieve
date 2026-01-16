@@ -72,7 +72,8 @@ class BeancountWriter:
     def _format_metadata(self, txn: Transaction) -> list[str]:
         """Format transaction metadata."""
         meta = []
-        allowed = self.output_metadata  # None means all
+        # Use per-transaction override if set (from provider config), else global
+        allowed = txn.metadata.get("_output_metadata", self.output_metadata)
         # Force output 'method' when account not matched (for manual processing)
         force_method = not txn.account
 
@@ -95,6 +96,9 @@ class BeancountWriter:
 
         if should_include("order_id") and txn.order_id:
             meta.append(f'order_id: "{txn.order_id}"')
+
+        if should_include("card_last4") and txn.card_last4:
+            meta.append(f'card_last4: "{txn.card_last4}"')
 
         if should_include("reference"):
             ref = txn.metadata.get("reference")
@@ -139,9 +143,13 @@ class BeancountWriter:
         amount = -txn.amount  # Statement shows outflow as positive
         postings.append(f"{account}  {amount} {txn.currency}")
 
-        # Add card_last4 as posting-level metadata if present
-        if txn.card_last4:
-            postings.append(f'  card_last4: "{txn.card_last4}"')
+        # Add posting-level metadata based on provider config (_posting_metadata)
+        posting_meta = txn.metadata.get("_posting_metadata", [])
+        for key in posting_meta:
+            # Try Transaction field first, then metadata
+            value = getattr(txn, key, None) or txn.metadata.get(key)
+            if value:
+                postings.append(f'  {key}: "{value}"')
 
         # Handle rebate if present (e.g., 已优惠¥10.00)
         rebate_str = txn.metadata.get("rebate")
