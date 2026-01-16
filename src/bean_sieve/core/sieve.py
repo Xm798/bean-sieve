@@ -123,6 +123,7 @@ class Sieve:
         self,
         transactions: Iterable[Transaction],
         covered_accounts: list[str] | None = None,
+        covered_cards: list[str] | None = None,
     ) -> MatchResult:
         """
         Match statement transactions against loaded ledger entries.
@@ -132,6 +133,9 @@ class Sieve:
             covered_accounts: Optional list of accounts to consider for Extra calculation.
                 If provided, only unmatched ledger entries in these accounts are reported
                 as Extra. If None, all unmatched entries are reported.
+            covered_cards: Optional list of card_last4 values for Extra calculation.
+                If provided, only unmatched ledger entries with matching card_last4
+                metadata are reported as Extra. Used for per-card statements.
 
         Returns:
             MatchResult with matched pairs, missing, and extra transactions
@@ -150,16 +154,21 @@ class Sieve:
                 missing.append(txn)
 
         # Find extra ledger entries (not matched to any statement transaction)
-        # If covered_accounts is specified, only consider entries in those accounts
         extra = []
         for entry in self._ledger_entries:
             if id(entry) in used_ledger_entries:
                 continue
+            # Filter by covered accounts
             if (
                 covered_accounts is not None
                 and entry.posting.account not in covered_accounts
             ):
                 continue
+            # Filter by covered cards (for per-card statements)
+            if covered_cards is not None:
+                entry_card = entry.txn.meta.get("card_last4")
+                if entry_card and entry_card not in covered_cards:
+                    continue
             extra.append(entry)
 
         return MatchResult(matched=matched, missing=missing, extra=extra)

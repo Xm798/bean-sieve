@@ -29,6 +29,7 @@ class BOCOMCreditProvider(BaseProvider):
     supported_formats = [".eml"]
     filename_keywords = ["交通银行"]
     content_keywords = ["交通银行信用卡电子账单"]
+    per_card_statement = True  # BOCOM sends separate statements per card
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse BOCOM credit card email statement."""
