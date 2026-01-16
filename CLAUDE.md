@@ -106,6 +106,14 @@ providers:
       "1234": Liabilities:CreditCard:HXB
 ```
 
+## 信用卡账单管理方式
+
+| 管理方式 | 银行 | 特点 | 账户设置 |
+| :--- | :--- | :--- | :--- |
+| **按户管理** | 招商银行、民生银行、华夏银行、平安银行、浦发银行、北京银行、上海银行 | 信报、还款、积分按户**合并管理** | 一个账户 |
+| **按卡管理** | 广发银行、建设银行 | 独立信报，**账单日合并**，**独立还款** | 按卡建账户 |
+| **按卡管理** | 中信银行、光大银行、交通银行、农业银行、工商银行、兴业银行、中国银行、邮政储蓄 | 独立信报，独立账单，独立还款 | 按卡建账户 |
+
 ## Key Conventions
 
 - **Privacy**: Code and comments must NOT contain any private account info (real account numbers, card numbers, personal data). Use generic examples only.
