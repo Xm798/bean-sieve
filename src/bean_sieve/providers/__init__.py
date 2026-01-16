@@ -79,10 +79,10 @@ def list_providers() -> list[dict[str, str]]:
 
 
 # Import provider submodules to register them
-from .banks.credit import hxb  # noqa: E402, F401
+from .banks.credit import bocom, hxb  # noqa: E402, F401
 from .banks.debit import pab  # noqa: E402, F401
 
-# from .banks.credit import ccb, abc, cib, cmb, bocom, bosc, cgb, cmbc
+# from .banks.credit import ccb, abc, cib, cmb, bosc, cgb, cmbc
 # from .banks.debit import abc, cmb, bocom
 from .payment import alipay, wechat  # noqa: E402, F401
 
