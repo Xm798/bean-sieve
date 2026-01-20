@@ -118,6 +118,16 @@ class TestAlipayProvider:
         assert txn.metadata["status"] == "交易成功"
         assert txn.metadata["tx_type"] == "支出"
 
+    def test_statement_period_extraction(self, alipay_csv_file):
+        """Test that statement period is extracted from header and set on transactions."""
+        provider = AlipayProvider()
+        transactions = provider.parse(alipay_csv_file)
+
+        # All transactions should have the statement period set
+        for txn in transactions:
+            assert txn.statement_period is not None
+            assert txn.statement_period == (date(2025, 1, 1), date(2025, 1, 31))
+
     def test_empty_file(self, tmp_path):
         """Test handling of file with no transactions."""
         # Create file with only headers

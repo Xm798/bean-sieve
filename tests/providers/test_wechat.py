@@ -159,6 +159,16 @@ class TestWechatProvider:
         assert txn.metadata["status"] == "支付成功"
         assert txn.metadata["order_type"] == "支出"
 
+    def test_statement_period_extraction(self, wechat_xlsx_file):
+        """Test that statement period is extracted from header and set on transactions."""
+        provider = WechatProvider()
+        transactions = provider.parse(wechat_xlsx_file)
+
+        # All transactions should have the statement period set
+        for txn in transactions:
+            assert txn.statement_period is not None
+            assert txn.statement_period == (date(2025, 1, 1), date(2025, 1, 31))
+
     def test_neutral_transactions_filtered(self, tmp_path):
         """Test that neutral transactions (/) are filtered."""
         wb = Workbook()
