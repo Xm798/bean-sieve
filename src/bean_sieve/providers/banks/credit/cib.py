@@ -38,6 +38,9 @@ class CIBCreditProvider(BaseProvider):
         html = self.extract_html_from_eml(file_path)
         soup = self.parse_html(html)
 
+        # Extract statement period for per-card statement support
+        statement_period = self._extract_statement_period(soup)
+
         transactions: list[Transaction] = []
 
         # Find all detail tables (may have multiple cards)
@@ -50,11 +53,35 @@ class CIBCreditProvider(BaseProvider):
             # Parse transaction rows
             rows = table.find_all("tr", id=re.compile(r"detail_tr_\d+"))
             for idx, row in enumerate(rows):
-                txn = self._parse_row(row, card_last4, file_path, idx + 1)
+                txn = self._parse_row(
+                    row, card_last4, file_path, idx + 1, statement_period
+                )
                 if txn:
                     transactions.append(txn)
 
         return transactions
+
+    def _extract_statement_period(self, soup) -> tuple[date, date] | None:
+        """Extract statement period from HTML.
+
+        Common formats in CIB statements:
+        - 2025/11/08-2025/12/07
+        - 2025-11-08至2025-12-07
+        """
+        text = soup.get_text()
+        # Try YYYY/MM/DD-YYYY/MM/DD format
+        match = re.search(r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})", text)
+        if match:
+            start = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+            end = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
+            return (start, end)
+        # Try YYYY-MM-DD至YYYY-MM-DD format
+        match = re.search(r"(\d{4})-(\d{2})-(\d{2})至(\d{4})-(\d{2})-(\d{2})", text)
+        if match:
+            start = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+            end = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
+            return (start, end)
+        return None
 
     def _extract_card_from_table(self, table) -> str | None:
         """Extract card_last4 from table marker row (卡号末四位 XXXX)."""
@@ -72,6 +99,7 @@ class CIBCreditProvider(BaseProvider):
         card_last4: str | None,
         file_path: Path,
         row_idx: int,
+        statement_period: tuple[date, date] | None = None,
     ) -> Transaction | None:
         """Parse a single transaction row."""
         try:
@@ -112,6 +140,7 @@ class CIBCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx,
+                statement_period=statement_period,
                 metadata={
                     "original_date": trans_date_str,
                 },

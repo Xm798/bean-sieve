@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+import re
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -25,6 +26,13 @@ class AlipayTxType(str, Enum):
 
 # Number of header lines to skip in Alipay CSV
 ALIPAY_HEADER_LINES = 24
+
+# Regex to extract statement period from header
+# Format: 起始时间：[2025-01-01 00:00:00]    终止时间：[2025-01-31 23:59:59]
+STATEMENT_PERIOD_REGEX = re.compile(
+    r"起始时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?\s+"
+    r"终止时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?"
+)
 
 
 @register_provider
@@ -60,38 +68,50 @@ class AlipayProvider(BaseProvider):
         transactions = []
 
         with open(file_path, encoding="gbk", newline="") as f:
-            reader = csv.reader(f)
+            content = f.read()
 
-            for line_num, row in enumerate(reader):
-                # Skip header lines
-                if line_num < ALIPAY_HEADER_LINES:
-                    continue
+        lines = content.splitlines()
 
-                # Skip empty rows or rows that don't look like data
-                if not row or len(row) < 10:
-                    continue
+        # Extract statement period from header
+        header_text = "\n".join(lines[:ALIPAY_HEADER_LINES])
+        statement_period = self._extract_statement_period(header_text)
 
-                # Skip the title row (contains column headers)
-                if row[0] == "交易时间":
-                    continue
+        reader = csv.reader(lines)
 
-                try:
-                    txn = self._parse_row(row, file_path, line_num + 1)
-                    if txn:
-                        transactions.append(txn)
-                except Exception as e:
-                    # Log error but continue parsing other rows
-                    import logging
+        for line_num, row in enumerate(reader):
+            # Skip header lines
+            if line_num < ALIPAY_HEADER_LINES:
+                continue
 
-                    logging.warning(
-                        f"Failed to parse line {line_num + 1} in {file_path}: {e}"
-                    )
-                    continue
+            # Skip empty rows or rows that don't look like data
+            if not row or len(row) < 10:
+                continue
+
+            # Skip the title row (contains column headers)
+            if row[0] == "交易时间":
+                continue
+
+            try:
+                txn = self._parse_row(row, file_path, line_num + 1, statement_period)
+                if txn:
+                    transactions.append(txn)
+            except Exception as e:
+                # Log error but continue parsing other rows
+                import logging
+
+                logging.warning(
+                    f"Failed to parse line {line_num + 1} in {file_path}: {e}"
+                )
+                continue
 
         return self._post_process(transactions)
 
     def _parse_row(
-        self, row: list[str], file_path: Path, line_num: int
+        self,
+        row: list[str],
+        file_path: Path,
+        line_num: int,
+        statement_period: tuple[date, date] | None = None,
     ) -> Transaction | None:
         """Parse a single CSV row into a Transaction."""
         # Clean whitespace from all fields
@@ -141,6 +161,7 @@ class AlipayProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=line_num,
+            statement_period=statement_period,
             metadata={
                 "category": category,
                 "peer_account": peer_account,
@@ -159,6 +180,18 @@ class AlipayProvider(BaseProvider):
             return AlipayTxType(tx_type_str)
         except ValueError:
             return AlipayTxType.EMPTY
+
+    def _extract_statement_period(self, header_text: str) -> tuple[date, date] | None:
+        """Extract statement period from header text.
+
+        Alipay format: 起始时间：[2025-01-01 00:00:00]    终止时间：[2025-01-31 23:59:59]
+        """
+        match = STATEMENT_PERIOD_REGEX.search(header_text)
+        if match:
+            start_date = date.fromisoformat(match.group(1))
+            end_date = date.fromisoformat(match.group(2))
+            return (start_date, end_date)
+        return None
 
     def _post_process(self, transactions: list[Transaction]) -> list[Transaction]:
         """
