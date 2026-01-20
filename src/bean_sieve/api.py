@@ -264,8 +264,23 @@ def full_reconcile(
         from datetime import timedelta
 
         tolerance = config.defaults.date_tolerance
-        min_date = min(t.date for t in transactions) - timedelta(days=tolerance)
-        max_date = max(t.date for t in transactions) + timedelta(days=tolerance)
+
+        # Prefer statement_period from transactions (extracted from statement headers)
+        # This ensures Extra calculation covers the full statement period, even if
+        # transactions don't span the entire period (e.g., no transactions in January
+        # of a full-year statement)
+        statement_periods = [
+            t.statement_period for t in transactions if t.statement_period
+        ]
+        if statement_periods:
+            # Use the union of all statement periods
+            min_date = min(p[0] for p in statement_periods) - timedelta(days=tolerance)
+            max_date = max(p[1] for p in statement_periods) + timedelta(days=tolerance)
+        else:
+            # Fall back to inferring from transaction dates
+            min_date = min(t.date for t in transactions) - timedelta(days=tolerance)
+            max_date = max(t.date for t in transactions) + timedelta(days=tolerance)
+
         date_range = (min_date, max_date)
 
     # Filter by date range if specified

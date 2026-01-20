@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -59,6 +59,13 @@ COMMISSION_REGEX = re.compile(r"\d+\.\d{2}")
 # Regex to extract rebate from remarks (已优惠¥10.00)
 REBATE_REGEX = re.compile(r"已优惠¥?(\d+\.?\d*)")
 
+# Regex to extract statement period from header
+# Format: 起始时间：[2025-01-01 00:00:00] 终止时间：[2025-01-31 23:59:59]
+STATEMENT_PERIOD_REGEX = re.compile(
+    r"起始时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?\s*"
+    r"终止时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?"
+)
+
 
 @register_provider
 class WechatProvider(BaseProvider):
@@ -105,6 +112,17 @@ class WechatProvider(BaseProvider):
         if ws is None:
             raise ValueError(f"No active sheet in {file_path}")
 
+        # Extract statement period from header rows
+        statement_period: tuple[date, date] | None = None
+        header_text = ""
+        for line_num, row in enumerate(ws.iter_rows(values_only=True)):
+            if line_num >= WECHAT_HEADER_LINES:
+                break
+            row_text = " ".join(str(cell) for cell in row if cell is not None)
+            header_text += row_text + "\n"
+
+        statement_period = self._extract_statement_period(header_text)
+
         for line_num, row in enumerate(ws.iter_rows(values_only=True)):
             # Skip header lines
             if line_num < WECHAT_HEADER_LINES:
@@ -118,7 +136,9 @@ class WechatProvider(BaseProvider):
                 continue
 
             try:
-                txn = self._parse_row(row_data, file_path, line_num + 1)
+                txn = self._parse_row(
+                    row_data, file_path, line_num + 1, statement_period
+                )
                 if txn:
                     transactions.append(txn)
             except Exception as e:
@@ -150,7 +170,12 @@ class WechatProvider(BaseProvider):
         # Remove tabs that WeChat adds to CSV
         content = content.replace("\t", "")
 
-        reader = csv.reader(content.splitlines())
+        # Extract statement period from header
+        lines = content.splitlines()
+        header_text = "\n".join(lines[:WECHAT_HEADER_LINES])
+        statement_period = self._extract_statement_period(header_text)
+
+        reader = csv.reader(lines)
 
         for line_num, row in enumerate(reader):
             # Skip header lines
@@ -162,7 +187,7 @@ class WechatProvider(BaseProvider):
                 continue
 
             try:
-                txn = self._parse_row(row, file_path, line_num + 1)
+                txn = self._parse_row(row, file_path, line_num + 1, statement_period)
                 if txn:
                     transactions.append(txn)
             except Exception as e:
@@ -176,7 +201,11 @@ class WechatProvider(BaseProvider):
         return transactions
 
     def _parse_row(
-        self, row: list[str], file_path: Path, line_num: int
+        self,
+        row: list[str],
+        file_path: Path,
+        line_num: int,
+        statement_period: tuple[date, date] | None = None,
     ) -> Transaction | None:
         """Parse a single row into a Transaction."""
         # Clean whitespace
@@ -251,6 +280,7 @@ class WechatProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=line_num,
+            statement_period=statement_period,
             metadata={
                 "tx_type": tx_type_str,
                 "method": method,
@@ -271,6 +301,18 @@ class WechatProvider(BaseProvider):
             return WechatOrderType(order_type_str)
         except ValueError:
             return WechatOrderType.NEUTRAL
+
+    def _extract_statement_period(self, header_text: str) -> tuple[date, date] | None:
+        """Extract statement period from header text.
+
+        WeChat format: 起始时间：[2025-01-01 00:00:00] 终止时间：[2025-01-31 23:59:59]
+        """
+        match = STATEMENT_PERIOD_REGEX.search(header_text)
+        if match:
+            start_date = date.fromisoformat(match.group(1))
+            end_date = date.fromisoformat(match.group(2))
+            return (start_date, end_date)
+        return None
 
     @classmethod
     def get_preset_rules(cls) -> list[PresetRule]:
