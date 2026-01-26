@@ -237,7 +237,7 @@ class BaseProvider(ABC):
         (account, date) falls within a covered range are reported as Extra.
 
         Default behavior depends on per_card_statement:
-        - False: Returns None (no range filtering)
+        - False: Uses union of statement_periods for all covered accounts
         - True: Maps accounts to date ranges via card_last4 in transactions
 
         Args:
@@ -248,15 +248,32 @@ class BaseProvider(ABC):
             Dict mapping account name to list of (start, end) date ranges,
             or None if no range filtering should be applied
         """
-        if not self.per_card_statement:
-            return None
-
         from collections import defaultdict
 
         provider_config = config.get_provider_config(self.provider_id)
         card_to_account = provider_config.accounts
 
-        # Collect date ranges per card
+        if not self.per_card_statement:
+            # For non-per-card providers, use statement_period union for all accounts
+            statement_periods = [
+                t.statement_period for t in transactions if t.statement_period
+            ]
+            if not statement_periods:
+                return None
+
+            # Calculate union of all statement periods
+            min_date = min(p[0] for p in statement_periods)
+            max_date = max(p[1] for p in statement_periods)
+            period = (min_date, max_date)
+
+            # Apply to all covered accounts
+            covered_accounts = list(card_to_account.values())
+            if not covered_accounts:
+                return None
+
+            return {account: [period] for account in covered_accounts}
+
+        # Per-card statement: collect date ranges per card
         card_ranges: dict[str, list[tuple[date, date]]] = defaultdict(list)
         seen: set[tuple[str, date, date]] = set()
 

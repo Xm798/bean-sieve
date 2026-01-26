@@ -686,19 +686,19 @@ def _collect_covered_ranges(
     Collect covered date ranges per account from all providers involved.
 
     Returns a dict mapping account name to list of (start, end) date ranges.
-    Returns None if no provider uses per-card statements.
+    Returns None if no provider provides range information.
     """
     from collections import defaultdict
 
     all_ranges: dict[str, list[tuple[date, date]]] = defaultdict(list)
-    has_per_card_provider = False
+    has_ranges = False
 
     if provider_id:
         provider = get_provider(provider_id)
         if provider:
             ranges = provider.get_covered_ranges(transactions, config)
             if ranges is not None:
-                has_per_card_provider = True
+                has_ranges = True
                 for account, periods in ranges.items():
                     all_ranges[account].extend(periods)
     else:
@@ -711,11 +711,11 @@ def _collect_covered_ranges(
             if provider:
                 ranges = provider.get_covered_ranges(txns, config)
                 if ranges is not None:
-                    has_per_card_provider = True
+                    has_ranges = True
                     for account, periods in ranges.items():
                         all_ranges[account].extend(periods)
 
-    return dict(all_ranges) if has_per_card_provider else None
+    return dict(all_ranges) if has_ranges else None
 
 
 def _get_provider_for_hooks(
