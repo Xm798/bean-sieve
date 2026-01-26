@@ -206,10 +206,9 @@ class AlipayProvider(BaseProvider):
         result = []
         for txn in filtered:
             status = txn.metadata.get("status", "")
-            tx_type = txn.metadata.get("tx_type", "")
 
-            # Skip closed transactions that are marked as neutral
-            if status == "交易关闭" and tx_type == "不计收支":
+            # Skip closed transactions
+            if status in ("交易关闭", "已关闭"):
                 continue
 
             result.append(txn)
