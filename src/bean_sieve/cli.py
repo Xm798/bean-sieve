@@ -1,5 +1,7 @@
 """Command-line interface for Bean-Sieve."""
 
+import os
+import platform
 from datetime import date, datetime
 from pathlib import Path
 
@@ -39,16 +41,42 @@ def parse_date_range(date_range: str | None) -> tuple[date, date] | None:
 
 
 DEFAULT_CONFIG_NAME = "bean-sieve.yaml"
+XDG_CONFIG_NAME = "config.yaml"
+
+
+def get_config_search_paths() -> list[Path]:
+    """Get config file search paths in priority order.
+
+    Search order:
+    1. Current working directory (bean-sieve.yaml)
+    2. XDG_CONFIG_HOME/bean-sieve/config.yaml (Linux/macOS)
+       or APPDATA/bean-sieve/config.yaml (Windows)
+    3. ~/.config/bean-sieve/config.yaml (Linux/macOS fallback)
+    """
+    paths = [Path.cwd() / DEFAULT_CONFIG_NAME]
+
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            paths.append(Path(appdata) / "bean-sieve" / XDG_CONFIG_NAME)
+    else:
+        xdg_config = os.environ.get("XDG_CONFIG_HOME")
+        if xdg_config:
+            paths.append(Path(xdg_config) / "bean-sieve" / XDG_CONFIG_NAME)
+        paths.append(Path.home() / ".config" / "bean-sieve" / XDG_CONFIG_NAME)
+
+    return paths
 
 
 def resolve_config_path(config_path: str | None) -> Path | None:
     """Resolve config file path, auto-detecting default if not specified."""
     if config_path:
         return Path(config_path)
-    # Auto-detect config in current directory
-    default_config = Path(DEFAULT_CONFIG_NAME)
-    if default_config.exists():
-        return default_config
+
+    for path in get_config_search_paths():
+        if path.exists():
+            return path
+
     return None
 
 
@@ -81,6 +109,41 @@ def resolve_ledger_path(
 def main():
     """Bean-Sieve: Rule-based statement importer and reconciler for Beancount."""
     pass
+
+
+@main.command()
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
+def completion(shell: str):
+    """Generate shell completion script.
+
+    \b
+    Setup:
+      Bash: eval "$(bean-sieve completion bash)"  # add to ~/.bashrc
+      Zsh:  eval "$(bean-sieve completion zsh)"   # add to ~/.zshrc
+      Fish: bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
+    """
+    import importlib.metadata
+
+    from click.shell_completion import get_completion_class
+
+    # Get the completion class for the specified shell
+    comp_cls = get_completion_class(shell)
+    if comp_cls is None:
+        raise click.ClickException(f"Unsupported shell: {shell}")
+
+    # Get package info for the prog_name
+    try:
+        entry_points = importlib.metadata.entry_points(group="console_scripts")
+        prog_name = "bean-sieve"
+        for ep in entry_points:
+            if ep.value == "bean_sieve.cli:main":
+                prog_name = ep.name
+                break
+    except Exception:
+        prog_name = "bean-sieve"
+
+    comp = comp_cls(main, {}, prog_name, "_BEAN_SIEVE_COMPLETE")
+    click.echo(comp.source())
 
 
 @main.command()
