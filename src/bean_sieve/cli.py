@@ -271,6 +271,59 @@ def parse(files, provider, output_format, output):
 
 @main.command()
 @click.argument("files", nargs=-1, required=True, type=click.Path(exists=True))
+@click.option("-p", "--provider", help="Provider ID (auto-detect if not specified)")
+@click.option("-o", "--output", type=click.Path(), help="Output file path")
+@click.option(
+    "-f",
+    "--format",
+    "output_format",
+    type=click.Choice(["csv", "xlsx"]),
+    default="csv",
+    help="Output format (default: csv)",
+)
+def export(files, provider, output, output_format):
+    """
+    Export parsed transactions to CSV/XLSX format.
+
+    Pure parsing and export, no reconciliation logic.
+    Each input file is exported separately with auto-generated filename if -o not specified.
+    """
+    from .core.export import export_csv, export_xlsx, generate_export_filename
+
+    try:
+        file_paths = [Path(f) for f in files]
+
+        for file_path in file_paths:
+            transactions = api.parse_statements([file_path], provider)
+
+            if not transactions:
+                console.print(f"[yellow]No transactions in {file_path.name}[/yellow]")
+                continue
+
+            # Determine output path
+            if output and len(file_paths) == 1:
+                out_path = Path(output)
+            else:
+                out_path = generate_export_filename(file_path, output_format)
+
+            # Export
+            if output_format == "csv":
+                export_csv(transactions, out_path)
+            else:
+                export_xlsx(transactions, out_path)
+
+            console.print(
+                f"[green]{file_path.name}[/green] → {out_path.name} "
+                f"({len(transactions)} transactions)"
+            )
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {escape(str(e))}")
+        raise click.Abort() from None
+
+
+@main.command()
+@click.argument("files", nargs=-1, required=True, type=click.Path(exists=True))
 @click.option(
     "-l",
     "--ledger",
