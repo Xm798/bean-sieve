@@ -165,7 +165,9 @@ class BeancountWriter:
 
         if rebate:
             # Rebate posting (income-like, negative)
-            postings.append(f"{self.default_rebate}  -{rebate} {rebate_currency}")
+            # Use per-transaction rebate account if set, else fall back to default
+            rebate_account = txn.metadata.get("_rebate_account") or self.default_rebate
+            postings.append(f"{rebate_account}  -{rebate} {rebate_currency}")
             # Contra account includes rebate (total expense = paid + rebate)
             contra_amount = txn.amount + rebate
         else:

@@ -29,6 +29,7 @@ class AccountMapping(BaseModel):
 
     pattern: str
     account: str
+    rebate_account: str | None = None
 
 
 class RuleCondition(BaseModel):

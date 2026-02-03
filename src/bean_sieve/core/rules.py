@@ -127,6 +127,9 @@ class RulesEngine:
         for mapping in self.config.account_mappings:
             if mapping.pattern.lower() in method.lower():
                 txn.account = mapping.account
+                # Set rebate account if configured and transaction has rebate
+                if mapping.rebate_account and txn.metadata.get("rebate"):
+                    txn.metadata["_rebate_account"] = mapping.rebate_account
                 return txn
 
         return txn
