@@ -50,12 +50,19 @@ class BeancountWriter:
         """Format a single transaction as Beancount entry."""
         lines = []
 
-        # Transaction header: date flag "payee" "narration"
+        # Transaction header: date flag "payee" "narration" tags links
         # Use rule-set flag for rule-matched transactions, otherwise use default_flag
         flag = txn.flag if txn.match_source == MatchSource.RULE else self.default_flag
         payee_str = f'"{txn.payee}"' if txn.payee else '""'
         narration = txn.description.replace('"', '\\"')
-        lines.append(f'{txn.date} {flag} {payee_str} "{narration}"')
+
+        # Build header line with optional tags and links
+        header = f'{txn.date} {flag} {payee_str} "{narration}"'
+        if txn.tags:
+            header += " " + " ".join(f"#{tag}" for tag in txn.tags)
+        if txn.links:
+            header += " " + " ".join(f"^{link}" for link in txn.links)
+        lines.append(header)
 
         # Metadata
         meta_lines = self._format_metadata(txn)

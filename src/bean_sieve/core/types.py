@@ -62,6 +62,7 @@ class Transaction(BaseModel):
     confidence: float = 0.0
     match_source: MatchSource | None = None
     tags: list[str] = Field(default_factory=list)
+    links: list[str] = Field(default_factory=list)
     flag: str = "*"
 
     # Extended metadata (for Beancount metadata)

@@ -198,18 +198,44 @@ class AlipayProvider(BaseProvider):
         Post-process transactions to handle special cases.
 
         - Filter all zero-amount transactions (e.g., discounts like "碰一下立减")
-        - Mark closed transactions as useless
+        - Filter closed transactions that never completed (不计收支 type)
+        - Keep closed transactions with 支出/收入 type (money moved, was later refunded)
+        - Link both original and refund transactions using ^order_id
         """
         # First pass: filter zero-amount transactions
         filtered = [txn for txn in transactions if txn.amount != 0]
 
+        # Build set of order_ids that have refunds (for linking original transactions)
+        # Refund order_ids have format: original_order_id_suffix
+        refunded_order_ids: set[str] = set()
+        for txn in filtered:
+            status = txn.metadata.get("status", "")
+            if status == "退款成功" and txn.order_id and "_" in txn.order_id:
+                refunded_order_ids.add(txn.order_id.split("_")[0])
+
         result = []
         for txn in filtered:
             status = txn.metadata.get("status", "")
+            tx_type = txn.metadata.get("tx_type", "")
 
-            # Skip closed transactions
-            if status in ("交易关闭", "已关闭"):
+            # Skip closed transactions only if tx_type is 不计收支 (neutral/no money movement)
+            # Keep closed transactions with 支出/收入 - these indicate refunded transactions
+            # where money actually moved before being refunded
+            if (
+                status in ("交易关闭", "已关闭")
+                and tx_type == AlipayTxType.NEUTRAL.value
+            ):
                 continue
+
+            # Link both original and refund transactions
+            if txn.order_id:
+                # Refund transaction: link to original order_id
+                if status == "退款成功" and "_" in txn.order_id:
+                    original_id = txn.order_id.split("_")[0]
+                    txn = txn.model_copy(update={"links": [original_id]})
+                # Original transaction that was refunded: link to itself
+                elif txn.order_id in refunded_order_ids:
+                    txn = txn.model_copy(update={"links": [txn.order_id]})
 
             result.append(txn)
 
