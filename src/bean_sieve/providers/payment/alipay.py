@@ -284,6 +284,15 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="余额宝", negate=True),
                 priority=110,
             ),
+            # 基金卖出到余额宝（资金流入余额宝，需要翻转金额符号）
+            PresetRule(
+                rule_id="alipay_fund_sell_yuebao",
+                name="基金卖出到余额宝",
+                provider="alipay",
+                condition=PresetRuleCondition(description=r"卖出至余额宝"),
+                action=PresetRuleAction(account_keyword="余额宝", negate=True),
+                priority=110,
+            ),
             # 退款（只对正数金额翻转，避免双重翻转）
             PresetRule(
                 rule_id="alipay_refund",
