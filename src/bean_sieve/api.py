@@ -305,9 +305,10 @@ def full_reconcile(
     # Alipay and bank card statements)
     transactions = _deduplicate_cross_statements(transactions, config)
 
-    # Set target account for transactions based on provider config
+    # Set target account for transactions based on provider config and preset rules
+    # Preset rules with account_keyword have highest priority
     # This constrains matching to only consider the correct ledger account
-    transactions = _set_target_accounts(transactions, config)
+    transactions = _set_target_accounts(transactions, config, preset_rules)
 
     # Collect covered accounts and ranges from providers
     covered_accounts = _collect_covered_accounts(transactions, provider_id, config)
@@ -474,22 +475,53 @@ def _apply_negate_rules(
 def _set_target_accounts(
     transactions: list[Transaction],
     config: Config,
+    preset_rules: list[PresetRule] | None = None,
 ) -> list[Transaction]:
     """
-    Set target account for transactions based on provider config.
+    Set target account for transactions based on provider config and preset rules.
+
+    Priority order:
+    1. Preset rules with account_keyword (highest priority)
+    2. card_last4 lookup in provider.accounts
+    3. method lookup in provider.accounts
 
     For bank card providers: use card_last4 to look up in providers.xxx.accounts
     For payment platforms: use method to look up in providers.xxx.accounts
     This constrains matching to only consider the correct ledger account.
     """
+    preset_rules = preset_rules or []
     result = []
+
     for txn in transactions:
         if txn.account:
             # Already has account set
             result.append(txn)
             continue
 
-        # Try to resolve account from provider config
+        # 1. Try preset rules first (account_keyword with highest priority)
+        for preset in preset_rules:
+            if preset.matches(txn) and preset.action.account_keyword:
+                account = _lookup_account_by_keyword(
+                    preset.action.account_keyword, config
+                )
+                if account:
+                    txn = txn.model_copy(
+                        update={
+                            "account": account,
+                            "metadata": {
+                                **txn.metadata,
+                                "matched_preset_rule": preset.rule_id,
+                            },
+                        }
+                    )
+                    break
+
+        # If preset rules already set account, skip provider config lookup
+        if txn.account:
+            result.append(txn)
+            continue
+
+        # 2. Try to resolve account from provider config
         provider_config = config.get_provider_config(txn.provider)
 
         # Try card_last4 first (for bank card providers)
@@ -506,6 +538,25 @@ def _set_target_accounts(
         result.append(txn)
 
     return result
+
+
+def _lookup_account_by_keyword(keyword: str, config: Config) -> str | None:
+    """
+    Lookup account by keyword in account_mappings.
+
+    Args:
+        keyword: Keyword to search for in account_mappings patterns
+        config: Configuration with account_mappings
+
+    Returns:
+        Matched account name, or None if not found
+    """
+    import re
+
+    for mapping in config.account_mappings:
+        if re.search(keyword, mapping.pattern, re.IGNORECASE):
+            return mapping.account
+    return None
 
 
 def _deduplicate_cross_statements(
