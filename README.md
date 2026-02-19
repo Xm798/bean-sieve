@@ -71,6 +71,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 |----------|----------|------------|------------------------|
 | `alipay` | 支付宝   | CSV        | 支付宝导出的交易明细   |
 | `wechat` | 微信支付 | XLSX / CSV | 微信支付账单流水文件   |
+| `jd`     | 京东支付 | CSV        | 京东交易流水导出文件   |
 
 ### 银行卡
 
