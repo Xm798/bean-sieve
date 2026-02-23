@@ -233,6 +233,8 @@ class WechatProvider(BaseProvider):
                 WechatTxType.MERCHANT_WITHDRAW.value,
             ):
                 order_type = WechatOrderType.EXPENSE
+            elif status in ("已存入零钱", "已存入经营账户"):
+                order_type = WechatOrderType.INCOME
             else:
                 return None
 
