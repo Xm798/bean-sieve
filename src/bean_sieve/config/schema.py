@@ -1,7 +1,7 @@
 """Configuration schema for Bean-Sieve."""
 
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from ruamel.yaml import YAML
@@ -42,6 +42,7 @@ class RuleCondition(BaseModel):
     time_range: str | None = None
     min_amount: float | None = None
     max_amount: float | None = None
+    direction: Literal["expense", "income"] | None = None
 
 
 class RuleAction(BaseModel):
@@ -125,6 +126,7 @@ class Config(BaseModel):
                 time_range=rule_data.get("time"),
                 min_amount=rule_data.get("min_amount"),
                 max_amount=rule_data.get("max_amount"),
+                direction=rule_data.get("direction"),
             )
             action = RuleAction(
                 contra_account=rule_data.get("contra_account"),

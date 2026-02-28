@@ -178,6 +178,13 @@ class RulesEngine:
         ):
             return False
 
+        # Direction match
+        if cond.direction is not None:
+            if cond.direction == "expense" and not txn.is_expense:
+                return False
+            if cond.direction == "income" and not txn.is_income:
+                return False
+
         # Amount range match
         abs_amount = abs(float(txn.amount))
         if cond.min_amount is not None and abs_amount < cond.min_amount:

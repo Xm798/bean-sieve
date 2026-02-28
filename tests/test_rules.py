@@ -228,6 +228,88 @@ class TestRulesEngine:
         result = engine.apply(txn_small)
         assert result.contra_account is None
 
+    def test_direction_expense_condition(self):
+        """Test direction condition matches only expense transactions."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(
+                        description=".*红包.*",
+                        direction="expense",
+                    ),
+                    action=RuleAction(contra_account="Expenses:Social:RedEnvelope"),
+                    priority=100,
+                ),
+                Rule(
+                    condition=RuleCondition(
+                        description=".*红包.*",
+                        direction="income",
+                    ),
+                    action=RuleAction(contra_account="Income:Social:RedEnvelope"),
+                    priority=90,
+                ),
+            ]
+        )
+        engine = RulesEngine(config)
+
+        # Expense (positive amount) — should match expense rule
+        txn_send = Transaction(
+            date=date(2025, 1, 4),
+            amount=Decimal("8.88"),
+            currency="CNY",
+            description="微信红包（群红包）",
+            provider="wechat",
+        )
+        result = engine.apply(txn_send)
+        assert result.contra_account == "Expenses:Social:RedEnvelope"
+
+        # Income (negative amount) — should match income rule
+        txn_recv = Transaction(
+            date=date(2025, 1, 4),
+            amount=Decimal("-1.91"),
+            currency="CNY",
+            description="微信红包",
+            provider="wechat",
+        )
+        result = engine.apply(txn_recv)
+        assert result.contra_account == "Income:Social:RedEnvelope"
+
+    def test_direction_without_other_conditions(self):
+        """Test direction condition works as sole condition."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(direction="expense"),
+                    action=RuleAction(contra_account="Expenses:FIXME"),
+                    priority=50,
+                ),
+                Rule(
+                    condition=RuleCondition(direction="income"),
+                    action=RuleAction(contra_account="Income:FIXME"),
+                    priority=40,
+                ),
+            ]
+        )
+        engine = RulesEngine(config)
+
+        txn_expense = Transaction(
+            date=date(2025, 1, 4),
+            amount=Decimal("100.00"),
+            currency="CNY",
+            description="some expense",
+            provider="test",
+        )
+        assert engine.apply(txn_expense).contra_account == "Expenses:FIXME"
+
+        txn_income = Transaction(
+            date=date(2025, 1, 4),
+            amount=Decimal("-50.00"),
+            currency="CNY",
+            description="some income",
+            provider="test",
+        )
+        assert engine.apply(txn_income).contra_account == "Income:FIXME"
+
     def test_flag_override(self):
         """Test flag override in rule action."""
         config = Config(
