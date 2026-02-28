@@ -55,7 +55,8 @@ class HXBCreditProvider(BaseProvider):
 
         Tries multiple patterns:
         1. HTML content: 2025/11/01-2025/11/30, 2025年11月01日-2025年11月30日
-        2. Filename: 2025年11月 -> assumes full month coverage
+        2. HTML billing date (账单日 每月XX日) + filename month
+        3. Filename: 2025年11月 -> assumes full month coverage
         """
         # Try to find period in HTML content
         # Pattern: YYYY/MM/DD-YYYY/MM/DD
@@ -74,14 +75,18 @@ class HXBCreditProvider(BaseProvider):
             end = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
             return (start, end)
 
+        # Derive period from billing date + filename month
+        # e.g., "账单日 每月26日" with filename "2026年02月" → Jan 27 - Feb 26
+        period = self._derive_period_from_billing_date(html, file_path)
+        if period:
+            return period
+
         # Fallback: extract year and month from filename and assume full month
         match = re.search(r"(\d{4})年(\d{1,2})月", file_path.name)
         if match:
             year = int(match.group(1))
             month = int(match.group(2))
-            # Assume statement covers the full month
             start = date(year, month, 1)
-            # Last day of month
             if month == 12:
                 end = date(year + 1, 1, 1) - timedelta(days=1)
             else:
@@ -89,6 +94,46 @@ class HXBCreditProvider(BaseProvider):
             return (start, end)
 
         return None
+
+    def _derive_period_from_billing_date(
+        self, html: str, file_path: Path
+    ) -> tuple[date, date] | None:
+        """Derive billing period from billing date (账单日) and filename month.
+
+        Credit card billing period runs from previous billing date + 1
+        to current billing date. e.g., billing date 26th for Feb statement
+        means the period is Jan 27 - Feb 26.
+        """
+        import calendar
+
+        text = re.sub(r"<[^>]+>", " ", html)
+        match = re.search(r"账单日\s*每月\s*(\d{1,2})\s*日", text)
+        if not match:
+            return None
+
+        billing_day = int(match.group(1))
+
+        fm = re.search(r"(\d{4})年(\d{1,2})月", file_path.name)
+        if not fm:
+            return None
+
+        year = int(fm.group(1))
+        month = int(fm.group(2))
+
+        # End date: billing day of statement month (clamp to month's last day)
+        max_day = calendar.monthrange(year, month)[1]
+        end = date(year, month, min(billing_day, max_day))
+
+        # Start date: previous billing day + 1
+        if month == 1:
+            prev_year, prev_month = year - 1, 12
+        else:
+            prev_year, prev_month = year, month - 1
+        prev_max_day = calendar.monthrange(prev_year, prev_month)[1]
+        prev_billing = date(prev_year, prev_month, min(billing_day, prev_max_day))
+        start = prev_billing + timedelta(days=1)
+
+        return (start, end)
 
     def _parse_transactions(
         self,
