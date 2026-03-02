@@ -535,6 +535,15 @@ def _set_target_accounts(
         ) and method in provider_config.accounts:
             txn = txn.model_copy(update={"account": provider_config.accounts[method]})
 
+        # 3. Try account_mappings for method (payment platforms using external cards)
+        if not txn.account:
+            method = txn.metadata.get("method", "")
+            if method:
+                for mapping in config.account_mappings:
+                    if mapping.pattern in method or method in mapping.pattern:
+                        txn = txn.model_copy(update={"account": mapping.account})
+                        break
+
         result.append(txn)
 
     return result
