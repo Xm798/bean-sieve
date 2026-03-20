@@ -541,7 +541,10 @@ def _set_target_accounts(
             if method:
                 for mapping in config.account_mappings:
                     if mapping.pattern in method or method in mapping.pattern:
-                        txn = txn.model_copy(update={"account": mapping.account})
+                        update = {"account": mapping.account}
+                        txn = txn.model_copy(update=update)
+                        if mapping.rebate_account and txn.metadata.get("rebate"):
+                            txn.metadata["_rebate_account"] = mapping.rebate_account
                         break
 
         result.append(txn)
