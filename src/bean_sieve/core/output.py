@@ -67,12 +67,12 @@ class BeancountWriter:
         # Metadata
         meta_lines = self._format_metadata(txn)
         for meta in meta_lines:
-            lines.append(f"  {meta}")
+            lines.append(f"    {meta}")
 
         # Postings
         postings = self._format_postings(txn)
         for posting in postings:
-            lines.append(f"  {posting}")
+            lines.append(f"    {posting}")
 
         return "\n".join(lines)
 
@@ -156,7 +156,7 @@ class BeancountWriter:
             # Try Transaction field first, then metadata
             value = getattr(txn, key, None) or txn.metadata.get(key)
             if value:
-                postings.append(f'  {key}: "{value}"')
+                postings.append(f'    {key}: "{value}"')
 
         # Handle rebate if present (e.g., 已优惠¥10.00)
         rebate_str = txn.metadata.get("rebate")
@@ -256,26 +256,26 @@ class BeancountWriter:
             if key in skip_meta:
                 continue
             if isinstance(value, str):
-                lines.append(f'  {key}: "{value}"')
+                lines.append(f'    {key}: "{value}"')
             elif isinstance(value, bool):
-                lines.append(f"  {key}: {str(value).upper()}")
+                lines.append(f"    {key}: {str(value).upper()}")
             elif value is not None:
-                lines.append(f"  {key}: {value}")
+                lines.append(f"    {key}: {value}")
 
         # Tags and links
         if txn.tags:
             for tag in txn.tags:
-                lines.append(f"  #{tag}")
+                lines.append(f"    #{tag}")
         if txn.links:
             for link in txn.links:
-                lines.append(f"  ^{link}")
+                lines.append(f"    ^{link}")
 
         # All postings
         for p in txn.postings:
             if p.units:
-                posting_line = f"  {p.account}  {p.units.number} {p.units.currency}"
+                posting_line = f"    {p.account}  {p.units.number} {p.units.currency}"
             else:
-                posting_line = f"  {p.account}"
+                posting_line = f"    {p.account}"
             # Cost
             if p.cost:
                 posting_line += f" {{{p.cost.number} {p.cost.currency}}}"
