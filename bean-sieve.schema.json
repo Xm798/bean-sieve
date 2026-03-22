@@ -1,0 +1,246 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/example/bean-sieve/bean-sieve.schema.json",
+  "title": "Bean-Sieve Configuration",
+  "description": "Configuration schema for Bean-Sieve statement reconciler",
+  "type": "object",
+  "properties": {
+    "defaults": {
+      "type": "object",
+      "description": "Default settings",
+      "properties": {
+        "ledger": {
+          "type": "string",
+          "description": "Path to main Beancount ledger file"
+        },
+        "currency": {
+          "type": "string",
+          "default": "CNY",
+          "description": "Default currency code"
+        },
+        "expense_account": {
+          "type": "string",
+          "default": "Expenses:FIXME",
+          "description": "Default expense account for unmatched transactions"
+        },
+        "income_account": {
+          "type": "string",
+          "default": "Income:FIXME",
+          "description": "Default income account for unmatched transactions"
+        },
+        "date_tolerance": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30,
+          "default": 2,
+          "description": "Days tolerance for fuzzy date matching"
+        },
+        "output_metadata": {
+          "type": "array",
+          "description": "Metadata fields to include in output (omit for all fields)",
+          "items": {
+            "type": "string",
+            "enum": [
+              "time",
+              "order_id",
+              "card_last4",
+              "source",
+              "reference",
+              "category",
+              "peer_account",
+              "method",
+              "status",
+              "merchant_id",
+              "tx_type"
+            ]
+          },
+          "examples": [
+            ["time", "order_id", "source"]
+          ]
+        },
+        "sort_by_time": {
+          "type": ["string", "null"],
+          "enum": ["asc", "desc", null],
+          "default": "asc",
+          "description": "Sort output by datetime (date + time): 'asc' for ascending, 'desc' for descending, null to keep original order"
+        },
+        "flag": {
+          "type": "string",
+          "enum": ["*", "!"],
+          "default": "!",
+          "description": "Default transaction flag: '*' for cleared, '!' for pending"
+        }
+      }
+    },
+    "predictor": {
+      "type": "object",
+      "description": "ML account prediction settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable ML-based account prediction"
+        },
+        "min_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.8,
+          "description": "Minimum confidence threshold for predictions"
+        },
+        "training_data": {
+          "type": "string",
+          "default": "books/",
+          "description": "Path to training data directory"
+        }
+      }
+    },
+    "account_mappings": {
+      "type": "array",
+      "description": "Map payment methods to asset/liability accounts",
+      "items": {
+        "type": "object",
+        "required": ["pattern", "account"],
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Regex pattern to match payment method"
+          },
+          "account": {
+            "type": "string",
+            "description": "Beancount account name"
+          },
+          "rebate_account": {
+            "type": "string",
+            "description": "Income account for rebates when using this payment method (e.g., Income:Rebate:ICBC)"
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "Transaction matching rules (higher priority first)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Regex pattern to match transaction description"
+          },
+          "payee": {
+            "type": "string",
+            "description": "Regex pattern to match payee (as condition)"
+          },
+          "card_last4": {
+            "type": "string",
+            "description": "Card suffix (last 4 digits) to match"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Provider ID to match (e.g., alipay, wechat)"
+          },
+          "time": {
+            "type": "string",
+            "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$",
+            "description": "Time range in HH:MM-HH:MM format"
+          },
+          "min_amount": {
+            "type": "number",
+            "description": "Minimum transaction amount"
+          },
+          "max_amount": {
+            "type": "number",
+            "description": "Maximum transaction amount"
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["expense", "income"],
+            "description": "Match transaction direction: 'expense' for outgoing (positive amount), 'income' for incoming (negative amount)"
+          },
+          "target_payee": {
+            "type": "string",
+            "description": "Payee name to set (action)"
+          },
+          "target_description": {
+            "type": "string",
+            "description": "Description to set (action)"
+          },
+          "contra_account": {
+            "type": "string",
+            "description": "Contra account (expense/income) to set"
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tags to add to transaction"
+          },
+          "flag": {
+            "type": "string",
+            "enum": ["*", "!", "?"],
+            "default": "*",
+            "description": "Transaction flag"
+          },
+          "ignore": {
+            "type": "boolean",
+            "default": false,
+            "description": "Skip this transaction in output"
+          }
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "description": "Provider-specific configuration",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "accounts": {
+            "type": "object",
+            "description": "Pattern to account mapping. For payment platforms: pattern matches metadata['method']. For bank cards: pattern matches card_last4. These accounts also define the coverage scope for Extra calculation.",
+            "additionalProperties": { "type": "string" }
+          },
+          "output_metadata": {
+            "type": "array",
+            "description": "Additional entry-level metadata fields to output (appended to global output_metadata)",
+            "items": {
+              "type": "string",
+              "enum": [
+                "time",
+                "order_id",
+                "card_last4",
+                "source",
+                "reference",
+                "category",
+                "peer_account",
+                "method",
+                "status",
+                "merchant_id",
+                "tx_type"
+              ]
+            },
+            "examples": [["card_last4"]]
+          },
+          "posting_metadata": {
+            "type": "array",
+            "description": "Posting-level metadata fields to output (from Transaction fields or metadata)",
+            "items": {
+              "type": "string",
+              "enum": ["card_last4"]
+            },
+            "examples": [["card_last4"]]
+          },
+          "rebate_income_account": {
+            "type": "string",
+            "description": "Income account for rebate entries (e.g., Income:Rebate:ABC)"
+          },
+          "rebate_keywords": {
+            "type": "array",
+            "description": "Keywords to identify existing rebate transactions in ledger",
+            "items": { "type": "string" },
+            "examples": [["刷卡金", "返现"]]
+          }
+        }
+      }
+    }
+  }
+}

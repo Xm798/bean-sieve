@@ -1,15 +1,16 @@
 # Bean-Sieve
 
-> 基于规则的复式记账账单导入与对账工具
+Bean-Sieve 是一个基于规则的 [Beancount](https://github.com/beancount/beancount) 账单导入与对账工具。
 
-Bean-Sieve 是一个 Python 工具，用于将各类账单文件解析并导入到 [Beancount](https://github.com/beancount/beancount) 账本中。
+与传统导入器只做「解析 → 导入」不同，Bean-Sieve 支持将账单与已有账本**智能对账**——自动识别已手动记录的交易，仅生成缺失条目，避免重复。同时也可作为独立的账单解析器，将各类账单统一导出为通用 CSV/XLSX 格式。
 
 ## 功能特性
 
-- **解析** 各类账单文件（支付宝、微信支付、银行账单等）
-- **筛选** 去重，与已有 Beancount 账本比对
-- **生成** 待录入的 Beancount 条目，支持规则映射
-- **预测** 智能分类，基于 smart-importer 实现
+- **解析** 支付宝、微信支付、银行信用卡/借记卡等各类账单
+- **对账** 与已有 Beancount 账本比对，自动识别已记录交易，补充未记录交易
+- **生成** 仅输出缺失的待录入条目，支持规则映射账户
+- **导出** 可作为纯账单解析器，将账单统一导出为 CSV/XLSX
+- **预测** 基于 smart-importer 的智能账户分类（开发中）
 
 ## 安装
 
@@ -24,8 +25,6 @@ pipx install git+https://github.com/Xm798/bean-sieve.git
 
 # 从本地目录安装（适合开发）
 uv tool install -e .
-# 或
-pipx install -e .
 ```
 
 以上命令会将 `bean-sieve` 安装到 `~/.local/bin`（Linux/macOS）或用户 PATH（Windows）。请确保该目录在 PATH 中。
@@ -70,10 +69,10 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | Provider | 名称     | 格式       | 说明                   |
 |----------|----------|------------|------------------------|
 | `alipay` | 支付宝   | CSV        | 支付宝导出的交易明细   |
-| `wechat` | 微信支付 | XLSX / CSV | 微信支付账单流水文件   |
+| `wechat` | 微信支付 | CSV / XLSX | 微信支付账单流水文件   |
 | `jd`     | 京东支付 | CSV        | 京东交易流水导出文件   |
 
-### 银行卡
+### 信用卡
 
 | Provider       | 名称           | 格式 | 说明               |
 |----------------|----------------|------|--------------------|
@@ -81,8 +80,19 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `boc_credit`   | 中国银行信用卡 | PDF  | PDF 账单           |
 | `bocom_credit` | 交通银行信用卡 | EML  | 邮件账单           |
 | `bosc_credit`  | 上海银行信用卡 | EML  | 邮件账单           |
+| `ccb_credit`   | 建设银行信用卡 | EML  | 邮件账单           |
+| `cgb_credit`   | 广发银行信用卡 | EML  | 邮件账单           |
+| `cib_credit`   | 兴业银行信用卡 | EML  | 邮件账单           |
+| `cmb_credit`   | 招商银行信用卡 | EML  | 邮件账单           |
+| `cmbc_credit`  | 民生银行信用卡 | EML  | 邮件账单           |
 | `hxb_credit`   | 华夏银行信用卡 | EML  | 邮件账单           |
-| `pab_debit`    | 平安银行借记卡 | XLSX | Excel 导出账单     |
+
+### 借记卡
+
+| Provider       | 名称           | 格式      | 说明               |
+|----------------|----------------|-----------|--------------------|
+| `icbc_debit`   | 工商银行借记卡 | CSV       | CSV 导出账单       |
+| `pab_debit`    | 平安银行借记卡 | XLS/ XLSX | Excel 导出账单     |
 
 更多 Provider 正在开发中。
 
@@ -97,11 +107,20 @@ bean-sieve reconcile data/statement/*.csv -l books/ -o pending.bean
 # 仅解析：输出标准化交易
 bean-sieve parse data/statement/*.csv
 
+# 导出：将解析结果导出为 CSV 或 XLSX
+bean-sieve export data/statement/*.csv -f csv -o output/
+
 # 仅检查：显示对账结果，不生成文件
 bean-sieve check data/statement/*.csv -l books/
 
+# 提取账单中的支付方式并交互式映射到账本账户
+bean-sieve extract-accounts data/statement/*.csv -l books/
+
 # 列出支持的数据源
 bean-sieve providers
+
+# 生成 Shell 自动补全脚本
+bean-sieve completion bash
 ```
 
 ### Python API
@@ -144,11 +163,11 @@ defaults:
   currency: CNY
   expense_account: Expenses:FIXME
   income_account: Income:FIXME
-  date_tolerance: 2  # 日期模糊匹配容差（天）
+  date_tolerance: 0  # 日期模糊匹配容差（天）
 
-# ML 账户预测（默认启用）
+# ML 账户预测
 predict:
-  enabled: true  # 设为 false 关闭 smart-importer
+  enabled: false  # 设为 false 关闭 smart-importer
 
 # 账户映射（按 provider）
 accounts:
@@ -212,7 +231,6 @@ rules:
 
 1. **自动核对**：比较解析的消费金额与账单应还金额，判断是否平账
 2. **自动生成刷卡金条目**：平账时自动生成刷卡金收入记录
-3. **去重检测**：如果账本中已有刷卡金记录，不会重复生成
 
 #### 配置
 
@@ -317,7 +335,8 @@ uv run ruff format src/ tests/
 
 ```
 bean-sieve/
-├── bean-sieve.example.yaml   # 配置示例
+├── bean-sieve.example.yaml    # 配置示例
+├── bean-sieve.schema.json     # 配置 JSON Schema
 ├── src/bean_sieve/
 │   ├── api.py                 # API 层
 │   ├── cli.py                 # CLI 入口
@@ -325,18 +344,20 @@ bean-sieve/
 │   │   ├── types.py           # 数据类型定义
 │   │   ├── sieve.py           # 去重/匹配引擎
 │   │   ├── rules.py           # 规则匹配引擎
-│   │   └── output.py          # Beancount 输出生成
+│   │   ├── preset_rules.py    # 内置预设规则
+│   │   ├── output.py          # Beancount 输出生成
+│   │   ├── export.py          # CSV/XLSX 导出
+│   │   └── predictor.py       # ML 账户预测
 │   ├── providers/
 │   │   ├── base.py            # Provider 基类
-│   │   └── payment/
-│   │       ├── alipay.py      # 支付宝
-│   │       └── wechat.py      # 微信支付
+│   │   ├── payment/           # 支付平台（支付宝、微信、京东）
+│   │   └── banks/
+│   │       ├── credit/        # 信用卡（农行、中行、交行等）
+│   │       └── debit/         # 借记卡（工行、平安）
 │   └── config/
-│       └── schema.py          # 配置 Schema
+│       ├── schema.py          # 配置 Schema
+│       └── wizard.py          # 账户映射向导
 └── tests/
-    └── providers/
-        ├── test_alipay.py
-        └── test_wechat.py
 ```
 
 ## License
