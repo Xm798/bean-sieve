@@ -117,6 +117,7 @@ providers:
 ## Key Conventions
 
 - **Privacy**: Code and comments must NOT contain any private account info (real account numbers, card numbers, personal data). Use generic examples only.
+- **Sensitive data check (pre-commit)**: Before completing any task and committing, MUST scan all changed/new files for sensitive information leaks — including but not limited to: real account numbers, card numbers, phone numbers, ID numbers, real names, addresses, transaction details from real statements, API keys/tokens. Any sensitive data found MUST be replaced with mock data or masked (e.g., `6222****1234`, `张*三`, `1390000****`). This applies to: source code, test fixtures, sample data, comments, commit messages, and PR descriptions.
 - **Amount sign**: Expenses are positive, income is negative (in `Transaction.amount`)
 - **Matching**: `Transaction.match_key` uses `order_id` if available, else `(date, abs_amount, card_suffix)`
 - **Provider detection**: Checks extension first, then `filename_keywords`, then `content_keywords`

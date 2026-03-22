@@ -91,6 +91,7 @@ from .banks.credit import (  # noqa: E402, F401
     cmbc,
     hxb,
 )
+from .banks.debit import cmb as cmb_debit  # noqa: E402, F401
 from .banks.debit import icbc, pab  # noqa: E402, F401
 
 # from .banks.credit import ccb, abc, cib, cmb, bosc, cgb, cmbc
