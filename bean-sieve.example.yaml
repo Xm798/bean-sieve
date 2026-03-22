@@ -117,6 +117,10 @@ providers:
     accounts:
       "1111": Assets:Bank:ICBC:1111
 
+  cmb_debit:
+    accounts:
+      "5555": Assets:Bank:CMB:5555
+
 # 规则匹配
 rules:
   # 正则匹配 description，设置 target_payee
