@@ -91,6 +91,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 
 | Provider       | 名称           | 格式      | 说明               |
 |----------------|----------------|-----------|--------------------|
+| `cmb_debit`    | 招商银行借记卡 | CSV       | CSV 导出账单       |
 | `icbc_debit`   | 工商银行借记卡 | CSV       | CSV 导出账单       |
 | `pab_debit`    | 平安银行借记卡 | XLS/ XLSX | Excel 导出账单     |
 
