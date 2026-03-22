@@ -1,0 +1,144 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Xm798/bean-sieve/refs/heads/master/bean-sieve.schema.json
+
+# 默认设置
+defaults:
+  currency: CNY
+  expense_account: Expenses:FIXME
+  income_account: Income:FIXME
+  date_tolerance: 0
+  # 交易标志：* 表示已核对，! 表示待处理
+  flag: "!"
+  # 输出的 metadata 字段（不设置则输出所有）
+  # 常用字段: time, order_id, source, category, method, peer_account
+  output_metadata:
+    - time
+    - order_id
+    - source
+  # 按时间排序输出：asc（升序）、desc（降序）、不设置则保持原顺序
+  sort_by_time: asc
+
+# ML 账户预测
+predictor:
+  enabled: false
+  min_confidence: 0.8
+  training_data: books/
+
+# 账户映射
+account_mappings:
+  # 支付宝
+  - pattern: "余额"
+    account: Assets:Current:Alipay
+  - pattern: "余额宝"
+    account: Assets:Current:Alipay:YuEBao
+  - pattern: "花呗"
+    account: Liabilities:Huabei
+
+  # 微信
+  - pattern: "零钱"
+    account: Assets:Current:Wechat
+  - pattern: "零钱通"
+    account: Assets:Current:Wechat:LingQianTong
+
+  # 银行卡（带优惠账户配置）
+  - pattern: "招商银行"
+    account: Assets:Bank:CMB
+    rebate_account: Income:Rebate:CMB
+  - pattern: "工商银行"
+    account: Assets:Bank:ICBC
+    rebate_account: Income:Rebate:ICBC
+  - pattern: "建设银行"
+    account: Assets:Bank:CCB
+    rebate_account: Income:Rebate:CCB
+
+  # 信用卡
+  - pattern: "招商银行信用卡"
+    account: Liabilities:CreditCard:CMB
+  - pattern: "交通银行信用卡"
+    account: Liabilities:CreditCard:BOCOM
+
+# Provider 特定配置
+# accounts 用于：
+# - 支付平台：匹配 metadata['method']，如 "余额" -> Assets:Wallet:Alipay:Balance
+# - 银行卡：匹配 card_last4，如 "6666" -> Assets:Bank:PAB:6666
+# 这些账户也定义了对账时 Extra 的计算范围
+providers:
+  alipay:
+    accounts:
+      "余额": Assets:Wallet:Alipay:Balance
+      "余额宝": Assets:Wallet:Alipay:YuEBao
+      "花呗": Liabilities:Credit:Huabei
+
+  wechat:
+    accounts:
+      "零钱": Assets:Wallet:WeChat:Balance
+      "零钱通": Assets:Wallet:WeChat:LingQianTong
+
+  jd:
+    accounts:
+      "京东白条": Liabilities:Credit:JDBaitiao
+
+  hxb_credit:
+    accounts:
+      "1111": Liabilities:CreditCard:HXB
+    posting_metadata:
+      - card_last4
+
+  bocom_credit:
+    accounts:
+      "1111": Liabilities:CreditCard:BOCOM:1111
+      "2222": Liabilities:CreditCard:BOCOM:2222
+
+  cmb_credit:
+    accounts:
+      "6666": Liabilities:CreditCard:CMB
+
+  abc_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:ABC
+    rebate_income_account: Income:Rebate:ABC
+    rebate_keywords:
+      - 刷卡金
+      - 返现
+
+  cgb_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:CGB:1234
+      "5678": Liabilities:CreditCard:CGB:5678
+
+  cmbc_credit:
+    accounts:
+      "7777": Liabilities:CreditCard:CMBC
+
+  pab_debit:
+    accounts:
+      "6666": Assets:Bank:PAB:6666
+
+  icbc_debit:
+    accounts:
+      "1111": Assets:Bank:ICBC:1111
+
+# 规则匹配
+rules:
+  # 正则匹配 description，设置 target_payee
+  - description: ".*瑞幸.*"
+    target_payee: 瑞幸咖啡
+    contra_account: Expenses:Food:Coffee
+
+  - description: ".*美团.*外卖.*"
+    target_payee: 美团外卖
+    contra_account: Expenses:Food:Delivery
+
+  # 多关键词匹配（OR 逻辑）
+  - description: "(滴滴|高德|T3出行)"
+    target_payee: 打车
+    contra_account: Expenses:Transport:Taxi
+
+  # 时间范围
+  - description: ".*食堂.*"
+    time: "11:00-14:00"
+    contra_account: Expenses:Food:Lunch
+
+  - description: ".*食堂.*"
+    time: "17:00-20:00"
+    contra_account: Expenses:Food:Dinner
+
