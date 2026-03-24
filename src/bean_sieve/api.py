@@ -343,6 +343,12 @@ def full_reconcile(
         if provider:
             content = provider.post_output(content, result, context)
 
+        # Format with beanfmt if configured
+        if config.format and config.format.enabled:
+            import beanfmt
+
+            content = beanfmt.format(content, **config.format.to_beanfmt_kwargs())  # type: ignore[reportAttributeAccessIssue]
+
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
 

@@ -72,6 +72,69 @@
         }
       }
     },
+    "format": {
+      "type": "object",
+      "description": "Beanfmt formatting configuration for output files",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable beanfmt formatting on output"
+        },
+        "indent": {
+          "type": "integer",
+          "default": 4,
+          "description": "Number of spaces for indentation"
+        },
+        "currency_column": {
+          "type": "integer",
+          "default": 70,
+          "description": "Target column for currency alignment"
+        },
+        "cost_column": {
+          "type": "integer",
+          "default": 75,
+          "description": "Target column for cost/price alignment"
+        },
+        "thousands_separator": {
+          "type": "string",
+          "enum": ["add", "remove", "keep"],
+          "default": "keep",
+          "description": "Thousands separator handling: 'add', 'remove', or 'keep'"
+        },
+        "spaces_in_braces": {
+          "type": "boolean",
+          "default": false,
+          "description": "Add spaces inside cost braces { 100 USD }"
+        },
+        "fixed_cjk_width": {
+          "type": "boolean",
+          "default": true,
+          "description": "Treat CJK characters as double-width for alignment"
+        },
+        "sort": {
+          "type": "string",
+          "enum": ["asc", "desc", "off"],
+          "default": "off",
+          "description": "Sort entries by date: 'asc' (ascending), 'desc' (descending), 'off' (preserve order)"
+        },
+        "sort_timeless": {
+          "type": "string",
+          "enum": ["begin", "end", "keep"],
+          "default": "begin",
+          "description": "Position of timeless entries within a day"
+        },
+        "sort_exclude": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["transaction", "balance", "open", "close", "price", "pad", "note", "document", "event", "custom", "query", "commodity"]
+          },
+          "default": [],
+          "description": "Directive types to exclude from sorting (act as sort barriers)"
+        }
+      }
+    },
     "predictor": {
       "type": "object",
       "description": "ML account prediction settings",
