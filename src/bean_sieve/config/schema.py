@@ -66,6 +66,35 @@ class Rule(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
 
+class FormatConfig(BaseModel):
+    """Beanfmt formatting configuration."""
+
+    enabled: bool = True
+    indent: int = 4
+    currency_column: int = 70
+    cost_column: int = 75
+    thousands_separator: Literal["add", "remove", "keep"] = "keep"
+    spaces_in_braces: bool = False
+    fixed_cjk_width: bool = True
+    sort: Literal["asc", "desc", "off"] = "off"
+    sort_timeless: Literal["begin", "end", "keep"] = "begin"
+    sort_exclude: list[str] = Field(default_factory=list)
+
+    def to_beanfmt_kwargs(self) -> dict[str, Any]:
+        """Convert to kwargs for beanfmt.format()."""
+        return {
+            "indent": self.indent,
+            "currency_column": self.currency_column,
+            "cost_column": self.cost_column,
+            "thousands_separator": self.thousands_separator,
+            "spaces_in_braces": self.spaces_in_braces,
+            "fixed_cjk_width": self.fixed_cjk_width,
+            "sort": self.sort,
+            "sort_timeless": self.sort_timeless,
+            "sort_exclude": self.sort_exclude,
+        }
+
+
 class PredictorConfig(BaseModel):
     """Smart-importer configuration."""
 
@@ -99,6 +128,7 @@ class Config(BaseModel):
     account_mappings: list[AccountMapping] = Field(default_factory=list)
     rules: list[Rule] = Field(default_factory=list)
     predictor: PredictorConfig = Field(default_factory=PredictorConfig)
+    format: FormatConfig | None = None
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
 
     model_config = ConfigDict(validate_assignment=True)
@@ -149,6 +179,9 @@ class Config(BaseModel):
             PredictorConfig(**predictor_data) if predictor_data else PredictorConfig()
         )
 
+        format_data = data.get("format")
+        format_config = FormatConfig(**format_data) if format_data else None
+
         providers = {
             provider_id: ProviderConfig(**provider_data)
             for provider_id, provider_data in data.get("providers", {}).items()
@@ -159,6 +192,7 @@ class Config(BaseModel):
             account_mappings=account_mappings,
             rules=rules,
             predictor=predictor,
+            format=format_config,
             providers=providers,
         )
 

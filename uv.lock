@@ -18,6 +18,7 @@ source = { editable = "." }
 dependencies = [
     { name = "beancount" },
     { name = "beancount-periodic" },
+    { name = "beanfmt" },
     { name = "beautifulsoup4" },
     { name = "click" },
     { name = "iterfzf" },
@@ -50,6 +51,7 @@ dev = [
 requires-dist = [
     { name = "beancount", specifier = ">=3.0.0" },
     { name = "beancount-periodic", specifier = ">=0.2.1" },
+    { name = "beanfmt", specifier = ">=0.4.0" },
     { name = "beautifulsoup4", specifier = ">=4.12.0" },
     { name = "click", specifier = ">=8.0.0" },
     { name = "iterfzf", specifier = ">=1.0.0" },
@@ -118,6 +120,14 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/20/d8/a11f3fe0b2b5372f411a6a7bfc835dfe07ebe00b8ef6a7458702fd2c0198/beancount_periodic-0.2.1.tar.gz", hash = "sha256:51845132294293f9955476abebcd5a936cda039e8e3852b6234bba5d8be9d56f", size = 15636, upload-time = "2025-08-20T15:53:12.36Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/6a/8aac3b354492d4f2977ef6dad4090cc44a0ac9179823e1fd64430c6f8be2/beancount_periodic-0.2.1-py3-none-any.whl", hash = "sha256:c17a2cf798465bf8566f744ec3b34f62b1dfcdc1a3709efe83bf030a99e383d6", size = 15719, upload-time = "2025-08-20T15:53:11.098Z" },
+]
+
+[[package]]
+name = "beanfmt"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/7f/923d9c74fb5e254dd7bf37feb199e22677cf0c9251efbc70c5647413bcac/beanfmt-0.4.0-cp39-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:9e406066cb16e2e8daa890c5a060db26e21c61f349798442d4f23454760c3976", size = 450880, upload-time = "2026-03-24T15:37:43.14Z" },
 ]
 
 [[package]]

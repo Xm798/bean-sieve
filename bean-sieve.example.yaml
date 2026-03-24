@@ -17,6 +17,19 @@ defaults:
   # 按时间排序输出：asc（升序）、desc（降序）、不设置则保持原顺序
   sort_by_time: asc
 
+# 输出格式化（beanfmt）
+format:
+  enabled: true
+  indent: 4
+  currency_column: 70
+  cost_column: 75
+  thousands_separator: keep    # add | remove | keep
+  spaces_in_braces: false
+  fixed_cjk_width: true
+  sort: "off"                  # asc | desc | off
+  sort_timeless: keep         # begin | end | keep
+  sort_exclude: []
+
 # ML 账户预测
 predictor:
   enabled: false
