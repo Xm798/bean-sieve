@@ -67,32 +67,41 @@ class Rule(BaseModel):
 
 
 class FormatConfig(BaseModel):
-    """Beanfmt formatting configuration."""
+    """Beanfmt formatting configuration.
+
+    When fields are None, beanfmt's own defaults or project config
+    (.beanfmt.toml) values are used.
+    """
 
     enabled: bool = True
-    indent: int = 4
-    currency_column: int = 70
-    cost_column: int = 75
-    thousands_separator: Literal["add", "remove", "keep"] = "keep"
-    spaces_in_braces: bool = False
-    fixed_cjk_width: bool = True
-    sort: Literal["asc", "desc", "off"] = "off"
-    sort_timeless: Literal["begin", "end", "keep"] = "begin"
-    sort_exclude: list[str] = Field(default_factory=list)
+    indent: int | None = None
+    currency_column: int | None = None
+    cost_column: int | None = None
+    thousands_separator: Literal["add", "remove", "keep"] | None = None
+    spaces_in_braces: bool | None = None
+    fixed_cjk_width: bool | None = None
+    sort: Literal["asc", "desc", "off"] | None = None
+    sort_timeless: Literal["begin", "end", "keep"] | None = None
+    sort_exclude: list[str] | None = None
 
     def to_beanfmt_kwargs(self) -> dict[str, Any]:
-        """Convert to kwargs for beanfmt.format()."""
-        return {
-            "indent": self.indent,
-            "currency_column": self.currency_column,
-            "cost_column": self.cost_column,
-            "thousands_separator": self.thousands_separator,
-            "spaces_in_braces": self.spaces_in_braces,
-            "fixed_cjk_width": self.fixed_cjk_width,
-            "sort": self.sort,
-            "sort_timeless": self.sort_timeless,
-            "sort_exclude": self.sort_exclude,
-        }
+        """Return only explicitly set fields as kwargs for beanfmt."""
+        kwargs: dict[str, Any] = {}
+        for field in [
+            "indent",
+            "currency_column",
+            "cost_column",
+            "thousands_separator",
+            "spaces_in_braces",
+            "fixed_cjk_width",
+            "sort",
+            "sort_timeless",
+            "sort_exclude",
+        ]:
+            val = getattr(self, field)
+            if val is not None:
+                kwargs[field] = val
+        return kwargs
 
 
 class PredictorConfig(BaseModel):
@@ -180,7 +189,12 @@ class Config(BaseModel):
         )
 
         format_data = data.get("format")
-        format_config = FormatConfig(**format_data) if format_data else None
+        if format_data is True:
+            format_config = FormatConfig()
+        elif isinstance(format_data, dict):
+            format_config = FormatConfig(**format_data)
+        else:
+            format_config = None
 
         providers = {
             provider_id: ProviderConfig(**provider_data)

@@ -343,14 +343,18 @@ def full_reconcile(
         if provider:
             content = provider.post_output(content, result, context)
 
-        # Format with beanfmt if configured
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        # Format with beanfmt if configured (uses project .beanfmt.toml + overrides)
         if config.format and config.format.enabled:
             import beanfmt
 
-            content = beanfmt.format(content, **config.format.to_beanfmt_kwargs())  # type: ignore[reportAttributeAccessIssue]
-
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(content)
+            content = beanfmt.format_file(
+                str(output_path), config=True, **config.format.to_beanfmt_kwargs()
+            )
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(content)
 
     return result
 

@@ -30,7 +30,7 @@ dependencies = [
     "beancount-periodic>=0.2.1",
     "xlrd>=2.0.2",
     "pymupdf>=1.24.0",
-    "beanfmt>=0.4.0",
+    "beanfmt>=0.6.0",
 ]
 
 [project.optional-dependencies]
