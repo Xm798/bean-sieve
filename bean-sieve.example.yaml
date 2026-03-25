@@ -124,6 +124,10 @@ providers:
     accounts:
       "7777": Liabilities:CreditCard:CMBC
 
+  ccb_debit:
+    accounts:
+      "6789": Assets:Bank:CCB:6789
+
   pab_debit:
     accounts:
       "6666": Assets:Bank:PAB:6666
