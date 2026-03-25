@@ -233,6 +233,11 @@ class WechatProvider(BaseProvider):
                 WechatTxType.MERCHANT_WITHDRAW.value,
             ):
                 order_type = WechatOrderType.EXPENSE
+                # method shows destination bank, but source is 零钱;
+                # use 零钱 as method so account resolves to the WeChat balance asset
+                if method and method != "零钱":
+                    remarks = f"{method} {remarks}".strip() if remarks else method
+                    method = "零钱"
             elif status in ("已存入零钱", "已存入经营账户"):
                 order_type = WechatOrderType.INCOME
             else:
