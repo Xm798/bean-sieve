@@ -91,6 +91,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 
 | Provider       | 名称           | 格式      | 说明               |
 |----------------|----------------|-----------|--------------------|
+| `ccb_debit`    | 建设银行借记卡 | XLS       | XLS 导出账单       |
 | `cmb_debit`    | 招商银行借记卡 | CSV       | CSV 导出账单       |
 | `icbc_debit`   | 工商银行借记卡 | CSV       | CSV 导出账单       |
 | `pab_debit`    | 平安银行借记卡 | XLS/ XLSX | Excel 导出账单     |
@@ -210,11 +211,18 @@ rules:
 
 ## 账单下载方式
 
-### 银行
+### 借记卡
 
-#### 平安银行
+| 银行 | 下载方式 | 系统要求 | 备注 |
+| :--- | :--- | :--- | :--- |
+| 招商银行 | [专业版](https://cmbchina.com/pbankwebNew/downloadPage.aspx) PC 客户端 | Windows | 需安装客户端 |
+| 建设银行 | [个人网上银行](https://ibsbjstar.ccb.com.cn/CCBIS/V6/STY1/CN/login.jsp) | Windows / macOS | Chrome 即可，无需安全控件 |
+| 工商银行 | [个人网上银行](https://mybank.icbc.com.cn/icbc/newperbank/perbank3/frame/frame_index.jsp) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
+| 平安银行 | [个人网上银行](https://bank.pingan.com.cn/m/main/index.html) | Windows / macOS | 扫码登录无需安全控件 |
 
-- 借记卡：[平安银行个人网上银行](https://bank.pingan.com.cn/m/main/index.html)
+### 信用卡
+
+信用卡账单通过邮件获取，在发卡行官网或 App 设置账单邮箱即可。
 
 ## 信用卡账单管理方式
 
@@ -354,7 +362,7 @@ bean-sieve/
 │   │   ├── payment/           # 支付平台（支付宝、微信、京东）
 │   │   └── banks/
 │   │       ├── credit/        # 信用卡（农行、中行、交行等）
-│   │       └── debit/         # 借记卡（工行、平安）
+│   │       └── debit/         # 借记卡（建行、工行、平安）
 │   └── config/
 │       ├── schema.py          # 配置 Schema
 │       └── wizard.py          # 账户映射向导
