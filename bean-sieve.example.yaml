@@ -18,17 +18,19 @@ defaults:
   sort_by_time: asc
 
 # 输出格式化（beanfmt）
+# 简写形式：format: true（使用项目 .beanfmt.toml 配置或 beanfmt 默认值）
+# 详细配置：以下选项会覆盖 .beanfmt.toml 中的对应值，未指定的选项使用 .beanfmt.toml 或 beanfmt 默认值
 format:
   enabled: true
-  indent: 4
-  currency_column: 70
-  cost_column: 75
-  thousands_separator: keep    # add | remove | keep
-  spaces_in_braces: false
-  fixed_cjk_width: true
-  sort: "off"                  # asc | desc | off
-  sort_timeless: keep         # begin | end | keep
-  sort_exclude: []
+  # indent: 4
+  # currency_column: 70
+  # cost_column: 75
+  # thousands_separator: keep    # add | remove | keep
+  # spaces_in_braces: false
+  # fixed_cjk_width: true
+  # sort: "off"                  # asc | desc | off
+  # sort_timeless: keep         # begin | end | keep
+  # sort_exclude: []
 
 # ML 账户预测
 predictor:
