@@ -16,6 +16,7 @@ def wechat_xlsx_file(tmp_path):
     """Create a temporary WeChat XLSX file."""
     wb = Workbook()
     ws = wb.active
+    assert ws is not None
 
     # Header rows (17 rows of metadata)
     header_data = [
@@ -173,6 +174,7 @@ class TestWechatProvider:
         """Test that neutral transactions (/) are filtered."""
         wb = Workbook()
         ws = wb.active
+        assert ws is not None
 
         # Minimal headers
         for _ in range(16):
@@ -245,6 +247,7 @@ class TestWechatCommissionHandling:
         """Test that commission is extracted from remarks and deducted from amount."""
         wb = Workbook()
         ws = wb.active
+        assert ws is not None
 
         # Headers
         for _ in range(16):
@@ -303,6 +306,7 @@ class TestWechatCashWithdraw:
         """Test that cash withdraw is treated as income (money to wallet)."""
         wb = Workbook()
         ws = wb.active
+        assert ws is not None
 
         # Headers
         for _ in range(16):
@@ -352,3 +356,107 @@ class TestWechatCashWithdraw:
         # Cash withdraw should be expense (money leaving the account)
         assert txn.amount == Decimal("100.00")
         assert txn.is_expense
+
+    def test_cash_withdraw_method_override(self, tmp_path):
+        """Test that 零钱提现 overrides method from bank card to 零钱."""
+        wb = Workbook()
+        ws = wb.active
+        assert ws is not None
+
+        for _ in range(16):
+            ws.append((None,))
+        ws.append(
+            (
+                "交易时间",
+                "交易类型",
+                "交易对方",
+                "商品",
+                "收/支",
+                "金额(元)",
+                "支付方式",
+                "当前状态",
+                "交易单号",
+                "商户单号",
+                "备注",
+            ),
+        )
+
+        ws.append(
+            (
+                "2025-06-15 10:30:00",
+                "零钱提现",
+                "测试银行(0001)",
+                "提现",
+                "/",
+                "¥200.00",
+                "测试银行(0001)",
+                "已转账",
+                "TX001",
+                "/",
+                "/",
+            ),
+        )
+
+        file_path = tmp_path / "wechat_withdraw_bank.xlsx"
+        wb.save(file_path)
+
+        provider = WechatProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 1
+        txn = transactions[0]
+        assert txn.metadata["method"] == "零钱"
+        assert txn.metadata["_withdrawal_target"] == "测试银行(0001)"
+        assert txn.amount == Decimal("200.00")
+
+    def test_merchant_withdraw_method_override(self, tmp_path):
+        """Test that 经营账户提现 overrides method from bank card to 经营账户."""
+        wb = Workbook()
+        ws = wb.active
+        assert ws is not None
+
+        for _ in range(16):
+            ws.append((None,))
+        ws.append(
+            (
+                "交易时间",
+                "交易类型",
+                "交易对方",
+                "商品",
+                "收/支",
+                "金额(元)",
+                "支付方式",
+                "当前状态",
+                "交易单号",
+                "商户单号",
+                "备注",
+            ),
+        )
+
+        ws.append(
+            (
+                "2025-06-20 14:00:00",
+                "经营账户提现",
+                "示例银行(0002)",
+                "提现",
+                "/",
+                "¥500.00",
+                "示例银行(0002)",
+                "已转账",
+                "TX002",
+                "/",
+                "/",
+            ),
+        )
+
+        file_path = tmp_path / "wechat_merchant_withdraw.xlsx"
+        wb.save(file_path)
+
+        provider = WechatProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 1
+        txn = transactions[0]
+        assert txn.metadata["method"] == "经营账户"
+        assert txn.metadata["_withdrawal_target"] == "示例银行(0002)"
+        assert txn.amount == Decimal("500.00")

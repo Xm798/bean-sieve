@@ -226,6 +226,7 @@ class WechatProvider(BaseProvider):
 
         # Parse order type
         order_type = self._get_order_type(order_type_str)
+        withdrawal_target: str | None = None
         if order_type == WechatOrderType.NEUTRAL:
             # For withdrawals, treat as expense (money leaving the account)
             if tx_type_str in (
@@ -233,11 +234,17 @@ class WechatProvider(BaseProvider):
                 WechatTxType.MERCHANT_WITHDRAW.value,
             ):
                 order_type = WechatOrderType.EXPENSE
-                # method shows destination bank, but source is 零钱;
-                # use 零钱 as method so account resolves to the WeChat balance asset
-                if method and method != "零钱":
-                    remarks = f"{method} {remarks}".strip() if remarks else method
-                    method = "零钱"
+                # method shows destination bank, but source is the wallet;
+                # store destination for contra_account resolution, then
+                # override method so txn.account resolves to the wallet asset
+                source = (
+                    "经营账户"
+                    if tx_type_str == WechatTxType.MERCHANT_WITHDRAW.value
+                    else "零钱"
+                )
+                if method and method != source:
+                    withdrawal_target = method
+                    method = source
             elif status in ("已存入零钱", "已存入经营账户"):
                 order_type = WechatOrderType.INCOME
             else:
@@ -298,6 +305,7 @@ class WechatProvider(BaseProvider):
                 "commission": str(commission) if commission else None,
                 "rebate": str(rebate) if rebate else None,
                 "rebate_currency": rebate_currency,
+                "_withdrawal_target": withdrawal_target,
             },
         )
 
@@ -345,6 +353,34 @@ class WechatProvider(BaseProvider):
                     metadata={"status": r"已存入经营账户"},
                 ),
                 action=PresetRuleAction(account_keyword="经营账户"),
+                priority=90,
+            ),
+            # 零钱提现
+            PresetRule(
+                rule_id="wechat_cash_withdraw",
+                name="零钱提现",
+                provider="wechat",
+                condition=PresetRuleCondition(
+                    metadata={"tx_type": r"^零钱提现$"},
+                ),
+                action=PresetRuleAction(
+                    account_keyword="零钱",
+                    contra_account_metadata_key="_withdrawal_target",
+                ),
+                priority=90,
+            ),
+            # 经营账户提现
+            PresetRule(
+                rule_id="wechat_merchant_withdraw",
+                name="经营账户提现",
+                provider="wechat",
+                condition=PresetRuleCondition(
+                    metadata={"tx_type": r"^经营账户提现$"},
+                ),
+                action=PresetRuleAction(
+                    account_keyword="经营账户",
+                    contra_account_metadata_key="_withdrawal_target",
+                ),
                 priority=90,
             ),
         ]
