@@ -4,10 +4,16 @@ from datetime import date, time
 from decimal import Decimal
 
 from bean_sieve.config.schema import (
+    AccountMapping,
     Config,
     Rule,
     RuleAction,
     RuleCondition,
+)
+from bean_sieve.core.preset_rules import (
+    PresetRule,
+    PresetRuleAction,
+    PresetRuleCondition,
 )
 from bean_sieve.core.rules import RulesEngine, apply_rules
 from bean_sieve.core.types import MatchSource, Transaction
@@ -334,3 +340,116 @@ class TestRulesEngine:
         )
         result = engine.apply(txn)
         assert result.flag == "!"
+
+
+class TestPresetRules:
+    """Tests for preset rules in RulesEngine."""
+
+    def test_contra_account_metadata_key_resolves(self):
+        """Test that contra_account_metadata_key resolves via account_mappings."""
+        config = Config(
+            account_mappings=[
+                AccountMapping(pattern="零钱", account="Assets:Wallet:WeChat:Balance"),
+                AccountMapping(pattern="测试银行", account="Assets:Bank:Test:Savings"),
+            ],
+        )
+        preset = PresetRule(
+            rule_id="test_withdraw",
+            name="零钱提现",
+            provider="wechat",
+            condition=PresetRuleCondition(
+                metadata={"tx_type": r"^零钱提现$"},
+            ),
+            action=PresetRuleAction(
+                account_keyword="零钱",
+                contra_account_metadata_key="_withdrawal_target",
+            ),
+        )
+        engine = RulesEngine(config, preset_rules=[preset])
+        txn = Transaction(
+            date=date(2025, 6, 15),
+            amount=Decimal("200.00"),
+            currency="CNY",
+            description="零钱提现",
+            provider="wechat",
+            metadata={
+                "tx_type": "零钱提现",
+                "method": "零钱",
+                "_withdrawal_target": "测试银行(0001)",
+            },
+        )
+        result = engine.apply(txn)
+        assert result.account == "Assets:Wallet:WeChat:Balance"
+        assert result.contra_account == "Assets:Bank:Test:Savings"
+        assert result.match_source == MatchSource.RULE
+
+    def test_contra_account_metadata_key_missing_value(self):
+        """Test that missing metadata value doesn't set contra_account."""
+        config = Config(
+            account_mappings=[
+                AccountMapping(pattern="零钱", account="Assets:Wallet:WeChat:Balance"),
+            ],
+        )
+        preset = PresetRule(
+            rule_id="test_withdraw",
+            name="零钱提现",
+            provider="wechat",
+            condition=PresetRuleCondition(
+                metadata={"tx_type": r"^零钱提现$"},
+            ),
+            action=PresetRuleAction(
+                account_keyword="零钱",
+                contra_account_metadata_key="_withdrawal_target",
+            ),
+        )
+        engine = RulesEngine(config, preset_rules=[preset])
+        txn = Transaction(
+            date=date(2025, 6, 15),
+            amount=Decimal("200.00"),
+            currency="CNY",
+            description="零钱提现",
+            provider="wechat",
+            metadata={
+                "tx_type": "零钱提现",
+                "method": "零钱",
+            },
+        )
+        result = engine.apply(txn)
+        assert result.account == "Assets:Wallet:WeChat:Balance"
+        assert result.contra_account is None
+
+    def test_contra_account_metadata_key_no_mapping_match(self):
+        """Test that unresolvable keyword doesn't set contra_account."""
+        config = Config(
+            account_mappings=[
+                AccountMapping(pattern="零钱", account="Assets:Wallet:WeChat:Balance"),
+            ],
+        )
+        preset = PresetRule(
+            rule_id="test_withdraw",
+            name="零钱提现",
+            provider="wechat",
+            condition=PresetRuleCondition(
+                metadata={"tx_type": r"^零钱提现$"},
+            ),
+            action=PresetRuleAction(
+                account_keyword="零钱",
+                contra_account_metadata_key="_withdrawal_target",
+            ),
+        )
+        engine = RulesEngine(config, preset_rules=[preset])
+        txn = Transaction(
+            date=date(2025, 6, 15),
+            amount=Decimal("200.00"),
+            currency="CNY",
+            description="零钱提现",
+            provider="wechat",
+            metadata={
+                "tx_type": "零钱提现",
+                "method": "零钱",
+                "_withdrawal_target": "未知银行(9999)",
+            },
+        )
+        result = engine.apply(txn)
+        assert result.account == "Assets:Wallet:WeChat:Balance"
+        assert result.contra_account is None

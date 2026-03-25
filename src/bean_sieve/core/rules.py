@@ -101,6 +101,19 @@ class RulesEngine:
                 txn.account = account
                 txn.metadata["matched_preset_rule"] = preset.rule_id
 
+        # Dynamic contra_account from metadata value — uses substring containment
+        # matching (pattern in value) like _apply_account_mapping, since the
+        # metadata value is a full method string (e.g., "交通银行(8888)")
+        if action.contra_account_metadata_key and not txn.contra_account:
+            value = txn.metadata.get(action.contra_account_metadata_key, "")
+            if value:
+                value_lower = value.lower()
+                for mapping in self.config.account_mappings:
+                    if mapping.pattern.lower() in value_lower:
+                        txn.contra_account = mapping.account
+                        txn.match_source = MatchSource.RULE
+                        break
+
         # Negate amount if specified (only if positive, to avoid double-negation)
         if action.negate and txn.amount > 0:
             txn.amount = -txn.amount

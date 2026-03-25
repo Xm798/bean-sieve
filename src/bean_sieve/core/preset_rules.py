@@ -31,6 +31,10 @@ class PresetRuleAction:
     # Keyword to lookup in account_mappings to set txn.account
     account_keyword: str | None = None
 
+    # Metadata key whose value is looked up in account_mappings to set contra_account
+    # (for transfers where the destination varies per transaction)
+    contra_account_metadata_key: str | None = None
+
     # Negate amount (flip sign) - use for transfers where direction is inverted
     negate: bool = False
 
