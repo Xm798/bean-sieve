@@ -83,6 +83,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `ccb_credit`   | 建设银行信用卡 | EML  | 邮件账单           |
 | `cgb_credit`   | 广发银行信用卡 | EML  | 邮件账单           |
 | `cib_credit`   | 兴业银行信用卡 | EML  | 邮件账单           |
+| `citic_credit` | 中信银行信用卡 | XLS  | 网银导出账单       |
 | `cmb_credit`   | 招商银行信用卡 | EML  | 邮件账单           |
 | `cmbc_credit`  | 民生银行信用卡 | EML  | 邮件账单           |
 | `hxb_credit`   | 华夏银行信用卡 | EML  | 邮件账单           |
@@ -222,7 +223,11 @@ rules:
 
 ### 信用卡
 
-信用卡账单通过邮件获取，在发卡行官网或 App 设置账单邮箱即可。
+信用卡账单通常通过邮件获取，在发卡行官网或 App 设置账单邮箱即可。部分银行支持网银导出：
+
+| 银行 | 下载方式 | 备注 |
+| :--- | :--- | :--- |
+| 中信银行 | [信用卡网银](https://e.creditcard.ecitic.com/citiccard/ebank-ocp/ebankpc/bill.html) | 登录后导出已出账单明细 XLS |
 
 ## 信用卡账单管理方式
 
