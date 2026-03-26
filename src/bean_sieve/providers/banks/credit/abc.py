@@ -21,6 +21,7 @@ class StatementSummary:
     card_number: str | None = None  # 卡号 (masked, e.g., 620000******1234)
     statement_cycle: str | None = None  # 账单周期
     statement_balance: Decimal | None = None  # 本期应还款额
+    new_charges: Decimal | None = None  # 本期账单金额 (from 账务说明)
     rebate_used: Decimal | None = None  # 本期使用刷卡金
 
 
@@ -209,6 +210,35 @@ class ABCCreditProvider(BaseProvider):
                                 )
                                 break
 
+            # 本期账单金额 (from 账务说明 formula table)
+            # Labels and values are in sibling tables; labels include operator
+            # cells (-, =, +) that have no corresponding value cell
+            if "本期账单金额" in text and summary.new_charges is None:
+                td = span.find_parent("td")
+                tr = td.find_parent("tr") if td else None
+                label_table = tr.find_parent("table") if tr else None
+                if label_table:
+                    value_table = label_table.find_next_sibling("table")
+                    if value_table and tr:
+                        label_cells = tr.find_all("td", recursive=False)
+                        # Find index of target label, skipping operator cells
+                        value_idx = 0
+                        for cell in label_cells:
+                            cell_text = cell.get_text(strip=True)
+                            if "本期账单金额" in cell_text:
+                                break
+                            if cell_text not in ("-", "=", "+"):
+                                value_idx += 1
+                        value_row = value_table.find("tr")
+                        if value_row:
+                            vals = value_row.find_all("td", recursive=False)
+                            if value_idx < len(vals):
+                                val_text = vals[value_idx].get_text(strip=True)
+                                if re.match(r"^[\d,]+\.\d{2}$", val_text):
+                                    summary.new_charges = Decimal(
+                                        val_text.replace(",", "")
+                                    )
+
             # 本期使用刷卡金
             if "本期使用刷卡金" in text:
                 parent_td = span.find_parent("td")
@@ -267,15 +297,24 @@ class ABCCreditProvider(BaseProvider):
                 -summary.statement_balance if summary.statement_balance else Decimal(0)
             )
             rebate = summary.rebate_used or Decimal(0)
+            new_charges = summary.new_charges
 
             summary_lines.append(f";   解析消费:       {expenses:>12.2f} CNY")
+            if new_charges is not None:
+                summary_lines.append(f";   账单消费:       {new_charges:>12.2f} CNY")
             summary_lines.append(f";   账单应还:       {stmt_balance:>12.2f} CNY")
             if rebate > 0:
                 summary_lines.append(f";   刷卡金抵扣:     {rebate:>12.2f} CNY")
 
-            # Compare: expenses should equal stmt_balance + rebate (if no previous balance)
-            expected = stmt_balance + rebate
-            diff = expenses - expected
+            # Compare parsed expenses against 本期账单金额 (new charges)
+            # This is more accurate than comparing against 本期应还 which includes
+            # carry-over balance, payments, refunds, and adjustments
+            if new_charges is not None:
+                diff = expenses - new_charges
+            else:
+                # Fallback: compare against stmt_balance + rebate (inaccurate
+                # if there are carry-over balances or payments)
+                diff = expenses - (stmt_balance + rebate)
             summary_lines.append(";")
 
             if stmt_balance == Decimal(0) and expenses == Decimal(0):
