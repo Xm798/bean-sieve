@@ -126,10 +126,14 @@ wheels = [
 
 [[package]]
 name = "beanfmt"
-version = "0.6.0"
+version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/91/cf/ac44675a6465d2ff8e9a4d959ace4a8ef748f608f705733c2c899075d922/beanfmt-0.6.3.tar.gz", hash = "sha256:9e4a4479136f6fad04aee04bc7c2465c329034483ee4c9003e4c516c53bdd698", size = 54020, upload-time = "2026-03-26T15:00:15.806Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/43/58e87410b661628ed5829becca27d9204995ad104fb2e6525a1b81843bd7/beanfmt-0.6.0-cp39-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:228d00910a5d7902cbedf5e1dc3b3451d0b2038caba972adaf4a804743b984d5", size = 550242, upload-time = "2026-03-25T05:48:11.021Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/43/ff2bd9f34faedda66555d87ffaf326e7d934a7a0f102ef8e802c7a187b70/beanfmt-0.6.3-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:52fc5ed68f6256d734fb12af41f11faab09fc17b982d8157e2196d8710672efb", size = 504146, upload-time = "2026-03-26T15:00:17.865Z" },
+    { url = "https://files.pythonhosted.org/packages/70/14/9b310a23273e83be78fc0131255dcf0104d7a20b66036a3490e03891a1b8/beanfmt-0.6.3-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:b00922d928798e3e9f1e10762d6b00299bce5e74901857d582589b6a14b00ffc", size = 501381, upload-time = "2026-03-26T15:00:14.669Z" },
+    { url = "https://files.pythonhosted.org/packages/17/73/c5035840da8159507be62bb1b5e7e216ef9471c166e95e665b2cd12a90c0/beanfmt-0.6.3-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b3666bd863a831f70c82eae9b1006e7b10af9db624c8cf7ddaf5bb6c921c0d2f", size = 558536, upload-time = "2026-03-26T15:00:21.2Z" },
+    { url = "https://files.pythonhosted.org/packages/03/6e/b4944626cc637eff68c59bf7b9022586a93813679b6cda91babea0b5e360/beanfmt-0.6.3-cp39-abi3-win_amd64.whl", hash = "sha256:7a2d3aae8a66cce9b1d64b59de0f893d2f1f11d37c430dd18e08b5758184a86a", size = 461560, upload-time = "2026-03-26T15:00:20.043Z" },
 ]
 
 [[package]]
