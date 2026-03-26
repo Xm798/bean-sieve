@@ -87,6 +87,7 @@ from .banks.credit import (  # noqa: E402, F401
     ccb,
     cgb,
     cib,
+    citic,
     cmb,
     cmbc,
     hxb,

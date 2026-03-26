@@ -115,6 +115,10 @@ providers:
       - 刷卡金
       - 返现
 
+  citic_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:CITIC:1234
+
   cgb_credit:
     accounts:
       "1234": Liabilities:CreditCard:CGB:1234
