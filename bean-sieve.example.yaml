@@ -83,6 +83,10 @@ providers:
       "余额宝": Assets:Wallet:Alipay:YuEBao
       "花呗": Liabilities:Credit:Huabei
 
+  app_store:
+    accounts:
+      "Apple ID": Expenses:Digital:Apple
+
   wechat:
     accounts:
       "零钱": Assets:Wallet:WeChat:Balance

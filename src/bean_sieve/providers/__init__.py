@@ -98,7 +98,7 @@ from .banks.debit import icbc, pab  # noqa: E402, F401
 
 # from .banks.credit import ccb, abc, cib, cmb, bosc, cgb, cmbc
 # from .banks.debit import abc, cmb, bocom
-from .payment import alipay, wechat  # noqa: E402, F401
+from .payment import alipay, app_store, jd, wechat  # noqa: E402, F401
 
 # from .crypto import binance, okx
 

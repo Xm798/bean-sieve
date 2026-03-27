@@ -66,11 +66,12 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 
 ### 支付平台
 
-| Provider | 名称     | 格式       | 说明                   |
-|----------|----------|------------|------------------------|
-| `alipay` | 支付宝   | CSV        | 支付宝导出的交易明细   |
-| `wechat` | 微信支付 | CSV / XLSX | 微信支付账单流水文件   |
-| `jd`     | 京东支付 | CSV        | 京东交易流水导出文件   |
+| Provider | 名称     | 格式       | 说明                                              |
+|----------|----------|------------|----------------------------------------------------|
+| `alipay` | 支付宝   | CSV        | 支付宝导出的交易明细                              |
+| `app_store` | App Store | HAR     | App Store 购买历史 (reportaproblem.apple.com HAR 导出) |
+| `jd`     | 京东支付 | CSV        | 京东交易流水导出文件                              |
+| `wechat` | 微信支付 | CSV / XLSX | 微信支付账单流水文件                              |
 
 ### 信用卡
 
@@ -228,6 +229,12 @@ rules:
 | 银行 | 下载方式 | 备注 |
 | :--- | :--- | :--- |
 | 中信银行 | [信用卡网银](https://e.creditcard.ecitic.com/citiccard/ebank-ocp/ebankpc/bill.html) | 登录后导出已出账单明细 XLS |
+
+### 其他
+
+| 平台 | 下载方式 | 备注 |
+| :--- | :--- | :--- |
+| Apple | [Report a Problem](https://reportaproblem.apple.com) | 登录后 F12 打开控制台，滚动加载完后导出 search 请求为 HAR |
 
 ## 信用卡账单管理方式
 
