@@ -253,54 +253,78 @@
     "providers": {
       "type": "object",
       "description": "Provider-specific configuration",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "accounts": {
-            "type": "object",
-            "description": "Pattern to account mapping. For payment platforms: pattern matches metadata['method']. For bank cards: pattern matches card_last4. These accounts also define the coverage scope for Extra calculation.",
-            "additionalProperties": { "type": "string" }
-          },
-          "output_metadata": {
-            "type": "array",
-            "description": "Additional entry-level metadata fields to output (appended to global output_metadata)",
-            "items": {
-              "type": "string",
-              "enum": [
-                "time",
-                "order_id",
-                "card_last4",
-                "source",
-                "reference",
-                "category",
-                "peer_account",
-                "method",
-                "status",
-                "merchant_id",
-                "tx_type"
-              ]
-            },
-            "examples": [["card_last4"]]
-          },
-          "posting_metadata": {
-            "type": "array",
-            "description": "Posting-level metadata fields to output (from Transaction fields or metadata)",
-            "items": {
-              "type": "string",
-              "enum": ["card_last4"]
-            },
-            "examples": [["card_last4"]]
-          },
-          "rebate_income_account": {
+      "properties": {
+        "alipay": { "$ref": "#/$defs/providerConfig", "description": "支付宝" },
+        "app_store": { "$ref": "#/$defs/providerConfig", "description": "App Store" },
+        "jd": { "$ref": "#/$defs/providerConfig", "description": "京东支付" },
+        "wechat": { "$ref": "#/$defs/providerConfig", "description": "微信支付" },
+        "abc_credit": { "$ref": "#/$defs/providerConfig", "description": "农业银行信用卡" },
+        "boc_credit": { "$ref": "#/$defs/providerConfig", "description": "中国银行信用卡" },
+        "bocom_credit": { "$ref": "#/$defs/providerConfig", "description": "交通银行信用卡" },
+        "bosc_credit": { "$ref": "#/$defs/providerConfig", "description": "上海银行信用卡" },
+        "ccb_credit": { "$ref": "#/$defs/providerConfig", "description": "建设银行信用卡" },
+        "cgb_credit": { "$ref": "#/$defs/providerConfig", "description": "广发银行信用卡" },
+        "cib_credit": { "$ref": "#/$defs/providerConfig", "description": "兴业银行信用卡" },
+        "citic_credit": { "$ref": "#/$defs/providerConfig", "description": "中信银行信用卡" },
+        "cmb_credit": { "$ref": "#/$defs/providerConfig", "description": "招商银行信用卡" },
+        "cmbc_credit": { "$ref": "#/$defs/providerConfig", "description": "民生银行信用卡" },
+        "hxb_credit": { "$ref": "#/$defs/providerConfig", "description": "华夏银行信用卡" },
+        "ccb_debit": { "$ref": "#/$defs/providerConfig", "description": "建设银行借记卡" },
+        "cmb_debit": { "$ref": "#/$defs/providerConfig", "description": "招商银行借记卡" },
+        "icbc_debit": { "$ref": "#/$defs/providerConfig", "description": "工商银行借记卡" },
+        "pab_debit": { "$ref": "#/$defs/providerConfig", "description": "平安银行借记卡" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/providerConfig" }
+    }
+  },
+  "$defs": {
+    "providerConfig": {
+      "type": "object",
+      "properties": {
+        "accounts": {
+          "type": "object",
+          "description": "Pattern to account mapping. For payment platforms: pattern matches metadata['method']. For bank cards: pattern matches card_last4. These accounts also define the coverage scope for Extra calculation.",
+          "additionalProperties": { "type": "string" }
+        },
+        "output_metadata": {
+          "type": "array",
+          "description": "Additional entry-level metadata fields to output (appended to global output_metadata)",
+          "items": {
             "type": "string",
-            "description": "Income account for rebate entries (e.g., Income:Rebate:ABC)"
+            "enum": [
+              "time",
+              "order_id",
+              "card_last4",
+              "source",
+              "reference",
+              "category",
+              "peer_account",
+              "method",
+              "status",
+              "merchant_id",
+              "tx_type"
+            ]
           },
-          "rebate_keywords": {
-            "type": "array",
-            "description": "Keywords to identify existing rebate transactions in ledger",
-            "items": { "type": "string" },
-            "examples": [["刷卡金", "返现"]]
-          }
+          "examples": [["card_last4"]]
+        },
+        "posting_metadata": {
+          "type": "array",
+          "description": "Posting-level metadata fields to output (from Transaction fields or metadata)",
+          "items": {
+            "type": "string",
+            "enum": ["card_last4"]
+          },
+          "examples": [["card_last4"]]
+        },
+        "rebate_income_account": {
+          "type": "string",
+          "description": "Income account for rebate entries (e.g., Income:Rebate:ABC)"
+        },
+        "rebate_keywords": {
+          "type": "array",
+          "description": "Keywords to identify existing rebate transactions in ledger",
+          "items": { "type": "string" },
+          "examples": [["刷卡金", "返现"]]
         }
       }
     }
