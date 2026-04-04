@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 
 from bean_sieve.providers import get_provider
-from bean_sieve.providers.banks.credit.citic import CITICCreditProvider
+from bean_sieve.providers.banks.credit.cncb import CNCBCreditProvider
 
 
-def create_citic_xls(rows: list[list], path: Path) -> Path:
-    """Create a mock CITIC credit card XLS file.
+def create_cncb_xls(rows: list[list], path: Path) -> Path:
+    """Create a mock CNCB credit card XLS file.
 
     Args:
         rows: List of data rows (without title and header).
@@ -55,7 +55,7 @@ def create_citic_xls(rows: list[list], path: Path) -> Path:
 
 @pytest.fixture
 def sample_rows():
-    """Sample CITIC credit card statement data rows."""
+    """Sample CNCB credit card statement data rows."""
     return [
         [
             "2026-01-15",
@@ -101,39 +101,39 @@ def sample_rows():
 
 
 @pytest.fixture
-def citic_xls_file(tmp_path, sample_rows):
-    """Create a temporary CITIC XLS file."""
-    return create_citic_xls(sample_rows, tmp_path / "已出账单明细.xls")
+def cncb_xls_file(tmp_path, sample_rows):
+    """Create a temporary CNCB XLS file."""
+    return create_cncb_xls(sample_rows, tmp_path / "已出账单明细.xls")
 
 
-class TestCITICCreditProvider:
-    """Tests for CITICCreditProvider."""
+class TestCNCBCreditProvider:
+    """Tests for CNCBCreditProvider."""
 
     def test_provider_registration(self):
-        """Test that CITIC provider is properly registered."""
-        provider = get_provider("citic_credit")
-        assert isinstance(provider, CITICCreditProvider)
-        assert provider.provider_id == "citic_credit"
+        """Test that CNCB provider is properly registered."""
+        provider = get_provider("cncb_credit")
+        assert isinstance(provider, CNCBCreditProvider)
+        assert provider.provider_id == "cncb_credit"
         assert provider.provider_name == "中信银行信用卡"
         assert ".xls" in provider.supported_formats
 
     def test_can_handle(self):
         """Test file format detection."""
-        assert CITICCreditProvider.can_handle(Path("已出账单明细.xls"))
-        assert CITICCreditProvider.can_handle(Path("已出账单明细 (1).xls"))
-        assert CITICCreditProvider.can_handle(Path("中信信用卡账单.xls"))
-        assert not CITICCreditProvider.can_handle(Path("已出账单明细.csv"))
-        assert not CITICCreditProvider.can_handle(Path("statement.xls"))
+        assert CNCBCreditProvider.can_handle(Path("已出账单明细.xls"))
+        assert CNCBCreditProvider.can_handle(Path("已出账单明细 (1).xls"))
+        assert CNCBCreditProvider.can_handle(Path("中信信用卡账单.xls"))
+        assert not CNCBCreditProvider.can_handle(Path("已出账单明细.csv"))
+        assert not CNCBCreditProvider.can_handle(Path("statement.xls"))
 
     def test_per_card_statement(self):
-        """Test that per_card_statement is True for CITIC."""
-        provider = CITICCreditProvider()
+        """Test that per_card_statement is True for CNCB."""
+        provider = CNCBCreditProvider()
         assert provider.per_card_statement is True
 
-    def test_parse_transactions(self, citic_xls_file):
+    def test_parse_transactions(self, cncb_xls_file):
         """Test parsing transactions from XLS file."""
-        provider = CITICCreditProvider()
-        transactions = provider.parse(citic_xls_file)
+        provider = CNCBCreditProvider()
+        transactions = provider.parse(cncb_xls_file)
 
         assert len(transactions) == 4
 
@@ -146,7 +146,7 @@ class TestCITICCreditProvider:
         assert txn1.card_last4 == "8888"
         assert "财付通" in txn1.description
         assert "测试超市" in txn1.description
-        assert txn1.provider == "citic_credit"
+        assert txn1.provider == "cncb_credit"
         assert txn1.is_expense
 
         # Another expense
@@ -169,10 +169,10 @@ class TestCITICCreditProvider:
         assert txn4.amount == Decimal("200.00")
         assert "年费" in txn4.description
 
-    def test_statement_period_inferred(self, citic_xls_file):
+    def test_statement_period_inferred(self, cncb_xls_file):
         """Test that statement_period is inferred from transaction date range."""
-        provider = CITICCreditProvider()
-        transactions = provider.parse(citic_xls_file)
+        provider = CNCBCreditProvider()
+        transactions = provider.parse(cncb_xls_file)
 
         assert len(transactions) == 4
         for txn in transactions:
@@ -181,8 +181,8 @@ class TestCITICCreditProvider:
 
     def test_parse_empty_statement(self, tmp_path):
         """Test handling of statement with no data rows."""
-        file_path = create_citic_xls([], tmp_path / "已出账单明细.xls")
-        provider = CITICCreditProvider()
+        file_path = create_cncb_xls([], tmp_path / "已出账单明细.xls")
+        provider = CNCBCreditProvider()
         transactions = provider.parse(file_path)
         assert transactions == []
 
@@ -200,9 +200,9 @@ class TestCITICCreditProvider:
                 "12,345.67",
             ],
         ]
-        file_path = create_citic_xls(rows, tmp_path / "已出账单明细.xls")
+        file_path = create_cncb_xls(rows, tmp_path / "已出账单明细.xls")
 
-        provider = CITICCreditProvider()
+        provider = CNCBCreditProvider()
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 1
@@ -210,9 +210,9 @@ class TestCITICCreditProvider:
 
     def test_currency_mapping(self):
         """Test Chinese currency name to ISO code mapping."""
-        assert CITICCreditProvider._map_currency("人民币") == "CNY"
-        assert CITICCreditProvider._map_currency("美元") == "USD"
-        assert CITICCreditProvider._map_currency("EUR") == "EUR"
+        assert CNCBCreditProvider._map_currency("人民币") == "CNY"
+        assert CNCBCreditProvider._map_currency("美元") == "USD"
+        assert CNCBCreditProvider._map_currency("EUR") == "EUR"
 
     def test_single_card_transactions(self, tmp_path):
         """Test parsing file with transactions for a single card."""
@@ -238,17 +238,17 @@ class TestCITICCreditProvider:
                 "200.00",
             ],
         ]
-        file_path = create_citic_xls(rows, tmp_path / "已出账单明细.xls")
+        file_path = create_cncb_xls(rows, tmp_path / "已出账单明细.xls")
 
-        provider = CITICCreditProvider()
+        provider = CNCBCreditProvider()
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 2
         assert all(t.card_last4 == "1234" for t in transactions)
 
 
-class TestCITICEdgeCases:
-    """Tests for edge cases in CITIC statement parsing."""
+class TestCNCBEdgeCases:
+    """Tests for edge cases in CNCB statement parsing."""
 
     def test_skip_invalid_rows(self, tmp_path):
         """Test that rows with invalid data are skipped."""
@@ -275,9 +275,9 @@ class TestCITICEdgeCases:
                 "50.00",
             ],
         ]
-        file_path = create_citic_xls(rows, tmp_path / "已出账单明细.xls")
+        file_path = create_cncb_xls(rows, tmp_path / "已出账单明细.xls")
 
-        provider = CITICCreditProvider()
+        provider = CNCBCreditProvider()
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 2
@@ -315,7 +315,7 @@ class TestCITICEdgeCases:
         path = tmp_path / "已出账单明细.xls"
         wb.save(str(path))
 
-        provider = CITICCreditProvider()
+        provider = CNCBCreditProvider()
         txns = provider.parse(path)
 
         assert len(txns) == 1
@@ -336,9 +336,9 @@ class TestCITICEdgeCases:
                 "362.50",
             ],
         ]
-        file_path = create_citic_xls(rows, tmp_path / "已出账单明细.xls")
+        file_path = create_cncb_xls(rows, tmp_path / "已出账单明细.xls")
 
-        provider = CITICCreditProvider()
+        provider = CNCBCreditProvider()
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 1
@@ -358,6 +358,6 @@ class TestCITICEdgeCases:
         # Only 3 columns
         wb.save(str(tmp_path / "已出账单明细.xls"))
 
-        provider = CITICCreditProvider()
+        provider = CNCBCreditProvider()
         transactions = provider.parse(tmp_path / "已出账单明细.xls")
         assert transactions == []

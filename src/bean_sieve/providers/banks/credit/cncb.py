@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @register_provider
-class CITICCreditProvider(BaseProvider):
+class CNCBCreditProvider(BaseProvider):
     """
     Provider for China CITIC Bank (中信银行) credit card XLS statements.
 
@@ -34,12 +34,12 @@ class CITICCreditProvider(BaseProvider):
     - One file per card (per-card statement)
     """
 
-    provider_id = "citic_credit"
+    provider_id = "cncb_credit"
     provider_name = "中信银行信用卡"
     supported_formats = [".xls"]
-    filename_keywords = ["中信", "citic", "已出账单明细"]
+    filename_keywords = ["中信", "cncb", "已出账单明细"]
     content_keywords = []  # Binary XLS (BIFF8), content detection not possible
-    per_card_statement = True  # CITIC sends separate statements per card
+    per_card_statement = True  # CNCB sends separate statements per card
 
     COL_TRANS_DATE = 0  # 交易日期
     COL_POST_DATE = 1  # 入账日期
@@ -53,7 +53,7 @@ class CITICCreditProvider(BaseProvider):
     HEADER_KEYWORDS = ("交易日期", "入账日期")
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse CITIC credit card XLS statement."""
+        """Parse CNCB credit card XLS statement."""
         wb = xlrd.open_workbook(str(file_path))
         sheet = wb.sheet_by_index(0)
 
