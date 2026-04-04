@@ -265,7 +265,7 @@
         "ccb_credit": { "$ref": "#/$defs/providerConfig", "description": "建设银行信用卡" },
         "cgb_credit": { "$ref": "#/$defs/providerConfig", "description": "广发银行信用卡" },
         "cib_credit": { "$ref": "#/$defs/providerConfig", "description": "兴业银行信用卡" },
-        "citic_credit": { "$ref": "#/$defs/providerConfig", "description": "中信银行信用卡" },
+        "cncb_credit": { "$ref": "#/$defs/providerConfig", "description": "中信银行信用卡" },
         "cmb_credit": { "$ref": "#/$defs/providerConfig", "description": "招商银行信用卡" },
         "cmbc_credit": { "$ref": "#/$defs/providerConfig", "description": "民生银行信用卡" },
         "hxb_credit": { "$ref": "#/$defs/providerConfig", "description": "华夏银行信用卡" },

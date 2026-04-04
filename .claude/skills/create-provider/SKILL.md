@@ -199,7 +199,7 @@ Transaction(
 
 **Rules:**
 
-1. **Always include a bank-identifying term** — e.g., `["中信", "citic", "已出账单明细"]`, not just `["已出账单明细"]`. Generic phrases like "账单明细", "交易明细", "已出账单" appear across multiple banks and will eventually collide.
+1. **Always include a bank-identifying term** — e.g., `["中信", "cncb", "已出账单明细"]`, not just `["已出账单明细"]`. Generic phrases like "账单明细", "交易明细", "已出账单" appear across multiple banks and will eventually collide.
 2. **Check for collisions** before finalizing — search existing providers for any that share the same `supported_formats` and could match the same filename. Run: `rg "supported_formats.*\.xls" src/bean_sieve/providers/` (or `.csv`, etc.).
 3. **Prefer `filename_pattern`** (regex) over `filename_keywords` (substring) when the bank's export filename has a predictable structure (e.g., `交易明细_\d{4}_\d{8}_\d{8}`).
 
@@ -293,7 +293,7 @@ def get_covered_ranges(self, transactions, config) -> dict[str, list[tuple[date,
 
 ## Per-Card Statement Support
 
-For banks that send **separate statements per card** (e.g., BOCOM, CITIC), set `per_card_statement = True` and:
+For banks that send **separate statements per card** (e.g., BOCOM, CNCB), set `per_card_statement = True` and:
 
 1. **Always add an inline comment** explaining the behavior:
    ```python
@@ -536,7 +536,7 @@ Read these for implementation patterns:
 - `src/bean_sieve/core/types.py` - Transaction model
 - `src/bean_sieve/providers/banks/credit/hxb.py` - EML parsing example
 - `src/bean_sieve/providers/banks/credit/bocom.py` - Per-card statement example (EML)
-- `src/bean_sieve/providers/banks/credit/citic.py` - XLS parsing example (xlrd with float handling)
+- `src/bean_sieve/providers/banks/credit/cncb.py` - XLS parsing example (xlrd with float handling)
 - `src/bean_sieve/providers/banks/debit/ccb.py` - XLS parsing example (xlrd with _normalize_cell_str)
 - `src/bean_sieve/providers/payment/alipay.py` - CSV parsing example
 - `src/bean_sieve/providers/banks/debit/pab.py` - XLSX parsing example

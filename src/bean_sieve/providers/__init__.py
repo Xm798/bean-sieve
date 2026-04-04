@@ -87,9 +87,9 @@ from .banks.credit import (  # noqa: E402, F401
     ccb,
     cgb,
     cib,
-    citic,
     cmb,
     cmbc,
+    cncb,
     hxb,
 )
 from .banks.debit import ccb as ccb_debit  # noqa: E402, F401
