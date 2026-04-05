@@ -315,7 +315,19 @@ class TestABCDebitProvider:
                 "测试有效交易",
                 "微信支付",
             ],
-            ["not-a-date", "10:00:00", "-5.00", "79.50", "测试", "", "", "", "", "", ""],
+            [
+                "not-a-date",
+                "10:00:00",
+                "-5.00",
+                "79.50",
+                "测试",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ],
         ]
         f = _create_xlsx(tmp_path / "detail20260405.xlsx", rows)
         txns = ABCDebitProvider().parse(f)
