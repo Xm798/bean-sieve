@@ -51,7 +51,36 @@
               "method",
               "status",
               "merchant_id",
-              "tx_type"
+              "tx_type",
+              "summary",
+              "channel",
+              "type",
+              "note",
+              "notes",
+              "detail",
+              "location",
+              "remarks",
+              "section",
+              "trans_type",
+              "original_date",
+              "original_trans_date",
+              "original_post_date",
+              "posting_date",
+              "counterparty_bank",
+              "counterparty_account",
+              "payment_method",
+              "transaction_type",
+              "transaction_status",
+              "transaction_category",
+              "merchant_order_id",
+              "refund_amount",
+              "order_type",
+              "commission",
+              "rebate",
+              "rebate_currency",
+              "media_type",
+              "item_id",
+              "adam_id"
             ]
           },
           "examples": [
@@ -254,25 +283,86 @@
       "type": "object",
       "description": "Provider-specific configuration",
       "properties": {
-        "alipay": { "$ref": "#/$defs/providerConfig", "description": "支付宝" },
-        "app_store": { "$ref": "#/$defs/providerConfig", "description": "App Store" },
-        "jd": { "$ref": "#/$defs/providerConfig", "description": "京东支付" },
-        "wechat": { "$ref": "#/$defs/providerConfig", "description": "微信支付" },
+        "alipay": {
+          "description": "支付宝",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["category", "peer_account", "method", "status", "merchant_id", "tx_type", "remarks"] } } } }]
+        },
+        "app_store": {
+          "description": "App Store",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["media_type", "item_id", "adam_id"] } } } }]
+        },
+        "jd": {
+          "description": "京东支付",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["payment_method", "transaction_type", "transaction_status", "transaction_category", "merchant_order_id", "notes", "refund_amount"] } } } }]
+        },
+        "wechat": {
+          "description": "微信支付",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["tx_type", "method", "status", "merchant_id", "remarks", "order_type", "commission", "rebate", "rebate_currency"] } } } }]
+        },
         "abc_credit": { "$ref": "#/$defs/providerConfig", "description": "农业银行信用卡" },
-        "boc_credit": { "$ref": "#/$defs/providerConfig", "description": "中国银行信用卡" },
-        "bocom_credit": { "$ref": "#/$defs/providerConfig", "description": "交通银行信用卡" },
+        "boc_credit": {
+          "description": "中国银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["original_trans_date", "original_post_date"] } } } }]
+        },
+        "bocom_credit": {
+          "description": "交通银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["original_date", "section"] } } } }]
+        },
         "bosc_credit": { "$ref": "#/$defs/providerConfig", "description": "上海银行信用卡" },
         "ccb_credit": { "$ref": "#/$defs/providerConfig", "description": "建设银行信用卡" },
-        "cgb_credit": { "$ref": "#/$defs/providerConfig", "description": "广发银行信用卡" },
-        "cib_credit": { "$ref": "#/$defs/providerConfig", "description": "兴业银行信用卡" },
+        "cgb_credit": {
+          "description": "广发银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["original_date", "trans_type"] } } } }]
+        },
+        "cib_credit": {
+          "description": "兴业银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["original_date"] } } } }]
+        },
         "cncb_credit": { "$ref": "#/$defs/providerConfig", "description": "中信银行信用卡" },
-        "cmb_credit": { "$ref": "#/$defs/providerConfig", "description": "招商银行信用卡" },
-        "cmbc_credit": { "$ref": "#/$defs/providerConfig", "description": "民生银行信用卡" },
-        "hxb_credit": { "$ref": "#/$defs/providerConfig", "description": "华夏银行信用卡" },
-        "ccb_debit": { "$ref": "#/$defs/providerConfig", "description": "建设银行借记卡" },
-        "cmb_debit": { "$ref": "#/$defs/providerConfig", "description": "招商银行借记卡" },
-        "icbc_debit": { "$ref": "#/$defs/providerConfig", "description": "工商银行借记卡" },
-        "pab_debit": { "$ref": "#/$defs/providerConfig", "description": "平安银行借记卡" }
+        "cmb_credit": {
+          "description": "招商银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["posting_date"] } } } }]
+        },
+        "cmbc_credit": {
+          "description": "民生银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["posting_date"] } } } }]
+        },
+        "hxb_credit": {
+          "description": "华夏银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["original_date"] } } } }]
+        },
+        "abc_debit": {
+          "description": "农业银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary"] } } } }]
+        },
+        "bocom_debit": {
+          "description": "交通银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "method", "location", "counterparty_account", "counterparty_bank"] } } } }]
+        },
+        "boc_debit": {
+          "description": "中国银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "channel"] } } } }]
+        },
+        "ccb_debit": {
+          "description": "建设银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary"] } } } }]
+        },
+        "cib_debit": {
+          "description": "兴业银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "counterparty_bank", "counterparty_account"] } } } }]
+        },
+        "cmb_debit": {
+          "description": "招商银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["type"] } } } }]
+        },
+        "icbc_debit": {
+          "description": "工商银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "detail", "location"] } } } }]
+        },
+        "pab_debit": {
+          "description": "平安银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["tx_type", "summary", "note"] } } } }]
+        }
       },
       "additionalProperties": { "$ref": "#/$defs/providerConfig" }
     }
@@ -289,22 +379,7 @@
         "output_metadata": {
           "type": "array",
           "description": "Additional entry-level metadata fields to output (appended to global output_metadata)",
-          "items": {
-            "type": "string",
-            "enum": [
-              "time",
-              "order_id",
-              "card_last4",
-              "source",
-              "reference",
-              "category",
-              "peer_account",
-              "method",
-              "status",
-              "merchant_id",
-              "tx_type"
-            ]
-          },
+          "items": { "type": "string" },
           "examples": [["card_last4"]]
         },
         "posting_metadata": {

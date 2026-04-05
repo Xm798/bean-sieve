@@ -92,7 +92,11 @@ from .banks.credit import (  # noqa: E402, F401
     cncb,
     hxb,
 )
+from .banks.debit import abc as abc_debit  # noqa: E402, F401
+from .banks.debit import boc as boc_debit  # noqa: E402, F401
+from .banks.debit import bocom as bocom_debit  # noqa: E402, F401
 from .banks.debit import ccb as ccb_debit  # noqa: E402, F401
+from .banks.debit import cib as cib_debit  # noqa: E402, F401
 from .banks.debit import cmb as cmb_debit  # noqa: E402, F401
 from .banks.debit import icbc, pab  # noqa: E402, F401
 

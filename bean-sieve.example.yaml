@@ -132,9 +132,22 @@ providers:
     accounts:
       "7777": Liabilities:CreditCard:CMBC
 
+  bocom_debit:
+    accounts:
+      "1234": Assets:Bank:BOCOM:1234
+
+  boc_debit:
+    # CSV 中无卡号信息，配置单个账户时自动匹配
+    accounts:
+      "1234": Assets:Bank:BOC:1234
+
   ccb_debit:
     accounts:
       "6789": Assets:Bank:CCB:6789
+
+  cib_debit:
+    accounts:
+      "1234": Assets:Bank:CIB:1234
 
   pab_debit:
     accounts:
