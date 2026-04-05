@@ -93,7 +93,11 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 
 | Provider       | 名称           | 格式      | 说明               |
 |----------------|----------------|-----------|--------------------|
+| `abc_debit`    | 农业银行借记卡 | XLSX      | Excel 导出账单     |
+| `boc_debit`    | 中国银行借记卡 | CSV       | 网银导出账单       |
+| `bocom_debit`  | 交通银行借记卡 | XLS       | XLS 导出账单       |
 | `ccb_debit`    | 建设银行借记卡 | XLS       | XLS 导出账单       |
+| `cib_debit`    | 兴业银行借记卡 | XLS       | XLS 导出账单       |
 | `cmb_debit`    | 招商银行借记卡 | CSV       | CSV 导出账单       |
 | `icbc_debit`   | 工商银行借记卡 | CSV       | CSV 导出账单       |
 | `pab_debit`    | 平安银行借记卡 | XLS/ XLSX | Excel 导出账单     |
@@ -217,10 +221,14 @@ rules:
 
 | 银行 | 下载方式 | 系统要求 | 备注 |
 | :--- | :--- | :--- | :--- |
+| 农业银行 | [个人网上银行](https://perbank.abchina.com/EbankSite/ebank/startup) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
 | 招商银行 | [专业版](https://cmbchina.com/pbankwebNew/downloadPage.aspx) PC 客户端 | Windows | 需安装客户端 |
 | 建设银行 | [个人网上银行](https://ibsbjstar.ccb.com.cn/CCBIS/V6/STY1/CN/login.jsp) | Windows / macOS | Chrome 即可，无需安全控件 |
 | 工商银行 | [个人网上银行](https://mybank.icbc.com.cn/icbc/newperbank/perbank3/frame/frame_index.jsp) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
 | 平安银行 | [个人网上银行](https://bank.pingan.com.cn/m/main/index.html) | Windows / macOS | 扫码登录无需安全控件 |
+| 中国银行 | [个人网上银行](https://ebsnew.boc.cn/boc15/login.html?locale=zh) | Windows / macOS | 卡号登录，复制查询表格保存为 CSV |
+| 交通银行 | [个人网上银行](https://pbank.bankcomm.com/personbank/) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
+| 兴业银行 | [个人网上银行](https://personalbank.cib.com.cn/) | Windows / macOS | 需安装安全控件，查询→交易明细查询→流水下载→Excel |
 
 ### 信用卡
 
@@ -243,6 +251,68 @@ rules:
 | **按户管理** | 招商银行、民生银行、华夏银行、平安银行、浦发银行、北京银行、上海银行 | 信报、还款、积分按户**合并管理** |
 | **按卡管理** | 广发银行、建设银行 | 独立信报，**账单日合并**，**独立还款**。 |
 | **按卡管理** | 中信银行、光大银行、交通银行、农业银行、工商银行、兴业银行、中国银行、邮政储蓄 | 独立信报，独立账单，独立还款。 |
+
+## Provider Metadata 字段
+
+每个 Provider 解析账单时，除了标准字段（日期、金额、描述、收款方等）外，还会将账单中的其他列存入 `metadata`。可通过 `output_metadata` 配置控制哪些字段输出到 Beancount 文件。
+
+### 支付平台
+
+| Provider | Metadata 字段 |
+| :--- | :--- |
+| `alipay` | `category`, `peer_account`, `method`, `status`, `merchant_id`, `tx_type`, `remarks` |
+| `wechat` | `tx_type`, `method`, `status`, `merchant_id`, `remarks`, `order_type`, `commission`, `rebate`, `rebate_currency` |
+| `jd` | `payment_method`, `transaction_type`, `transaction_status`, `transaction_category`, `merchant_order_id`, `notes`, `refund_amount` |
+| `app_store` | `media_type`, `item_id`, `adam_id` |
+
+### 信用卡
+
+| Provider | Metadata 字段 |
+| :--- | :--- |
+| `boc_credit` | `original_trans_date`, `original_post_date` |
+| `bocom_credit` | `original_date`, `section` |
+| `cgb_credit` | `original_date`, `trans_type` |
+| `cib_credit` | `original_date` |
+| `cmb_credit` | `posting_date` |
+| `cmbc_credit` | `posting_date` |
+| `hxb_credit` | `original_date` |
+| `abc_credit` | — |
+| `bosc_credit` | — |
+| `ccb_credit` | — |
+| `cncb_credit` | — |
+
+### 借记卡
+
+| Provider | Metadata 字段 |
+| :--- | :--- |
+| `abc_debit` | `summary` |
+| `boc_debit` | `summary`, `channel` |
+| `bocom_debit` | `summary`, `method`, `location`, `counterparty_account`, `counterparty_bank` |
+| `ccb_debit` | `summary` |
+| `cib_debit` | `summary`, `counterparty_bank`, `counterparty_account` |
+| `cmb_debit` | `type` |
+| `icbc_debit` | `summary`, `detail`, `location` |
+| `pab_debit` | `tx_type`, `summary`, `note` |
+
+### 配置示例
+
+全局配置（所有 Provider 生效）：
+
+```yaml
+defaults:
+  output_metadata:
+    - time
+```
+
+Provider 级别配置（仅该 Provider 生效，与全局合并）：
+
+```yaml
+providers:
+  cib_debit:
+    output_metadata:
+      - counterparty_bank
+      - counterparty_account
+```
 
 ## Provider 特定功能
 

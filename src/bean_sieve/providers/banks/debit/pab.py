@@ -72,11 +72,17 @@ class PABDebitProvider(BaseProvider):
                 category=UserWarning,
             )
             if file_path.suffix.lower() == ".xls":
-                # Some .xls files are actually xlsx format internally
-                # Copy to temp file with .xlsx extension for openpyxl
-                with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-                    shutil.copy(file_path, tmp.name)
-                    return load_workbook(tmp.name)
+                tmp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".xlsx", delete=False
+                    ) as tmp:
+                        tmp_path = tmp.name
+                        shutil.copy(file_path, tmp_path)
+                    return load_workbook(tmp_path)
+                finally:
+                    if tmp_path:
+                        Path(tmp_path).unlink(missing_ok=True)
             return load_workbook(file_path)
 
     def _extract_card_last4(self, sheet) -> str | None:

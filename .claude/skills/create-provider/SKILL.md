@@ -193,6 +193,80 @@ Transaction(
 
 5. **match_key**: Prefer order_id if available, else use `(date, abs_amount, card_suffix)`.
 
+## Metadata Handling
+
+Every column in the bank statement that is NOT mapped to a standard Transaction field should be stored in `metadata`. This preserves all original data for downstream use (rules, output, debugging).
+
+### Standard Transaction fields (do NOT put in metadata)
+
+These columns map directly to Transaction model fields:
+
+| Statement column | Transaction field |
+|-----------------|-------------------|
+| 交易日期/交易时间 | `date`, `time` |
+| 入账日/记账日 | `post_date` (credit cards only, debit cards typically skip) |
+| 金额/支出/收入 | `amount` |
+| 币种 | `currency` |
+| 交易描述/摘要+用途 | `description` |
+| 对方户名/商户名 | `payee` |
+| 订单号/流水号 | `order_id` |
+| 卡号末四位 | `card_last4` |
+
+### All other columns → metadata
+
+Every remaining column should be stored in `metadata`, using a descriptive English key. Only include non-empty values to avoid noise.
+
+**Naming convention for metadata keys:**
+- Use lowercase snake_case English names
+- Be descriptive: `counterparty_bank` not `bank`, `transaction_type` not `type` (unless the provider is simple enough that `type` is unambiguous)
+- Check existing providers for consistent naming of similar concepts
+
+**Pattern:**
+
+```python
+metadata: dict[str, str] = {"summary": summary}
+if counterparty_bank:
+    metadata["counterparty_bank"] = counterparty_bank
+if counterparty_account:
+    metadata["counterparty_account"] = counterparty_account
+
+return Transaction(
+    ...
+    metadata=metadata,
+)
+```
+
+### Schema registration (required)
+
+After adding metadata keys, update `bean-sieve.schema.json` to register them in the provider's `output_metadata` enum. This enables IDE autocomplete when users configure which metadata fields to include in output.
+
+The schema uses per-provider `output_metadata` enums via `allOf`:
+
+```json
+"<provider_id>": {
+  "description": "<中文名>",
+  "allOf": [
+    { "$ref": "#/$defs/providerConfig" },
+    {
+      "properties": {
+        "output_metadata": {
+          "items": {
+            "enum": ["summary", "counterparty_bank", "counterparty_account"]
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+If the provider has NO metadata keys, use the simple form:
+```json
+"<provider_id>": { "$ref": "#/$defs/providerConfig", "description": "<中文名>" }
+```
+
+Also add the new keys to the global `defaults.output_metadata` enum (superset of all provider keys) so users can use them at the global level too.
+
 ## Filename Detection — Avoiding False Positives
 
 `filename_keywords` is the primary detection mechanism (especially for binary formats like XLS where `content_keywords` can't work). A poorly chosen keyword can cause one provider to hijack files meant for another.
@@ -461,7 +535,10 @@ providers:
       "1234": Liabilities:CreditCard:<Bank>:1234
 ```
 
-2. **JSON Schema** (`bean-sieve.schema.json`): Check if the schema uses `additionalProperties` for providers (it does — new provider IDs are automatically valid). Only update if introducing new config fields not covered by the existing schema.
+2. **JSON Schema** (`bean-sieve.schema.json`):
+   - Add the provider entry under `providers.properties` with per-provider `output_metadata` enum (see Metadata Handling section above)
+   - Add any new metadata keys to the global `defaults.output_metadata` enum as well
+   - The schema uses `additionalProperties` so new provider IDs are automatically valid, but explicit entries enable per-provider autocomplete
 
 3. **User config** (`bean-sieve.yaml`): Check if the user's config needs a corresponding update.
 
@@ -519,6 +596,17 @@ Use the `agent-teams:team-review` skill (or invoke `/team-review` directly) with
 4. **Testing quality + Challenger** — mock data completeness, edge case coverage, adversarial cross-examination of design decisions (amount sign, detection keywords, statement_period)
 
 At least one reviewer must act as a **challenger** — questioning assumptions, verifying claims against real data, and cross-examining other dimensions' findings.
+
+### Cross-Examination Phase
+
+After all 4 reviewers complete, the team lead must **consolidate findings with cross-examination**:
+
+1. **Deduplicate**: Merge findings independently raised by multiple reviewers (e.g., functional + challenger both flag the same xlrd risk). Cross-referenced findings carry higher confidence.
+2. **Resolve disagreements**: If reviewers disagree on severity or whether something is a bug, the challenger's evidence-based investigation takes precedence. The challenger should self-verify by grepping the codebase (e.g., "is this really a convention?" → check all providers).
+3. **Self-closing**: Challenger findings that are disproved during cross-examination (e.g., "no `post_date`" turns out to be a deliberate codebase convention confirmed by grepping all debit providers) should be explicitly closed with reasoning, not silently dropped.
+4. **Consensus report**: Present the final consolidated report organized by severity, noting which findings were cross-confirmed by multiple reviewers and which were self-closed by the challenger.
+
+This phase ensures the review produces **verified, actionable findings** rather than a raw list of concerns. The goal is consensus — every finding in the final report should have supporting evidence, and every dismissed concern should have a documented reason.
 
 Fix all confirmed findings before committing. Typical issues caught in past reviews:
 
