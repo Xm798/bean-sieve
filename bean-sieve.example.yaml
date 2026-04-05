@@ -132,18 +132,30 @@ providers:
     accounts:
       "7777": Liabilities:CreditCard:CMBC
 
-  bocom_debit:
-    accounts:
-      "1234": Assets:Bank:BOCOM:1234
-
   boc_debit:
     # CSV 中无卡号信息，配置单个账户时自动匹配
     accounts:
       "1234": Assets:Bank:BOC:1234
 
+  abc_debit:
+    accounts:
+      "1234": Assets:Bank:ABC:1234
+
+  icbc_debit:
+    accounts:
+      "1111": Assets:Bank:ICBC:1111
+
   ccb_debit:
     accounts:
       "6789": Assets:Bank:CCB:6789
+
+  bocom_debit:
+    accounts:
+      "1234": Assets:Bank:BOCOM:1234
+
+  cmb_debit:
+    accounts:
+      "5555": Assets:Bank:CMB:5555
 
   cib_debit:
     accounts:
@@ -152,14 +164,8 @@ providers:
   pab_debit:
     accounts:
       "6666": Assets:Bank:PAB:6666
-
-  icbc_debit:
-    accounts:
-      "1111": Assets:Bank:ICBC:1111
-
-  cmb_debit:
-    accounts:
-      "5555": Assets:Bank:CMB:5555
+    # 对账后生成 balance 指令（日期为账单最后一天的次日）
+    balance: true
 
 # 规则匹配
 rules:

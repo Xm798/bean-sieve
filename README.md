@@ -93,14 +93,14 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 
 | Provider       | 名称           | 格式      | 说明               |
 |----------------|----------------|-----------|--------------------|
-| `abc_debit`    | 农业银行借记卡 | XLSX      | Excel 导出账单     |
 | `boc_debit`    | 中国银行借记卡 | CSV       | 网银导出账单       |
-| `bocom_debit`  | 交通银行借记卡 | XLS       | XLS 导出账单       |
-| `ccb_debit`    | 建设银行借记卡 | XLS       | XLS 导出账单       |
-| `cib_debit`    | 兴业银行借记卡 | XLS       | XLS 导出账单       |
-| `cmb_debit`    | 招商银行借记卡 | CSV       | CSV 导出账单       |
+| `abc_debit`    | 农业银行借记卡 | XLSX      | Excel 导出账单     |
 | `icbc_debit`   | 工商银行借记卡 | CSV       | CSV 导出账单       |
-| `pab_debit`    | 平安银行借记卡 | XLS/ XLSX | Excel 导出账单     |
+| `ccb_debit`    | 建设银行借记卡 | XLS       | XLS 导出账单       |
+| `bocom_debit`  | 交通银行借记卡 | XLS       | XLS 导出账单       |
+| `cmb_debit`    | 招商银行借记卡 | CSV       | CSV 导出账单       |
+| `cib_debit`    | 兴业银行借记卡 | XLS       | XLS 导出账单       |
+| `pab_debit`    | 平安银行借记卡 | XLS/XLSX  | Excel 导出账单     |
 
 更多 Provider 正在开发中。
 
@@ -221,14 +221,14 @@ rules:
 
 | 银行 | 下载方式 | 系统要求 | 备注 |
 | :--- | :--- | :--- | :--- |
-| 农业银行 | [个人网上银行](https://perbank.abchina.com/EbankSite/ebank/startup) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
-| 招商银行 | [专业版](https://cmbchina.com/pbankwebNew/downloadPage.aspx) PC 客户端 | Windows | 需安装客户端 |
-| 建设银行 | [个人网上银行](https://ibsbjstar.ccb.com.cn/CCBIS/V6/STY1/CN/login.jsp) | Windows / macOS | Chrome 即可，无需安全控件 |
-| 工商银行 | [个人网上银行](https://mybank.icbc.com.cn/icbc/newperbank/perbank3/frame/frame_index.jsp) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
-| 平安银行 | [个人网上银行](https://bank.pingan.com.cn/m/main/index.html) | Windows / macOS | 扫码登录无需安全控件 |
 | 中国银行 | [个人网上银行](https://ebsnew.boc.cn/boc15/login.html?locale=zh) | Windows / macOS | 卡号登录，复制查询表格保存为 CSV |
+| 农业银行 | [个人网上银行](https://perbank.abchina.com/EbankSite/ebank/startup) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
+| 工商银行 | [个人网上银行](https://mybank.icbc.com.cn/icbc/newperbank/perbank3/frame/frame_index.jsp) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
+| 建设银行 | [个人网上银行](https://ibsbjstar.ccb.com.cn/CCBIS/V6/STY1/CN/login.jsp) | Windows / macOS | Chrome 即可，无需安全控件 |
 | 交通银行 | [个人网上银行](https://pbank.bankcomm.com/personbank/) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
+| 招商银行 | [专业版](https://cmbchina.com/pbankwebNew/downloadPage.aspx) PC 客户端 | Windows | 需安装客户端 |
 | 兴业银行 | [个人网上银行](https://personalbank.cib.com.cn/) | Windows / macOS | 需安装安全控件，查询→交易明细查询→流水下载→Excel |
+| 平安银行 | [个人网上银行](https://bank.pingan.com.cn/m/main/index.html) | Windows / macOS | 扫码登录无需安全控件 |
 
 ### 信用卡
 
@@ -283,16 +283,86 @@ rules:
 
 ### 借记卡
 
-| Provider | Metadata 字段 |
+#### 中国银行 `boc_debit`
+
+| 字段 | 说明 |
 | :--- | :--- |
-| `abc_debit` | `summary` |
-| `boc_debit` | `summary`, `channel` |
-| `bocom_debit` | `summary`, `method`, `location`, `counterparty_account`, `counterparty_bank` |
-| `ccb_debit` | `summary` |
-| `cib_debit` | `summary`, `counterparty_bank`, `counterparty_account` |
-| `cmb_debit` | `type` |
-| `icbc_debit` | `summary`, `detail`, `location` |
-| `pab_debit` | `tx_type`, `summary`, `note` |
+| `summary` | 业务摘要 |
+| `balance` | 余额 |
+| `channel` | 交易渠道/场所 |
+| `counterparty_account` | 对方账户账号 |
+| `cash_remit` | 钞/汇 |
+
+#### 农业银行 `abc_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `summary` | 交易摘要 |
+| `balance` | 本次余额 |
+| `counterparty_account` | 对方账号 |
+| `bank` | 交易行 |
+| `channel` | 交易渠道 |
+| `tx_type` | 交易类型 |
+
+#### 工商银行 `icbc_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `summary` | 摘要 |
+| `balance` | 余额 |
+| `detail` | 交易详情 |
+| `location` | 交易场所 |
+| `counterparty_account` | 对方账户 |
+
+#### 建设银行 `ccb_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `summary` | 摘要 |
+| `balance` | 账户余额 |
+| `counterparty_account` | 对方账号 |
+| `location` | 交易地点 |
+
+#### 交通银行 `bocom_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `summary` | 摘要 |
+| `balance` | 余额 |
+| `method` | 交易方式 |
+| `location` | 交易地点 |
+| `counterparty_account` | 对方账户 |
+| `counterparty_bank` | 对方开户行 |
+
+#### 招商银行 `cmb_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `type` | 交易类型 |
+| `balance` | 余额 |
+| `remark` | 交易备注 |
+
+#### 兴业银行 `cib_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `summary` | 摘要 |
+| `balance` | 账户余额 |
+| `counterparty_bank` | 对方银行 |
+| `counterparty_account` | 对方账号 |
+| `purpose` | 用途 |
+| `channel` | 交易渠道 |
+| `remark` | 备注 |
+
+#### 平安银行 `pab_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `tx_type` | 交易类型（转入/转出）|
+| `summary` | 摘要 |
+| `balance` | 账户余额 |
+| `note` | 备注 |
+| `counterparty_account` | 对方账号 |
 
 ### 配置示例
 
