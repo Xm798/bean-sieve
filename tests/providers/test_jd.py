@@ -159,6 +159,53 @@ class TestJDProvider:
         # Income should be negative in bean-sieve convention
         assert transactions[0].amount == Decimal("-50.00")
 
+    def test_partial_refund(self, tmp_path: Path) -> None:
+        """Test parsing transactions with partial refund annotations."""
+        sample_file = tmp_path / "jd_partial_refund.csv"
+        sample_content = """导出信息：
+京东账号名：jd_test
+申请时间：2026-04-04 21:49:52
+日期区间：2026-03-04 至 2026-04-04
+导出交易类型：全部
+导出交易场景：全部
+共：3笔记录
+收入：0笔，0.00元
+支出：3笔(含2笔部分退款)，341.96元
+不计收支：0笔，0.00元
+
+特别提示
+1.本明细为每笔订单支付的明细，不包括已删除的记录；如需计算白条相关费用明细，请访问"白条-查账还款"进行查看；
+2.个人资金互转、全额退款等记为【不计收支】类，部分退款的支出金额为剔除退款后的支付金额；
+3.因系统原因或通讯故障等偶发因素导致本明细与实际交易结果不符时，以实际交易情况为准；
+4.因统计逻辑不同，明细金额直接累加后，可能会和上方统计金额不一致，请以实际交易金额为准；
+5.京东快捷支付等非余额支付方式可能既产生京东交易也同步产生银行交易，因此请勿使用本回单进行重复记账；
+6.明细如经任何涂改、编造，均立即失去效力；
+7.禁止将本回单用于非法用途；
+8.本明细仅供个人对账使用。
+
+交易时间,商户名称,交易说明,金额,收/付款方式,交易状态,收/支,交易分类,交易订单号,商家订单号,备注
+2026-03-26 08:25:19\t,京东平台商户,测试商品A等多件,1174.41(已退款903.43),京东白条,交易成功,支出,运动户外,100000005\t,200000005\t,
+2026-03-25 17:04:08\t,京东平台商户,测试商品B等多件,976.76(已退款735.45),京东白条,交易成功,支出,家居家装,100000006\t,200000006\t,
+2026-03-20 10:00:00\t,京东平台商户,测试商品C,200.00(已全额退款),京东白条,交易成功,支出,日用百货,100000007\t,200000007\t,
+"""
+        sample_file.write_text(sample_content, encoding="utf-8")
+
+        provider = JDProvider()
+        transactions = provider.parse(sample_file)
+
+        # Should parse 2 partial refunds, skip 1 full refund (net 0)
+        assert len(transactions) == 2
+
+        # Partial refund: 1174.41 - 903.43 = 270.98
+        tx1 = transactions[0]
+        assert tx1.amount == Decimal("270.98")
+        assert tx1.metadata["refund_amount"] == "903.43"
+
+        # Partial refund: 976.76 - 735.45 = 241.31
+        tx2 = transactions[1]
+        assert tx2.amount == Decimal("241.31")
+        assert tx2.metadata["refund_amount"] == "735.45"
+
     def test_can_handle(self, tmp_path: Path) -> None:
         """Test file detection."""
         # Test with matching filename
