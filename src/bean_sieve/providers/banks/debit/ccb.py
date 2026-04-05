@@ -43,6 +43,7 @@ class CCBDebitProvider(BaseProvider):
     COL_TX_TIME = 2  # 交易时间
     COL_EXPENSE = 3  # 支出
     COL_INCOME = 4  # 收入
+    COL_BALANCE = 5  # 账户余额
     COL_SUMMARY = 7  # 摘要
     COL_COUNTERPARTY_NAME = 9  # 对方户名
     COL_LOCATION = 10  # 交易地点
@@ -140,8 +141,15 @@ class CCBDebitProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=source_line,
-            metadata={"summary": summary},
+            metadata=self._build_metadata(summary, row),
         )
+
+    def _build_metadata(self, summary: str, row: list) -> dict[str, str]:
+        metadata: dict[str, str] = {"summary": summary}
+        balance = self._normalize_cell_str(row[self.COL_BALANCE])
+        if balance and balance != "0":
+            metadata["balance"] = balance
+        return metadata
 
     def _parse_time(self, value) -> time | None:
         """Parse time from HH:MM:SS string."""

@@ -48,6 +48,7 @@ class ABCDebitProvider(BaseProvider):
     COL_TX_DATE = 0  # 交易日期
     COL_TX_TIME = 1  # 交易时间
     COL_AMOUNT = 2  # 交易金额 (signed: -expense, +income)
+    COL_BALANCE = 3  # 本次余额
     COL_COUNTERPARTY_NAME = 4  # 对方户名
     COL_PURPOSE = 9  # 交易用途
     COL_SUMMARY = 10  # 交易摘要
@@ -152,6 +153,11 @@ class ABCDebitProvider(BaseProvider):
         summary = str(row[self.COL_SUMMARY] or "").strip()
         description = self._build_description(purpose, summary)
 
+        balance = str(row[self.COL_BALANCE] or "").strip()
+        metadata: dict[str, str] = {"summary": summary}
+        if balance:
+            metadata["balance"] = balance
+
         return Transaction(
             date=tx_date,
             time=tx_time,
@@ -163,7 +169,7 @@ class ABCDebitProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=row_idx,
-            metadata={"summary": summary},
+            metadata=metadata,
         )
 
     @staticmethod

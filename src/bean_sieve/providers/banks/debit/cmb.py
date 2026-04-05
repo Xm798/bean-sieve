@@ -36,6 +36,7 @@ class CMBDebitProvider(BaseProvider):
     COL_TIME = 1  # 交易时间
     COL_INCOME = 2  # 收入
     COL_EXPENSE = 3  # 支出
+    COL_BALANCE = 4  # 余额
     COL_TYPE = 5  # 交易类型
     COL_REMARK = 6  # 交易备注
 
@@ -135,7 +136,8 @@ class CMBDebitProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=row_num,
-            metadata={"type": tx_type},
+            metadata={"type": tx_type}
+            | ({"balance": row[self.COL_BALANCE]} if row[self.COL_BALANCE] else {}),
         )
 
     def _parse_amount(self, row: list[str]) -> Decimal | None:

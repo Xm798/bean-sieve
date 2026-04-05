@@ -45,6 +45,7 @@ class CIBDebitProvider(BaseProvider):
     COL_TX_TIME = 0  # 交易时间 (datetime string)
     COL_EXPENSE = 2  # 支出
     COL_INCOME = 3  # 收入
+    COL_BALANCE = 4  # 账户余额
     COL_SUMMARY = 5  # 摘要
     COL_COUNTERPARTY_NAME = 6  # 对方户名
     COL_COUNTERPARTY_BANK = 7  # 对方银行
@@ -154,6 +155,9 @@ class CIBDebitProvider(BaseProvider):
         description = self._build_description(summary, purpose)
 
         metadata: dict[str, str] = {"summary": summary}
+        balance = str(row[self.COL_BALANCE]).strip()
+        if balance:
+            metadata["balance"] = balance
         if counterparty_bank:
             metadata["counterparty_bank"] = counterparty_bank
         if counterparty_account:
