@@ -108,11 +108,26 @@ class JDProvider(BaseProvider):
         if tx_type == "不计收支":
             return None
 
-        # Parse amount
+        # Parse amount — handles partial and full refund annotations:
+        #   "1174.41(已退款903.43)" → net 270.98
+        #   "100.00(已全额退款)" → net 0
         amount_str = row["金额"].strip()
-        # Remove "(已全额退款)" suffix if present
-        amount_str = re.sub(r"\s*\(已全额退款\)", "", amount_str)
+        refund_amount = Decimal(0)
+        partial_match = re.search(r"\(已退款([\d,.]+)\)", amount_str)
+        full_refund = "(已全额退款)" in amount_str
+        if partial_match:
+            refund_amount = Decimal(partial_match.group(1).replace(",", ""))
+            amount_str = amount_str[: partial_match.start()]
+        elif full_refund:
+            amount_str = re.sub(r"\s*\(已全额退款\)", "", amount_str)
         amount = Decimal(amount_str.replace(",", ""))
+        if full_refund:
+            refund_amount = amount
+        amount -= refund_amount
+
+        # Skip fully refunded transactions (net amount is 0)
+        if amount == 0:
+            return None
 
         # JD uses: 支出=positive, 收入=negative (already matches bean-sieve convention)
         if tx_type == "收入":
@@ -148,6 +163,7 @@ class JDProvider(BaseProvider):
                 "transaction_category": row.get("交易分类", "").strip(),
                 "merchant_order_id": row.get("商家订单号", "").strip(),
                 "notes": row.get("备注", "").strip(),
+                **({"refund_amount": str(refund_amount)} if refund_amount else {}),
             },
         )
 
