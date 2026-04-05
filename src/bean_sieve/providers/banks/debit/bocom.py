@@ -50,6 +50,7 @@ class BOCOMDebitProvider(BaseProvider):
     COL_METHOD = 3  # 交易方式
     COL_EXPENSE = 4  # 支出金额
     COL_INCOME = 5  # 收入金额
+    COL_BALANCE = 6  # 余额
     COL_COUNTERPARTY_NAME = 7  # 对方户名
     COL_COUNTERPARTY_ACCOUNT = 8  # 对方账户
     COL_COUNTERPARTY_BANK = 9  # 对方开户行
@@ -166,6 +167,9 @@ class BOCOMDebitProvider(BaseProvider):
             metadata["counterparty_account"] = counterparty_account
         if counterparty_bank:
             metadata["counterparty_bank"] = counterparty_bank
+        balance = str(row[self.COL_BALANCE]).strip()
+        if balance and balance != "--":
+            metadata["balance"] = balance
 
         return Transaction(
             date=tx_date,

@@ -41,6 +41,7 @@ class ICBCDebitProvider(BaseProvider):
     COL_LOCATION = 3  # 交易场所
     COL_INCOME = 9  # 记账金额(收入)
     COL_EXPENSE = 10  # 记账金额(支出)
+    COL_BALANCE = 12  # 余额
     COL_COUNTERPARTY = 13  # 对方户名
     COL_COUNTER_ACCOUNT = 14  # 对方账户
 
@@ -123,6 +124,11 @@ class ICBCDebitProvider(BaseProvider):
             row[self.COL_COUNTERPARTY] if len(row) > self.COL_COUNTERPARTY else ""
         )
 
+        balance = (
+            row[self.COL_BALANCE].replace(",", "").strip()
+            if len(row) > self.COL_BALANCE
+            else ""
+        )
         description = self._build_description(summary, detail, location)
 
         return Transaction(
@@ -139,6 +145,7 @@ class ICBCDebitProvider(BaseProvider):
                 "summary": summary,
                 **({"detail": detail} if detail else {}),
                 **({"location": location} if location else {}),
+                **({"balance": balance} if balance else {}),
             },
         )
 

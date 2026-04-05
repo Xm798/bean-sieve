@@ -132,6 +132,15 @@ class PABDebitProvider(BaseProvider):
         # Get order_id
         order_id = str(row[self.COL_ORDER_ID]) if row[self.COL_ORDER_ID] else None
 
+        metadata = {
+            "tx_type": tx_type,
+            "summary": summary,
+            "note": note,
+        }
+        balance = str(row[self.COL_BALANCE]).strip() if row[self.COL_BALANCE] else ""
+        if balance:
+            metadata["balance"] = balance
+
         return Transaction(
             date=tx_date,
             time=tx_time,
@@ -144,11 +153,7 @@ class PABDebitProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=row_idx,
-            metadata={
-                "tx_type": tx_type,
-                "summary": summary,
-                "note": note,
-            },
+            metadata=metadata,
         )
 
     def _parse_datetime(self, time_str: str) -> tuple[date | None, time | None]:
