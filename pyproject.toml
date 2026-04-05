@@ -93,6 +93,9 @@ docstring-code-format = true
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning:importlib._bootstrap",
+]
 
 [dependency-groups]
 dev = [

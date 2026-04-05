@@ -6,7 +6,7 @@ import csv
 import re
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from ...core.preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
@@ -15,7 +15,7 @@ from .. import register_provider
 from ..base import BaseProvider
 
 
-class AlipayTxType(str, Enum):
+class AlipayTxType(StrEnum):
     """Alipay transaction type (收/支 column)."""
 
     EXPENSE = "支出"

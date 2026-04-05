@@ -17,14 +17,14 @@ Bean-Sieve 是一个基于规则的 [Beancount](https://github.com/beancount/bea
 ### 作为 CLI 工具安装（推荐）
 
 ```bash
-# 使用 uv
-uv tool install git+https://github.com/Xm798/bean-sieve.git
+# 使用 uv（推荐）
+uv tool install bean-sieve
 
 # 使用 pipx
-pipx install git+https://github.com/Xm798/bean-sieve.git
+pipx install bean-sieve
 
-# 从本地目录安装（适合开发）
-uv tool install -e .
+# 或从源码安装
+uv tool install git+https://github.com/Xm798/bean-sieve.git
 ```
 
 以上命令会将 `bean-sieve` 安装到 `~/.local/bin`（Linux/macOS）或用户 PATH（Windows）。请确保该目录在 PATH 中。

@@ -354,7 +354,7 @@ def full_reconcile(
         if config.format and config.format.enabled:
             import beanfmt
 
-            content = beanfmt.format_file(
+            content = beanfmt.format_file(  # type: ignore[attr-defined]
                 str(output_path), config=True, **config.format.to_beanfmt_kwargs()
             )
             with open(output_path, "w", encoding="utf-8") as f:
