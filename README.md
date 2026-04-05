@@ -386,6 +386,26 @@ providers:
 
 ## Provider 特定功能
 
+### 借记卡余额断言 (Balance Directive)
+
+对账后可自动生成 Beancount `balance` 指令，用于校验账户余额。取账单中最后一笔交易的余额，日期为账单结束日次日。
+
+按 Provider 级别控制，默认关闭：
+
+```yaml
+providers:
+  pab_debit:
+    accounts:
+      "6666": Assets:Bank:PAB:6666
+    balance: true
+```
+
+输出示例：
+
+```beancount
+2026-04-01 balance Assets:Bank:PAB:6666  12345.67 CNY
+```
+
 ### 农业银行信用卡 (abc_credit)
 
 农业银行账单会显示刷卡金抵扣金额，但不会在交易明细中体现。Bean-Sieve 支持：
