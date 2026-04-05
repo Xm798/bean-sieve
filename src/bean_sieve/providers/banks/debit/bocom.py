@@ -35,14 +35,14 @@ class BOCOMDebitProvider(BaseProvider):
                余额, 对方户名, 对方账户, 对方开户行, 摘要
 
     Note: Default export filename "交易明细列表.xls" is generic.
-    For auto-detection, rename to include "交通银行" in the filename.
+    Auto-detection reads XLS first cell for "交通银行" title marker.
     """
 
     provider_id = "bocom_debit"
     provider_name = "交通银行借记卡"
     supported_formats = [".xls"]
     filename_keywords = ["交通银行"]
-    content_keywords = []  # Binary XLS (BIFF8), content detection not possible
+    content_keywords = []  # Overridden by _match_content for XLS binary detection
 
     COL_DATE = 0  # 记账日期
     COL_TIME = 1  # 交易时间
@@ -91,6 +91,19 @@ class BOCOMDebitProvider(BaseProvider):
                 transactions.append(txn)
 
         return transactions
+
+    @classmethod
+    def _match_content(cls, file_path: Path) -> bool:
+        """Check if XLS first cell contains BOCOM title marker."""
+        try:
+            wb = xlrd.open_workbook(str(file_path))
+            sheet = wb.sheet_by_index(0)
+            if sheet.nrows < 1:
+                return False
+            title = str(sheet.cell_value(0, 0)).strip()
+            return cls.TITLE_MARKER in title
+        except Exception:
+            return False
 
     def _is_bocom_statement(self, sheet: xlrd.sheet.Sheet) -> bool:
         """Verify this is a BOCOM statement by checking the title row."""
