@@ -80,7 +80,12 @@
               "rebate_currency",
               "media_type",
               "item_id",
-              "adam_id"
+              "adam_id",
+              "balance",
+              "bank",
+              "cash_remit",
+              "purpose",
+              "remark"
             ]
           },
           "examples": [
@@ -333,35 +338,35 @@
         },
         "abc_debit": {
           "description": "农业银行借记卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "balance", "counterparty_account", "bank", "channel", "tx_type"] } } } }]
         },
         "bocom_debit": {
           "description": "交通银行借记卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "method", "location", "counterparty_account", "counterparty_bank"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "balance", "method", "location", "counterparty_account", "counterparty_bank"] } } } }]
         },
         "boc_debit": {
           "description": "中国银行借记卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "channel"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "balance", "channel", "counterparty_account", "cash_remit"] } } } }]
         },
         "ccb_debit": {
           "description": "建设银行借记卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "balance", "counterparty_account", "location"] } } } }]
         },
         "cib_debit": {
           "description": "兴业银行借记卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "counterparty_bank", "counterparty_account"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "balance", "counterparty_bank", "counterparty_account", "purpose", "channel", "remark"] } } } }]
         },
         "cmb_debit": {
           "description": "招商银行借记卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["type"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["type", "balance", "remark"] } } } }]
         },
         "icbc_debit": {
           "description": "工商银行借记卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "detail", "location"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "balance", "detail", "location", "counterparty_account"] } } } }]
         },
         "pab_debit": {
           "description": "平安银行借记卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["tx_type", "summary", "note"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["tx_type", "summary", "note", "balance", "counterparty_account"] } } } }]
         }
       },
       "additionalProperties": { "$ref": "#/$defs/providerConfig" }

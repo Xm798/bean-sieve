@@ -137,7 +137,8 @@ class CMBDebitProvider(BaseProvider):
             source_file=file_path,
             source_line=row_num,
             metadata={"type": tx_type}
-            | ({"balance": row[self.COL_BALANCE]} if row[self.COL_BALANCE] else {}),
+            | ({"balance": row[self.COL_BALANCE]} if row[self.COL_BALANCE] else {})
+            | ({"remark": remark} if remark else {}),
         )
 
     def _parse_amount(self, row: list[str]) -> Decimal | None:

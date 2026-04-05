@@ -132,11 +132,19 @@ class PABDebitProvider(BaseProvider):
         # Get order_id
         order_id = str(row[self.COL_ORDER_ID]) if row[self.COL_ORDER_ID] else None
 
+        # Counterparty account: payer's account for income, payee's for expense
+        if tx_type == "转入":
+            counterparty_account = row[self.COL_PAYER_ACCOUNT] or ""
+        else:
+            counterparty_account = row[self.COL_PAYEE_ACCOUNT] or ""
+
         metadata = {
             "tx_type": tx_type,
             "summary": summary,
             "note": note,
         }
+        if counterparty_account:
+            metadata["counterparty_account"] = counterparty_account
         balance = str(row[self.COL_BALANCE]).strip() if row[self.COL_BALANCE] else ""
         if balance:
             metadata["balance"] = balance

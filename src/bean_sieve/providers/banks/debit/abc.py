@@ -50,6 +50,10 @@ class ABCDebitProvider(BaseProvider):
     COL_AMOUNT = 2  # 交易金额 (signed: -expense, +income)
     COL_BALANCE = 3  # 本次余额
     COL_COUNTERPARTY_NAME = 4  # 对方户名
+    COL_COUNTERPARTY_ACCOUNT = 5  # 对方账号
+    COL_BANK = 6  # 交易行
+    COL_CHANNEL = 7  # 交易渠道
+    COL_TX_TYPE = 8  # 交易类型
     COL_PURPOSE = 9  # 交易用途
     COL_SUMMARY = 10  # 交易摘要
 
@@ -154,9 +158,22 @@ class ABCDebitProvider(BaseProvider):
         description = self._build_description(purpose, summary)
 
         balance = str(row[self.COL_BALANCE] or "").strip()
+        counterparty_account = str(row[self.COL_COUNTERPARTY_ACCOUNT] or "").strip()
+        bank = str(row[self.COL_BANK] or "").strip()
+        channel = str(row[self.COL_CHANNEL] or "").strip()
+        tx_type = str(row[self.COL_TX_TYPE] or "").strip()
+
         metadata: dict[str, str] = {"summary": summary}
         if balance:
             metadata["balance"] = balance
+        if counterparty_account:
+            metadata["counterparty_account"] = counterparty_account
+        if bank:
+            metadata["bank"] = bank
+        if channel:
+            metadata["channel"] = channel
+        if tx_type:
+            metadata["tx_type"] = tx_type
 
         return Transaction(
             date=tx_date,

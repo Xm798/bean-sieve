@@ -44,6 +44,7 @@ class BOCDebitProvider(BaseProvider):
     COL_COUNTERPARTY = 2  # 对方账户名称
     COL_COUNTERPARTY_ACCOUNT = 3  # 对方账户账号
     COL_CURRENCY = 4  # 币种
+    COL_CASH_REMIT = 5  # 钞/汇
     COL_INCOME = 6  # 收入金额
     COL_EXPENSE = 7  # 支出金额
     COL_BALANCE = 8  # 余额
@@ -161,6 +162,9 @@ class BOCDebitProvider(BaseProvider):
         balance = row[self.COL_BALANCE]
         if balance:
             metadata["balance"] = balance
+        cash_remit = row[self.COL_CASH_REMIT]
+        if cash_remit:
+            metadata["cash_remit"] = cash_remit
         channel = row[self.COL_CHANNEL] if len(row) > self.COL_CHANNEL else ""
         if channel:
             metadata["channel"] = channel
