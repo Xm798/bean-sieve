@@ -52,6 +52,7 @@ class CIBDebitProvider(BaseProvider):
     COL_COUNTERPARTY_ACCOUNT = 8  # 对方账号
     COL_PURPOSE = 9  # 用途
     COL_CHANNEL = 10  # 交易渠道
+    COL_REMARK = 11  # 备注
 
     EXPECTED_COLS = 12
     HEADER_KEYWORDS = ("交易时间", "记账日")
@@ -152,6 +153,8 @@ class CIBDebitProvider(BaseProvider):
         counterparty_bank = str(row[self.COL_COUNTERPARTY_BANK]).strip()
         counterparty_account = str(row[self.COL_COUNTERPARTY_ACCOUNT]).strip()
         purpose = str(row[self.COL_PURPOSE]).strip()
+        channel = str(row[self.COL_CHANNEL]).strip()
+        remark = str(row[self.COL_REMARK]).strip() if len(row) > self.COL_REMARK else ""
         description = self._build_description(summary, purpose)
 
         metadata: dict[str, str] = {"summary": summary}
@@ -162,6 +165,12 @@ class CIBDebitProvider(BaseProvider):
             metadata["counterparty_bank"] = counterparty_bank
         if counterparty_account:
             metadata["counterparty_account"] = counterparty_account
+        if purpose:
+            metadata["purpose"] = purpose
+        if channel:
+            metadata["channel"] = channel
+        if remark:
+            metadata["remark"] = remark
 
         return Transaction(
             date=tx_date,

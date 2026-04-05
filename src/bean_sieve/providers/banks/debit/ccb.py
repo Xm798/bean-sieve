@@ -45,6 +45,7 @@ class CCBDebitProvider(BaseProvider):
     COL_INCOME = 4  # 收入
     COL_BALANCE = 5  # 账户余额
     COL_SUMMARY = 7  # 摘要
+    COL_COUNTERPARTY_ACCOUNT = 8  # 对方账号
     COL_COUNTERPARTY_NAME = 9  # 对方户名
     COL_LOCATION = 10  # 交易地点
 
@@ -141,14 +142,21 @@ class CCBDebitProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=source_line,
-            metadata=self._build_metadata(summary, row),
+            metadata=self._build_metadata(summary, location, row),
         )
 
-    def _build_metadata(self, summary: str, row: list) -> dict[str, str]:
+    def _build_metadata(self, summary: str, location: str, row: list) -> dict[str, str]:
         metadata: dict[str, str] = {"summary": summary}
         balance = self._normalize_cell_str(row[self.COL_BALANCE])
         if balance and balance != "0":
             metadata["balance"] = balance
+        counterparty_account = self._normalize_cell_str(
+            row[self.COL_COUNTERPARTY_ACCOUNT]
+        )
+        if counterparty_account and counterparty_account != "0":
+            metadata["counterparty_account"] = counterparty_account
+        if location:
+            metadata["location"] = location
         return metadata
 
     def _parse_time(self, value) -> time | None:

@@ -123,6 +123,11 @@ class ICBCDebitProvider(BaseProvider):
         counterparty = (
             row[self.COL_COUNTERPARTY] if len(row) > self.COL_COUNTERPARTY else ""
         )
+        counter_account = (
+            row[self.COL_COUNTER_ACCOUNT].strip()
+            if len(row) > self.COL_COUNTER_ACCOUNT
+            else ""
+        )
 
         balance = (
             row[self.COL_BALANCE].replace(",", "").strip()
@@ -146,6 +151,9 @@ class ICBCDebitProvider(BaseProvider):
                 **({"detail": detail} if detail else {}),
                 **({"location": location} if location else {}),
                 **({"balance": balance} if balance else {}),
+                **(
+                    {"counterparty_account": counter_account} if counter_account else {}
+                ),
             },
         )
 
