@@ -128,6 +128,8 @@ class ProviderConfig(BaseModel):
     rebate_income_account: str | None = None
     # Rebate configuration: keywords to identify existing rebate transactions in ledger
     rebate_keywords: list[str] = Field(default_factory=list)
+    # Generate balance directive after reconciliation (uses metadata["balance"])
+    balance: bool = False
 
 
 class Config(BaseModel):

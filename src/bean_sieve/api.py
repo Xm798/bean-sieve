@@ -4,7 +4,10 @@ API layer for Bean-Sieve.
 This module provides the public API for CLI and GUI frontends.
 """
 
-from datetime import date
+import logging
+from collections import defaultdict
+from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .config import Config, load_config
@@ -261,8 +264,6 @@ def full_reconcile(
     # This ensures Extra calculation only considers ledger entries within statement scope
     # Expand by date_tolerance to ensure matching works for edge dates
     if not date_range and transactions:
-        from datetime import timedelta
-
         tolerance = config.defaults.date_tolerance
 
         # Prefer statement_period from transactions (extracted from statement headers)
@@ -342,6 +343,9 @@ def full_reconcile(
         # Post-output hook
         if provider:
             content = provider.post_output(content, result, context)
+
+        # Balance directives (from provider config balance=True)
+        content += _generate_balance_directives(transactions, config)
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -809,6 +813,70 @@ def _get_provider_for_hooks(
 
     # Auto-detect from first file
     return auto_detect_provider(statement_paths[0])
+
+
+logger = logging.getLogger(__name__)
+
+
+def _generate_balance_directives(
+    transactions: list[Transaction],
+    config: Config,
+) -> str:
+    """
+    Generate Beancount balance directives from transaction metadata.
+
+    Groups transactions by account, finds the last transaction per account,
+    and generates a balance directive dated the day after the statement end.
+    Only generates for providers with balance=True in config.
+
+    Returns:
+        Balance directives as a string, or empty string if none.
+    """
+    # Group transactions by (provider, account)
+    account_txns: dict[tuple[str, str], list[Transaction]] = defaultdict(list)
+    for txn in transactions:
+        if txn.account and txn.provider:
+            provider_config = config.get_provider_config(txn.provider)
+            if provider_config.balance:
+                account_txns[(txn.provider, txn.account)].append(txn)
+
+    if not account_txns:
+        return ""
+
+    lines: list[str] = []
+    for (_provider_id, account), txns in sorted(account_txns.items()):
+        # Sort by date (then time) to find the last transaction
+        txns.sort(key=lambda t: (t.date, t.time or __import__("datetime").time.min))
+        last_txn = txns[-1]
+
+        # Get balance from metadata
+        balance_str = last_txn.metadata.get("balance")
+        if not balance_str:
+            continue
+
+        # Parse balance value (may have commas, whitespace)
+        try:
+            balance_amount = Decimal(str(balance_str).replace(",", "").strip())
+        except (ValueError, InvalidOperation):
+            logger.warning(
+                "Cannot parse balance '%s' for account %s", balance_str, account
+            )
+            continue
+
+        # Determine date: statement_period end + 1 day, or last transaction date + 1 day
+        if last_txn.statement_period:
+            balance_date = last_txn.statement_period[1] + timedelta(days=1)
+        else:
+            balance_date = last_txn.date + timedelta(days=1)
+
+        lines.append(
+            f"{balance_date} balance {account}  {balance_amount} {last_txn.currency}"
+        )
+
+    if not lines:
+        return ""
+
+    return "\n" + "\n".join(lines) + "\n"
 
 
 __all__ = [
