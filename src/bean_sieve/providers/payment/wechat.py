@@ -6,7 +6,7 @@ import csv
 import re
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -17,7 +17,7 @@ from .. import register_provider
 from ..base import BaseProvider
 
 
-class WechatOrderType(str, Enum):
+class WechatOrderType(StrEnum):
     """WeChat order type (收/支 column)."""
 
     EXPENSE = "支出"
@@ -25,7 +25,7 @@ class WechatOrderType(str, Enum):
     NEUTRAL = "/"
 
 
-class WechatTxType(str, Enum):
+class WechatTxType(StrEnum):
     """WeChat transaction type (交易类型 column)."""
 
     CONSUME = "商户消费"

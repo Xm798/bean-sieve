@@ -6,7 +6,7 @@ import datetime as dt
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from ..config import Config
 
 
-class MatchSource(str, Enum):
+class MatchSource(StrEnum):
     """Source of account matching."""
 
     RULE = "rule"
