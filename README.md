@@ -10,7 +10,6 @@ Bean-Sieve 是一个基于规则的 [Beancount](https://github.com/beancount/bea
 - **对账** 与已有 Beancount 账本比对，自动识别已记录交易，补充未记录交易
 - **生成** 仅输出缺失的待录入条目，支持规则映射账户
 - **导出** 可作为纯账单解析器，将账单统一导出为 CSV/XLSX
-- **预测** 基于 smart-importer 的智能账户分类（开发中）
 
 ## 安装
 
@@ -172,10 +171,6 @@ defaults:
   expense_account: Expenses:FIXME
   income_account: Income:FIXME
   date_tolerance: 0  # 日期模糊匹配容差（天）
-
-# ML 账户预测
-predict:
-  enabled: false  # 设为 false 关闭 smart-importer
 
 # 账户映射（按 provider）
 accounts:
@@ -527,8 +522,7 @@ bean-sieve/
 │   │   ├── rules.py           # 规则匹配引擎
 │   │   ├── preset_rules.py    # 内置预设规则
 │   │   ├── output.py          # Beancount 输出生成
-│   │   ├── export.py          # CSV/XLSX 导出
-│   │   └── predictor.py       # ML 账户预测
+│   │   └── export.py          # CSV/XLSX 导出
 │   ├── providers/
 │   │   ├── base.py            # Provider 基类
 │   │   ├── payment/           # 支付平台（支付宝、微信、京东）

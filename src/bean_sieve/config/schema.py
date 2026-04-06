@@ -104,14 +104,6 @@ class FormatConfig(BaseModel):
         return kwargs
 
 
-class PredictorConfig(BaseModel):
-    """Smart-importer configuration."""
-
-    enabled: bool = False
-    min_confidence: Annotated[float, Field(ge=0.0, le=1.0)] = 0.8
-    training_data: str = "books/"
-
-
 class ProviderConfig(BaseModel):
     """Provider-specific configuration."""
 
@@ -138,7 +130,7 @@ class Config(BaseModel):
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     account_mappings: list[AccountMapping] = Field(default_factory=list)
     rules: list[Rule] = Field(default_factory=list)
-    predictor: PredictorConfig = Field(default_factory=PredictorConfig)
+
     format: FormatConfig | None = None
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
 
@@ -185,11 +177,6 @@ class Config(BaseModel):
                 )
             )
 
-        predictor_data = data.get("predictor", {})
-        predictor = (
-            PredictorConfig(**predictor_data) if predictor_data else PredictorConfig()
-        )
-
         format_data = data.get("format")
         if format_data is True:
             format_config = FormatConfig()
@@ -207,7 +194,6 @@ class Config(BaseModel):
             defaults=defaults,
             account_mappings=account_mappings,
             rules=rules,
-            predictor=predictor,
             format=format_config,
             providers=providers,
         )

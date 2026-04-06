@@ -21,7 +21,6 @@ class MatchSource(StrEnum):
     """Source of account matching."""
 
     RULE = "rule"
-    PREDICT = "predict"
     FIXME = "fixme"
 
 
@@ -56,7 +55,7 @@ class Transaction(BaseModel):
     # Statement scope (for per-card statement providers)
     statement_period: tuple[date, date] | None = None
 
-    # Matching results (filled by rules/prediction)
+    # Matching results (filled by rules engine)
     account: str | None = None
     contra_account: str | None = None
     confidence: float = 0.0

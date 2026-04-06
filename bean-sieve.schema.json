@@ -168,29 +168,6 @@
         }
       ]
     },
-    "predictor": {
-      "type": "object",
-      "description": "ML account prediction settings",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable ML-based account prediction"
-        },
-        "min_confidence": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "default": 0.8,
-          "description": "Minimum confidence threshold for predictions"
-        },
-        "training_data": {
-          "type": "string",
-          "default": "books/",
-          "description": "Path to training data directory"
-        }
-      }
-    },
     "account_mappings": {
       "type": "array",
       "description": "Map payment methods to asset/liability accounts",

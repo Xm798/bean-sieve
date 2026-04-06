@@ -20,7 +20,6 @@ from .core import (
     RulesEngine,
     Sieve,
     SieveConfig,
-    SmartPredictor,
     Transaction,
 )
 from .core.types import MatchSource
@@ -104,8 +103,6 @@ def reconcile(
     transactions: list[Transaction],
     sieve: Sieve,
     config: Config | None = None,
-    use_predictor: bool = False,
-    ledger_path: Path | None = None,
     preset_rules: list[PresetRule] | None = None,
     covered_accounts: list[str] | None = None,
     covered_ranges: dict[str, list[tuple[date, date]]] | None = None,
@@ -117,8 +114,6 @@ def reconcile(
         transactions: List of transactions to reconcile
         sieve: Configured Sieve instance with loaded ledger
         config: Configuration with rules and account mappings
-        use_predictor: Whether to use ML prediction for unmapped accounts
-        ledger_path: Required if use_predictor is True
         preset_rules: Preset rules from provider for automatic account lookup
         covered_accounts: Accounts covered by this statement for Extra calculation
         covered_ranges: Card to date ranges mapping for Extra calculation
@@ -144,15 +139,6 @@ def reconcile(
 
     # Filter out ignored transactions
     processed = [t for t in processed if not t.metadata.get("_ignored")]
-
-    # Apply ML predictions if enabled
-    if use_predictor and ledger_path:
-        predictor = SmartPredictor(
-            ledger_path,
-            min_confidence=config.predictor.min_confidence,
-        )
-        if predictor.is_available and predictor.train():
-            processed = [predictor.predict(txn) for txn in processed]
 
     # Apply FIXME fallback for unmatched transactions
     processed = _apply_fixme_fallback(processed, config)
@@ -220,7 +206,6 @@ def full_reconcile(
     provider_id: str | None = None,
     date_range: tuple[date, date] | None = None,
     account_filter: str | None = None,
-    use_predictor: bool = False,
 ) -> ReconcileResult:
     """
     Complete reconciliation workflow.
@@ -236,7 +221,6 @@ def full_reconcile(
         provider_id: Provider to use (or auto-detect)
         date_range: Filter transactions to this range
         account_filter: Filter ledger to accounts with this prefix
-        use_predictor: Use ML prediction
 
     Returns:
         ReconcileResult with all processing results
@@ -328,8 +312,6 @@ def full_reconcile(
         transactions,
         sieve,
         config=config,
-        use_predictor=use_predictor,
-        ledger_path=ledger_path if use_predictor else None,
         preset_rules=preset_rules,
         covered_accounts=covered_accounts,
         covered_ranges=covered_ranges,

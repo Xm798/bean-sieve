@@ -32,12 +32,6 @@ format:
   # sort_timeless: keep         # begin | end | keep
   # sort_exclude: []
 
-# ML 账户预测
-predictor:
-  enabled: false
-  min_confidence: 0.8
-  training_data: books/
-
 # 账户映射
 account_mappings:
   # 支付宝
