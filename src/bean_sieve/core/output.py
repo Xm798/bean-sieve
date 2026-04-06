@@ -117,9 +117,8 @@ class BeancountWriter:
             meta.append(f'source: "{txn.provider}"')
 
         # Match source for debug (rule pattern)
-        if should_include("matched_rule"):
-            if txn.metadata.get("matched_rule"):
-                meta.append(f'matched_rule: "{txn.metadata["matched_rule"]}"')
+        if should_include("matched_rule") and txn.metadata.get("matched_rule"):
+            meta.append(f'matched_rule: "{txn.metadata["matched_rule"]}"')
 
         # Additional metadata from provider (only if allowed)
         skip_keys = {"_ignored", "matched_rule", "reference", "original_payee"}

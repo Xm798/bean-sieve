@@ -28,6 +28,7 @@ uv run pyright src/
 # CLI usage
 uv run bean-sieve reconcile <files> -l <ledger> -o pending.bean
 uv run bean-sieve parse <files> -f table
+uv run bean-sieve suggest-rules -l <ledger>
 uv run bean-sieve providers
 ```
 
@@ -52,6 +53,7 @@ Ledger → Sieve.load_ledger() → Sieve.match() → MatchResult
 - **`core/sieve.py`**: `Sieve` engine matches statement transactions against ledger entries using fuzzy date/amount matching.
 - **`core/rules.py`**: `RulesEngine` applies user-defined regex rules to map transactions to accounts.
 - **`core/output.py`**: `BeancountWriter` generates valid Beancount syntax from processed transactions.
+- **`core/suggest.py`**: `suggest_rules()` scans ledger history and auto-generates rules from high-frequency payee→account mappings.
 
 ### Provider System
 
