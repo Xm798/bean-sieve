@@ -1,5 +1,5 @@
 [project]
-name = "bean-sieve"
+name = "beancount-sieve"
 version = "0.1.0"
 description = "Rule-based statement importer and reconciler for Beancount"
 readme = "README.md"
