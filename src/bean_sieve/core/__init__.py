@@ -1,7 +1,6 @@
 """Core modules for Bean-Sieve."""
 
 from .output import BeancountWriter, write_output
-from .predictor import SmartPredictor, apply_predictions
 from .preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
 from .rules import RulesEngine, apply_rules
 from .sieve import Sieve, SieveConfig, create_sieve
@@ -31,9 +30,6 @@ __all__ = [
     # Rules
     "RulesEngine",
     "apply_rules",
-    # Predictor
-    "SmartPredictor",
-    "apply_predictions",
     # Output
     "BeancountWriter",
     "write_output",

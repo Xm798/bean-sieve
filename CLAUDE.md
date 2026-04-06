@@ -42,8 +42,6 @@ Ledger → Sieve.load_ledger() → Sieve.match() → MatchResult
                                           ↓
                         RulesEngine.apply() → processed transactions
                                           ↓
-                        SmartPredictor.predict() (optional ML)
-                                          ↓
                         BeancountWriter.format_result() → .bean file
 ```
 

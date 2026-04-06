@@ -167,7 +167,6 @@ def completion(shell: str):
 @click.option("-p", "--provider", help="Provider ID (auto-detect if not specified)")
 @click.option("--date-range", help="Date range filter (YYYY-MM-DD:YYYY-MM-DD)")
 @click.option("--account-filter", help="Filter ledger to accounts with this prefix")
-@click.option("--predict", is_flag=True, help="Use ML prediction for accounts")
 @click.option("--dry-run", is_flag=True, help="Show results without writing file")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 @click.option("-q", "--quiet", is_flag=True, help="Quiet mode")
@@ -179,7 +178,6 @@ def reconcile(
     provider,
     date_range,
     account_filter,
-    predict,
     dry_run,
     verbose,
     quiet,
@@ -211,7 +209,6 @@ def reconcile(
             provider_id=provider,
             date_range=dr,
             account_filter=account_filter,
-            use_predictor=predict,
         )
 
         # Display results
@@ -607,7 +604,7 @@ def _display_result(result, verbose: bool = False):
 
         console.print("\n[bold]Categorization:[/bold]")
         for source, count in sorted(by_source.items()):
-            icon = "✅" if source == "rule" else "🤖" if source == "predict" else "❓"
+            icon = "✅" if source == "rule" else "❓"
             console.print(f"  {icon} {source}: {count}")
 
     # Show missing transactions if verbose
