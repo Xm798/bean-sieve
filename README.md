@@ -18,10 +18,10 @@ Bean-Sieve 是一个基于规则的 [Beancount](https://github.com/beancount/bea
 
 ```bash
 # 使用 uv（推荐）
-uv tool install bean-sieve
+uv tool install beancount-sieve
 
 # 使用 pipx
-pipx install bean-sieve
+pipx install beancount-sieve
 
 # 或从源码安装
 uv tool install git+https://github.com/Xm798/bean-sieve.git
