@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-04-06
+
+### 新增
+
+- **规则自动生成**：新增 `suggest-rules` 命令，从账本历史记录中自动分析高频 payee→account 映射，生成规则建议
+- **社区链接**：README 添加 LINUX DO 社区入口
+
+### 变更
+
+- **移除 smart-importer 依赖**：移除 SmartPredictor 及相关机器学习依赖，简化项目依赖
+
 ## [0.1.0] - 2026-04-06
 
 首次正式发布。
@@ -48,4 +59,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 可配置的元数据字段，4 空格缩进
 - Provider 生命周期钩子（`pre_reconcile`、`post_output`）
 
+[0.2.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.1.0
