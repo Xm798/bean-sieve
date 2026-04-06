@@ -123,6 +123,9 @@ bean-sieve check data/statement/*.csv -l books/
 # 提取账单中的支付方式并交互式映射到账本账户
 bean-sieve extract-accounts data/statement/*.csv -l books/
 
+# 从账本历史记录中自动生成规则建议
+bean-sieve suggest-rules -l books/
+
 # 列出支持的数据源
 bean-sieve providers
 
@@ -522,7 +525,8 @@ bean-sieve/
 │   │   ├── rules.py           # 规则匹配引擎
 │   │   ├── preset_rules.py    # 内置预设规则
 │   │   ├── output.py          # Beancount 输出生成
-│   │   └── export.py          # CSV/XLSX 导出
+│   │   ├── export.py          # CSV/XLSX 导出
+│   │   └── suggest.py         # 规则自动生成
 │   ├── providers/
 │   │   ├── base.py            # Provider 基类
 │   │   ├── payment/           # 支付平台（支付宝、微信、京东）
@@ -534,6 +538,10 @@ bean-sieve/
 │       └── wizard.py          # 账户映射向导
 └── tests/
 ```
+
+## Community
+
+[LINUX DO](https://linux.do/) - 社区讨论与交流
 
 ## License
 
