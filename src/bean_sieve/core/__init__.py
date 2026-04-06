@@ -4,6 +4,7 @@ from .output import BeancountWriter, write_output
 from .preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
 from .rules import RulesEngine, apply_rules
 from .sieve import Sieve, SieveConfig, create_sieve
+from .suggest import SuggestedRule, suggest_rules
 from .types import (
     MatchResult,
     MatchSource,
@@ -30,6 +31,9 @@ __all__ = [
     # Rules
     "RulesEngine",
     "apply_rules",
+    # Suggest
+    "SuggestedRule",
+    "suggest_rules",
     # Output
     "BeancountWriter",
     "write_output",

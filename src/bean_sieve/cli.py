@@ -1,6 +1,12 @@
 """Command-line interface for Bean-Sieve."""
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .core.suggest import SuggestedRule
 import platform
 from datetime import date, datetime
 from pathlib import Path
@@ -388,6 +394,107 @@ def list_providers_cmd():
         table.add_row(p["id"], p["name"], p["formats"])
 
     console.print(table)
+
+
+@main.command("suggest-rules")
+@click.option(
+    "-l",
+    "--ledger",
+    type=click.Path(exists=True),
+    help="Beancount ledger path (or set defaults.ledger in config)",
+)
+@click.option(
+    "-c",
+    "--config",
+    "config_path",
+    type=click.Path(exists=True),
+    help="Config file path (for deduplication against existing rules)",
+)
+@click.option("-o", "--output", type=click.Path(), help="Output file (merge into YAML)")
+@click.option(
+    "--min-count", default=3, show_default=True, help="Minimum occurrence threshold"
+)
+@click.option(
+    "--min-ratio",
+    default=0.9,
+    show_default=True,
+    help="Minimum ratio of dominant account",
+)
+def suggest_rules_cmd(ledger, config_path, output, min_count, min_ratio):
+    """
+    Auto-generate rules from ledger history.
+
+    Scans existing ledger transactions to find high-frequency
+    payee → account mappings and generates YAML rule snippets.
+    """
+    from .core.suggest import format_rules_yaml, suggest_rules
+
+    try:
+        config_file = resolve_config_path(config_path)
+        config = load_config(config_file) if config_file else None
+        ledger_path = resolve_ledger_path(ledger, config, config_file)
+
+        suggestions = suggest_rules(
+            ledger_path,
+            min_count=min_count,
+            min_ratio=min_ratio,
+            existing_config=config,
+        )
+
+        if not suggestions:
+            console.print("[yellow]No rule suggestions found.[/yellow]")
+            console.print(
+                "[dim]Try lowering --min-count or --min-ratio thresholds.[/dim]"
+            )
+            return
+
+        console.print(f"[bold]Found {len(suggestions)} rule suggestion(s)[/bold]\n")
+
+        yaml_snippet = format_rules_yaml(suggestions)
+
+        if output:
+            _merge_rules_to_file(Path(output), suggestions)
+            console.print(f"[green]Rules written to:[/green] {output}")
+        else:
+            console.print(yaml_snippet)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {escape(str(e))}")
+        raise click.Abort() from None
+
+
+def _merge_rules_to_file(output_path: Path, suggestions: list[SuggestedRule]) -> None:
+    """Merge suggested rules into an existing YAML config file."""
+    import re
+    import shutil
+
+    from .config.schema import get_yaml
+
+    yaml = get_yaml()
+
+    config_data: dict = {}
+    if output_path.exists():
+        backup_path = output_path.with_suffix(".yaml.bak")
+        shutil.copy2(output_path, backup_path)
+        console.print(f"[dim]Backup saved to {backup_path}[/dim]")
+
+        with open(output_path, encoding="utf-8") as f:
+            config_data = yaml.load(f) or {}
+
+    if "rules" not in config_data:
+        config_data["rules"] = []
+
+    for s in suggestions:
+        config_data["rules"].append(
+            {
+                "description": f".*{re.escape(s.payee)}.*",
+                "target_payee": s.payee,
+                "contra_account": s.contra_account,
+            }
+        )
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        yaml.dump(config_data, f)
 
 
 @main.command("extract-accounts")
