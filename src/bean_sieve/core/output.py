@@ -145,6 +145,16 @@ class BeancountWriter:
         # Primary account (asset/liability)
         account = txn.account or "Assets:FIXME"
         amount = -txn.amount  # Statement shows outflow as positive
+
+        # Multi-currency exchange: primary posting with @@ price, contra auto-balanced
+        if txn.price_amount is not None and txn.price_currency:
+            postings.append(
+                f"{account}  {amount} {txn.currency}"
+                f" @@ {txn.price_amount} {txn.price_currency}"
+            )
+            postings.append(f"{account}  {txn.price_amount} {txn.price_currency}")
+            return postings
+
         postings.append(f"{account}  {amount} {txn.currency}")
 
         # Add posting-level metadata based on provider config (_posting_metadata)

@@ -814,19 +814,19 @@ def _generate_balance_directives(
     Returns:
         Balance directives as a string, or empty string if none.
     """
-    # Group transactions by (provider, account)
-    account_txns: dict[tuple[str, str], list[Transaction]] = defaultdict(list)
+    # Group transactions by (provider, account, currency)
+    account_txns: dict[tuple[str, str, str], list[Transaction]] = defaultdict(list)
     for txn in transactions:
         if txn.account and txn.provider:
             provider_config = config.get_provider_config(txn.provider)
             if provider_config.balance:
-                account_txns[(txn.provider, txn.account)].append(txn)
+                account_txns[(txn.provider, txn.account, txn.currency)].append(txn)
 
     if not account_txns:
         return ""
 
     lines: list[str] = []
-    for (_provider_id, account), txns in sorted(account_txns.items()):
+    for (_provider_id, account, _currency), txns in sorted(account_txns.items()):
         # Sort by date (then time) to find the last transaction
         txns.sort(key=lambda t: (t.date, t.time or __import__("datetime").time.min))
         last_txn = txns[-1]

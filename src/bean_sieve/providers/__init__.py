@@ -99,6 +99,7 @@ from .banks.debit import ccb as ccb_debit  # noqa: E402, F401
 from .banks.debit import cib as cib_debit  # noqa: E402, F401
 from .banks.debit import cmb as cmb_debit  # noqa: E402, F401
 from .banks.debit import icbc, pab  # noqa: E402, F401
+from .banks.debit import zabank  # noqa: E402, F401
 
 # from .banks.credit import ccb, abc, cib, cmb, bosc, cgb, cmbc
 # from .banks.debit import abc, cmb, bocom
