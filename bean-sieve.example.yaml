@@ -161,6 +161,14 @@ providers:
     # 对账后生成 balance 指令（日期为账单最后一天的次日）
     balance: true
 
+  zabank_debit:
+    # ZABank uses currency code as account key
+    accounts:
+      HKD: Assets:Bank:ZABank:HKD
+      CNY: Assets:Bank:ZABank:CNY
+      USD: Assets:Bank:ZABank:USD
+    balance: true
+
 # 规则匹配
 rules:
   # 正则匹配 description，设置 target_payee

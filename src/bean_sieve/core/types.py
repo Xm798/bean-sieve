@@ -55,6 +55,10 @@ class Transaction(BaseModel):
     # Statement scope (for per-card statement providers)
     statement_period: tuple[date, date] | None = None
 
+    # Price annotation for multi-currency transactions (e.g., currency exchange)
+    price_amount: Decimal | None = None
+    price_currency: str | None = None
+
     # Matching results (filled by rules engine)
     account: str | None = None
     contra_account: str | None = None

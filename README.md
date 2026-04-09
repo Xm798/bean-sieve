@@ -100,6 +100,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `cmb_debit`    | 招商银行借记卡 | CSV       | CSV 导出账单       |
 | `cib_debit`    | 兴业银行借记卡 | XLS       | XLS 导出账单       |
 | `pab_debit`    | 平安银行借记卡 | XLS/XLSX  | Excel 导出账单     |
+| `zabank_debit` | 众安银行       | PDF       | 综合月结单         |
 
 更多 Provider 正在开发中。
 
@@ -361,6 +362,14 @@ rules:
 | `balance` | 账户余额 |
 | `note` | 备注 |
 | `counterparty_account` | 对方账号 |
+
+#### 众安银行 `zabank_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `balance` | 交易后余额 |
+| `counterparty` | 对手方信息（姓名+账号）|
+| `exchange_info` | 换汇的 sell/buy 详情 |
 
 ### 配置示例
 
