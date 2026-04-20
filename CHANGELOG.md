@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-04-20
+
+### 修复
+
+- **京东账单**：修正 metadata key 从 `payment_method` 为 `method`，与支付宝/微信保持一致。此前导致 JD 交易无法匹配 `account_mappings`、全部落入 `FIXME`，`extract-accounts` 也无法识别支付方式
+
 ## [0.2.0] - 2026-04-06
 
 ### 新增
@@ -59,5 +65,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 可配置的元数据字段，4 空格缩进
 - Provider 生命周期钩子（`pre_reconcile`、`post_output`）
 
+[0.2.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.1.0
