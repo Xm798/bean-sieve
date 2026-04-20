@@ -157,7 +157,7 @@ class JDProvider(BaseProvider):
             source_file=file_path,
             source_line=line_num,
             metadata={
-                "payment_method": payment_method,
+                "method": payment_method,
                 "transaction_type": tx_type,
                 "transaction_status": row.get("交易状态", "").strip(),
                 "transaction_category": row.get("交易分类", "").strip(),

@@ -63,7 +63,7 @@ class TestJDProvider:
         assert tx1.time.minute == 8
 
         # Check metadata
-        assert tx1.metadata["payment_method"] == "数字人民币-银行A钱包(1234)"
+        assert tx1.metadata["method"] == "数字人民币-银行A钱包(1234)"
         assert tx1.metadata["transaction_type"] == "支出"
         assert tx1.metadata["transaction_status"] == "交易成功"
 

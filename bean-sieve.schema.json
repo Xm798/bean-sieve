@@ -68,7 +68,6 @@
               "posting_date",
               "counterparty_bank",
               "counterparty_account",
-              "payment_method",
               "transaction_type",
               "transaction_status",
               "transaction_category",
@@ -275,7 +274,7 @@
         },
         "jd": {
           "description": "京东支付",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["payment_method", "transaction_type", "transaction_status", "transaction_category", "merchant_order_id", "notes", "refund_amount"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["method", "transaction_type", "transaction_status", "transaction_category", "merchant_order_id", "notes", "refund_amount"] } } } }]
         },
         "wechat": {
           "description": "微信支付",
