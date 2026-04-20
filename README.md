@@ -261,7 +261,7 @@ rules:
 | :--- | :--- |
 | `alipay` | `category`, `peer_account`, `method`, `status`, `merchant_id`, `tx_type`, `remarks` |
 | `wechat` | `tx_type`, `method`, `status`, `merchant_id`, `remarks`, `order_type`, `commission`, `rebate`, `rebate_currency` |
-| `jd` | `payment_method`, `transaction_type`, `transaction_status`, `transaction_category`, `merchant_order_id`, `notes`, `refund_amount` |
+| `jd` | `method`, `transaction_type`, `transaction_status`, `transaction_category`, `merchant_order_id`, `notes`, `refund_amount` |
 | `app_store` | `media_type`, `item_id`, `adam_id` |
 
 ### 信用卡
