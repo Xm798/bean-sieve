@@ -124,6 +124,12 @@ class ProviderConfig(BaseModel):
     balance: bool = False
 
 
+class DiagnosticsConfig(BaseModel):
+    """Diagnostic behavior toggles."""
+
+    meta_check: bool = True
+
+
 class Config(BaseModel):
     """Complete Bean-Sieve configuration."""
 
@@ -133,6 +139,7 @@ class Config(BaseModel):
 
     format: FormatConfig | None = None
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    diagnostics: DiagnosticsConfig = Field(default_factory=DiagnosticsConfig)
 
     model_config = ConfigDict(validate_assignment=True)
 
@@ -190,12 +197,16 @@ class Config(BaseModel):
             for provider_id, provider_data in data.get("providers", {}).items()
         }
 
+        diagnostics_data = data.get("diagnostics") or {}
+        diagnostics = DiagnosticsConfig(**diagnostics_data)
+
         return cls(
             defaults=defaults,
             account_mappings=account_mappings,
             rules=rules,
             format=format_config,
             providers=providers,
+            diagnostics=diagnostics,
         )
 
 
