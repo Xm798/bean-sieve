@@ -460,3 +460,22 @@ class TestWechatCashWithdraw:
         assert txn.metadata["method"] == "经营账户"
         assert txn.metadata["_withdrawal_target"] == "示例银行(0002)"
         assert txn.amount == Decimal("500.00")
+
+
+def test_card_last4_extracted_from_method_with_suffix():
+    from bean_sieve.providers.payment.wechat import WechatProvider
+
+    provider = WechatProvider()
+    assert provider._extract_card_last4("招商银行信用卡(8355)") == "8355"
+    assert provider._extract_card_last4("建设银行信用卡(0800)") == "0800"
+
+
+def test_card_last4_none_for_wallet_methods():
+    from bean_sieve.providers.payment.wechat import WechatProvider
+
+    provider = WechatProvider()
+    assert provider._extract_card_last4("零钱") is None
+    assert provider._extract_card_last4("零钱通") is None
+    assert provider._extract_card_last4("经营账户") is None
+    assert provider._extract_card_last4("") is None
+    assert provider._extract_card_last4(None) is None
