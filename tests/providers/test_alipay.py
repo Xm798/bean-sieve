@@ -185,3 +185,31 @@ class TestAlipayRefundHandling:
         # Closed transaction should be filtered
         assert len(transactions) == 1
         assert transactions[0].order_id == "ORDER001"
+
+
+def test_card_last4_extracted_from_method_with_suffix():
+    """Alipay method like '华夏银行信用卡(3855)' should populate card_last4."""
+    from bean_sieve.providers.payment.alipay import AlipayProvider
+
+    provider = AlipayProvider()
+    assert provider._extract_card_last4("华夏银行信用卡(3855)") == "3855"
+    assert provider._extract_card_last4("浦发银行信用卡(4192)") == "4192"
+
+
+def test_card_last4_none_when_no_suffix():
+    from bean_sieve.providers.payment.alipay import AlipayProvider
+
+    provider = AlipayProvider()
+    assert provider._extract_card_last4("余额") is None
+    assert provider._extract_card_last4("余额宝") is None
+    assert provider._extract_card_last4("花呗") is None
+    assert provider._extract_card_last4("") is None
+    assert provider._extract_card_last4("随便一段话") is None
+
+
+def test_card_last4_ignores_non_trailing_digits():
+    from bean_sieve.providers.payment.alipay import AlipayProvider
+
+    provider = AlipayProvider()
+    assert provider._extract_card_last4("某卡(1234)额外文字") is None
+    assert provider._extract_card_last4("某卡(12345)") is None

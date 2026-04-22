@@ -34,6 +34,8 @@ STATEMENT_PERIOD_REGEX = re.compile(
     r"终止时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?"
 )
 
+CARD_LAST4_REGEX = re.compile(r"\((\d{4})\)$")
+
 
 @register_provider
 class AlipayProvider(BaseProvider):
@@ -158,6 +160,7 @@ class AlipayProvider(BaseProvider):
             description=description,
             payee=peer,
             order_id=order_id,
+            card_last4=self._extract_card_last4(method),
             provider=self.provider_id,
             source_file=file_path,
             source_line=line_num,
@@ -172,6 +175,14 @@ class AlipayProvider(BaseProvider):
                 "remarks": remarks,
             },
         )
+
+    @staticmethod
+    def _extract_card_last4(method: str | None) -> str | None:
+        """Extract 4-digit card suffix from method string, e.g. '某银行信用卡(3855)' -> '3855'."""
+        if not method:
+            return None
+        m = CARD_LAST4_REGEX.search(method)
+        return m.group(1) if m else None
 
     def _get_tx_type(self, tx_type_str: str) -> AlipayTxType:
         """Convert transaction type string to enum."""
