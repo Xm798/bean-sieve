@@ -408,6 +408,7 @@ class AlipayProvider(BaseProvider):
             description=merged_desc,
             payee=merged_payee,
             order_id=None,  # Clear order_id for merged transactions
+            card_last4=first.card_last4,
             provider=first.provider,
             source_file=first.source_file,
             source_line=first.source_line,
