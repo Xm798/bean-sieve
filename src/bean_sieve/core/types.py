@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from beancount.core.data import TxnPosting
 from pydantic import BaseModel, ConfigDict, Field, computed_field
@@ -171,6 +171,19 @@ class Transaction(BaseModel):
         )
 
 
+class MetaDiagnostic(BaseModel):
+    """Posting metadata diagnostic emitted during reconciliation."""
+
+    severity: Literal["hint", "warn"]  # hint=missing, warn=conflict
+    file: str
+    line: int
+    account: str
+    key: str
+    expected: str
+    actual: str | None = None
+    message: str
+
+
 class MatchResult(BaseModel):
     """Reconciliation result from Sieve engine."""
 
@@ -179,6 +192,7 @@ class MatchResult(BaseModel):
     matched: list[tuple[Transaction, TxnPosting]] = Field(default_factory=list)
     missing: list[Transaction] = Field(default_factory=list)
     extra: list[TxnPosting] = Field(default_factory=list)
+    meta_diagnostics: list[MetaDiagnostic] = Field(default_factory=list)
 
     @computed_field
     @property
