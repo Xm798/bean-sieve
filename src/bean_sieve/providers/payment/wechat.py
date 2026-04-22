@@ -56,6 +56,9 @@ WECHAT_HEADER_LINES = 17
 # Regex to extract commission from remarks
 COMMISSION_REGEX = re.compile(r"\d+\.\d{2}")
 
+# Regex to extract 4-digit card suffix from method (e.g. "招商银行信用卡(8355)")
+CARD_LAST4_REGEX = re.compile(r"\((\d{4})\)$")
+
 # Regex to extract rebate from remarks (已优惠¥10.00)
 REBATE_REGEX = re.compile(r"已优惠¥?(\d+\.?\d*)")
 
@@ -93,6 +96,14 @@ class WechatProvider(BaseProvider):
     supported_formats = [".csv", ".xlsx"]
     filename_keywords = ["微信", "wechat", "weixin"]
     content_keywords = ["微信支付账单明细", "微信支付账单"]
+
+    @staticmethod
+    def _extract_card_last4(method: str | None) -> str | None:
+        """Extract 4-digit card suffix from method string."""
+        if not method:
+            return None
+        m = CARD_LAST4_REGEX.search(method)
+        return m.group(1) if m else None
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse WeChat statement file (CSV or XLSX)."""
@@ -291,6 +302,7 @@ class WechatProvider(BaseProvider):
             description=description,
             payee=peer,
             order_id=order_id,
+            card_last4=self._extract_card_last4(method),
             provider=self.provider_id,
             source_file=file_path,
             source_line=line_num,
