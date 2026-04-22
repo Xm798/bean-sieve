@@ -122,3 +122,27 @@ class TestTransaction:
         assert restored.currency == sample_transaction.currency
         assert restored.description == sample_transaction.description
         assert restored.payee == sample_transaction.payee
+
+
+def test_meta_diagnostic_construction():
+    from bean_sieve.core.types import MetaDiagnostic
+
+    d = MetaDiagnostic(
+        severity="hint",
+        file="books/2025/q1.bean",
+        line=1234,
+        account="Liabilities:Credit:HXB",
+        key="card_last4",
+        expected="3855",
+        actual=None,
+        message='books/2025/q1.bean:1234  hint  missing posting meta `card_last4: "3855"` on Liabilities:Credit:HXB',
+    )
+    assert d.severity == "hint"
+    assert d.actual is None
+
+
+def test_match_result_meta_diagnostics_default_empty():
+    from bean_sieve.core.types import MatchResult
+
+    mr = MatchResult()
+    assert mr.meta_diagnostics == []
