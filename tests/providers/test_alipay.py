@@ -213,3 +213,37 @@ def test_card_last4_ignores_non_trailing_digits():
     provider = AlipayProvider()
     assert provider._extract_card_last4("某卡(1234)额外文字") is None
     assert provider._extract_card_last4("某卡(12345)") is None
+
+
+def test_merge_transactions_preserves_card_last4():
+    """Merged transactions must carry card_last4 forward from the group."""
+    from datetime import date
+    from decimal import Decimal
+
+    from bean_sieve.core.types import Transaction
+    from bean_sieve.providers.payment.alipay import AlipayProvider
+
+    provider = AlipayProvider()
+    t1 = Transaction(
+        date=date(2025, 3, 15),
+        amount=Decimal("10.00"),
+        currency="CNY",
+        description="商品A",
+        payee="商家",
+        card_last4="3855",
+        order_id="ORDER1",
+        provider="alipay",
+    )
+    t2 = Transaction(
+        date=date(2025, 3, 15),
+        amount=Decimal("20.00"),
+        currency="CNY",
+        description="商品B",
+        payee="商家",
+        card_last4="3855",
+        order_id="ORDER1",
+        provider="alipay",
+    )
+    merged = provider._merge_transactions([t1, t2])
+    assert merged.card_last4 == "3855"
+    assert merged.amount == Decimal("30.00")
