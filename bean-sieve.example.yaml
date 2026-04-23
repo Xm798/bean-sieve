@@ -194,3 +194,9 @@ rules:
     time: "17:00-20:00"
     contra_account: Expenses:Food:Dinner
 
+# 诊断开关
+# meta_check=true (默认): card_last4 软校验，匹配仍然成立，但会以 lint 风格
+#   打印 hint/warn 提示 ledger 中缺失或不一致的 posting 元数据
+# meta_check=false: 恢复旧行为，card_last4 作为硬过滤条件
+diagnostics:
+  meta_check: true

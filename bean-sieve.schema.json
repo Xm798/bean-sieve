@@ -352,6 +352,18 @@
         }
       },
       "additionalProperties": { "$ref": "#/$defs/providerConfig" }
+    },
+    "diagnostics": {
+      "type": "object",
+      "description": "Diagnostic behavior toggles.",
+      "properties": {
+        "meta_check": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, card_last4 is a soft check with lint-style diagnostics; when false, card_last4 acts as a hard filter (legacy behavior)."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "$defs": {
