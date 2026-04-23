@@ -128,6 +128,7 @@ def reconcile(
         transactions,
         covered_accounts=covered_accounts,
         covered_ranges=covered_ranges,
+        meta_check=config.diagnostics.meta_check,
     )
 
     # Process missing transactions
@@ -193,12 +194,14 @@ def generate_output(
         Generated Beancount content as string
     """
     config = config or Config()
+    shared_accounts = _infer_shared_account_metadata(config)
     writer = BeancountWriter(
         default_expense=config.defaults.expense_account,
         default_income=config.defaults.income_account,
         output_metadata=config.defaults.output_metadata,
         sort_by_time=config.defaults.sort_by_time,
         default_flag=config.defaults.flag,
+        shared_accounts=shared_accounts,
     )
 
     content = writer.format_result(result, source_info=source_info)
