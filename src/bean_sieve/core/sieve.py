@@ -1,6 +1,6 @@
 """Sieve engine for matching and deduplication."""
 
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -129,7 +129,6 @@ class Sieve:
         covered_accounts: list[str] | None = None,
         covered_ranges: dict[str, list[tuple[date, date]]] | None = None,
         meta_check: bool = True,
-        check_scope: Callable[[str], bool] | None = None,
     ) -> MatchResult:
         """
         Match statement transactions against loaded ledger entries.
@@ -165,9 +164,7 @@ class Sieve:
             if match:
                 matched.append((txn, match))
                 used_ledger_entries.add(id(match))
-                if meta_check and (
-                    check_scope is None or check_scope(match.posting.account)
-                ):
+                if meta_check:
                     diag = self._diagnose_meta(txn, match)
                     if diag is not None:
                         diagnostics.append(diag)
