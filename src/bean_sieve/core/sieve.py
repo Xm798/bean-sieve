@@ -10,7 +10,7 @@ from beancount import loader
 from beancount.core.data import Directive, TxnPosting
 from beancount.core.data import Transaction as BeanTransaction
 
-from .types import MatchResult, Transaction
+from .types import MatchResult, MetaDiagnostic, Transaction
 
 
 @dataclass
@@ -128,9 +128,15 @@ class Sieve:
         transactions: Iterable[Transaction],
         covered_accounts: list[str] | None = None,
         covered_ranges: dict[str, list[tuple[date, date]]] | None = None,
+        meta_check: bool = True,
     ) -> MatchResult:
         """
         Match statement transactions against loaded ledger entries.
+
+        When meta_check=True (default), card_last4 is a soft check: matches still
+        succeed on date/amount/payee, but mismatches or missing metadata surface
+        as MetaDiagnostic entries. When meta_check=False, card_last4 acts as a
+        hard filter (legacy behavior).
 
         Args:
             transactions: Statement transactions to match
@@ -140,20 +146,28 @@ class Sieve:
             covered_ranges: Optional dict mapping card_last4 to list of (start, end) date
                 ranges. If provided, only ledger entries where (card, date) falls within
                 a covered range are reported as Extra. Used for per-card statements.
+            meta_check: When True (default), card_last4 is a soft check producing
+                MetaDiagnostic entries. When False, card_last4 hard-filters matches.
 
         Returns:
-            MatchResult with matched pairs, missing, and extra transactions
+            MatchResult with matched pairs, missing, extra transactions, and
+            meta diagnostics.
         """
         transactions = list(transactions)
         matched: list[tuple[Transaction, TxnPosting]] = []
         missing: list[Transaction] = []
+        diagnostics: list[MetaDiagnostic] = []
         used_ledger_entries: set[int] = set()
 
         for txn in transactions:
-            match = self._find_match(txn, used_ledger_entries)
+            match = self._find_match(txn, used_ledger_entries, meta_check=meta_check)
             if match:
                 matched.append((txn, match))
                 used_ledger_entries.add(id(match))
+                if meta_check:
+                    diag = self._diagnose_meta(txn, match)
+                    if diag is not None:
+                        diagnostics.append(diag)
             else:
                 missing.append(txn)
 
@@ -179,7 +193,12 @@ class Sieve:
                     continue
             extra.append(entry)
 
-        return MatchResult(matched=matched, missing=missing, extra=extra)
+        return MatchResult(
+            matched=matched,
+            missing=missing,
+            extra=extra,
+            meta_diagnostics=diagnostics,
+        )
 
     def _in_covered_range(
         self,
@@ -192,7 +211,9 @@ class Sieve:
             return False
         return any(start <= entry_date <= end for start, end in covered_ranges[account])
 
-    def _find_match(self, txn: Transaction, used: set[int]) -> TxnPosting | None:
+    def _find_match(
+        self, txn: Transaction, used: set[int], meta_check: bool = True
+    ) -> TxnPosting | None:
         """Find a matching ledger entry for the given transaction."""
         # First try exact order_id match if available
         if txn.order_id:
@@ -207,7 +228,7 @@ class Sieve:
         for candidate in candidates:
             if id(candidate) in used:
                 continue
-            if self._is_match(txn, candidate):
+            if self._is_match(txn, candidate, meta_check=meta_check):
                 return candidate
 
         return None
@@ -236,7 +257,9 @@ class Sieve:
         meta = entry.txn.meta
         return meta.get("order_id") == txn.order_id
 
-    def _is_match(self, txn: Transaction, entry: TxnPosting) -> bool:
+    def _is_match(
+        self, txn: Transaction, entry: TxnPosting, meta_check: bool = True
+    ) -> bool:
         """Check if transaction matches ledger entry."""
         posting = entry.posting
         bean_txn = entry.txn
@@ -298,13 +321,59 @@ class Sieve:
         if date_diff > self.config.date_tolerance:
             return False
 
-        # Card suffix must match if present in both
-        if txn.card_last4:
+        # Card suffix: hard filter only when meta_check is off (legacy behavior).
+        # When meta_check is on, mismatches are surfaced via _diagnose_meta instead
+        # of rejecting the match.
+        if not meta_check and txn.card_last4:
             meta_card = bean_txn.meta.get("card_last4")
             if meta_card and meta_card != txn.card_last4:
                 return False
 
         return True
+
+    def _diagnose_meta(
+        self, txn: Transaction, entry: TxnPosting
+    ) -> MetaDiagnostic | None:
+        """Produce a MetaDiagnostic for card_last4 mismatch or absence."""
+        if not txn.card_last4:
+            return None
+        bean_txn = entry.txn
+        meta_card = bean_txn.meta.get("card_last4")
+        file = bean_txn.meta.get("filename", "<unknown>")
+        line = int(bean_txn.meta.get("lineno", 0) or 0)
+        account = entry.posting.account
+
+        if meta_card is None:
+            message = (
+                f"{file}:{line}  hint  missing posting meta "
+                f'`card_last4: "{txn.card_last4}"` on {account}'
+            )
+            return MetaDiagnostic(
+                severity="hint",
+                file=file,
+                line=line,
+                account=account,
+                key="card_last4",
+                expected=txn.card_last4,
+                actual=None,
+                message=message,
+            )
+        if str(meta_card) != txn.card_last4:
+            message = (
+                f"{file}:{line}  warn  posting meta `card_last4` mismatch on "
+                f'{account}: ledger "{meta_card}", statement "{txn.card_last4}"'
+            )
+            return MetaDiagnostic(
+                severity="warn",
+                file=file,
+                line=line,
+                account=account,
+                key="card_last4",
+                expected=txn.card_last4,
+                actual=str(meta_card),
+                message=message,
+            )
+        return None
 
 
 def create_sieve(
