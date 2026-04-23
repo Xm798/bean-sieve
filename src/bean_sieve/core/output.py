@@ -164,18 +164,15 @@ class BeancountWriter:
 
         postings.append(f"{account}  {amount} {txn.currency}")
 
-        # Compute effective posting-metadata keys for this posting:
-        # explicit provider config + auto-inject for shared accounts.
-        explicit_meta_keys = list(txn.metadata.get("_posting_metadata", []))
-        auto_meta_keys: list[str] = []
-        if txn.account in self.shared_accounts and txn.card_last4:
-            auto_meta_keys.append("card_last4")
+        posting_meta_keys = list(txn.metadata.get("_posting_metadata", []))
+        if (
+            txn.account in self.shared_accounts
+            and txn.card_last4
+            and "card_last4" not in posting_meta_keys
+        ):
+            posting_meta_keys.append("card_last4")
 
-        seen: set[str] = set()
-        for key in explicit_meta_keys + auto_meta_keys:
-            if key in seen:
-                continue
-            seen.add(key)
+        for key in posting_meta_keys:
             value = getattr(txn, key, None) or txn.metadata.get(key)
             if value:
                 postings.append(f'    {key}: "{value}"')
