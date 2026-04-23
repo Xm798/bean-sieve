@@ -95,12 +95,49 @@ def test_format_result_renders_meta_diagnostics_section():
     mr = MatchResult(meta_diagnostics=diagnostics)
     result = ReconcileResult(match_result=mr)
 
-    writer = BeancountWriter()
+    writer = BeancountWriter(check_scope=lambda _a: True)
     output = writer.format_result(result)
 
     assert "Metadata diagnostics (2)" in output
     assert "books/2025/q1.bean:1234  hint  missing posting meta" in output
     assert "books/2025/q2.bean:88  warn  posting meta `card_last4` mismatch" in output
+
+
+def test_format_result_filters_diagnostics_by_check_scope():
+    """Only diagnostics whose account is in scope should be rendered."""
+    from bean_sieve.core.types import MatchResult, MetaDiagnostic, ReconcileResult
+
+    diagnostics = [
+        MetaDiagnostic(
+            severity="hint",
+            file="books/a.bean",
+            line=1,
+            account="Liabilities:Credit:HXB",
+            key="card_last4",
+            expected="3855",
+            actual=None,
+            message="books/a.bean:1  hint  in-scope",
+        ),
+        MetaDiagnostic(
+            severity="hint",
+            file="books/b.bean",
+            line=2,
+            account="Assets:Bank:ICBC:5625",
+            key="card_last4",
+            expected="5625",
+            actual=None,
+            message="books/b.bean:2  hint  out-of-scope",
+        ),
+    ]
+    mr = MatchResult(meta_diagnostics=diagnostics)
+    result = ReconcileResult(match_result=mr)
+
+    writer = BeancountWriter(check_scope=lambda a: "HXB" in a)
+    output = writer.format_result(result)
+
+    assert "Metadata diagnostics (1)" in output
+    assert "in-scope" in output
+    assert "out-of-scope" not in output
 
 
 def test_format_result_omits_section_when_no_diagnostics():
@@ -150,7 +187,7 @@ def test_format_result_sorts_diagnostics():
     ]
     mr = MatchResult(meta_diagnostics=diagnostics)
     result = ReconcileResult(match_result=mr)
-    writer = BeancountWriter()
+    writer = BeancountWriter(check_scope=lambda _a: True)
     output = writer.format_result(result)
 
     idx_a10 = output.index("books/a.bean:10")
