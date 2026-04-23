@@ -167,8 +167,7 @@ class TestZABankRowParsing:
         """Test parsing a deposit (income) row."""
         row = [
             "27 Mar 2026",
-            "Payment Connect inward transfer\n存入\n"
-            "TEST USER 622***********1234",
+            "Payment Connect inward transfer\n存入\nTEST USER 622***********1234",
             "10,000.00",
             "",
             "10,000.00",
