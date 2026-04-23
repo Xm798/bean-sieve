@@ -195,13 +195,16 @@ rules:
     contra_account: Expenses:Food:Dinner
 
 # 诊断开关
-# meta_check=true (默认): card_last4 软校验，匹配仍然成立，但会以 lint 风格
+# meta_check=true (默认): card_last4 软校验，匹配仍然成立，差异会以 lint 风格
 #   打印 hint/warn 提示 ledger 中缺失或不一致的 posting 元数据
 # meta_check=false: 恢复旧行为，card_last4 作为硬过滤条件
-# meta_check_accounts: 手工纳入检查范围的账户关键字（子串匹配）。
-#   默认作用域已自动包含 account_mappings 中被 ≥2 条 pattern 指向的账户
-#   （如 HXB/SPDB/CMB 这类按户管理信用卡账户）。账户名已带卡号的（如
-#   Assets:Bank:ICBC:5625）不在范围内；若想手工纳入，写到这里即可。
+# meta_check_accounts: 需要检查 card_last4 的账户关键字（子串匹配）。
+#   例如"按户管理"的信用卡（HXB/SPDB/CMB 等，同一账户下多张物理卡）
+#   需要在 posting 上写 card_last4 来消歧；列在这里的账户既会触发
+#   诊断，也会在 Writer 输出时自动注入 card_last4 posting meta。
+#   默认为空 —— 不填则不做任何 card_last4 相关的检查和注入。
 diagnostics:
   meta_check: true
   meta_check_accounts: []
+  #   - Liabilities:Credit:HXB
+  #   - Liabilities:Credit:SPDB

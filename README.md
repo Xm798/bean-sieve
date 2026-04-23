@@ -251,7 +251,7 @@ rules:
 | **按卡管理** | 广发银行、建设银行 | 独立信报，**账单日合并**，**独立还款**。 |
 | **按卡管理** | 中信银行、光大银行、交通银行、农业银行、工商银行、兴业银行、中国银行、邮政储蓄 | 独立信报，独立账单，独立还款。 |
 
-按户管理的账户在同一个 Liability 账户下持有多张物理卡——Bean-Sieve 会自动在 posting 上注入 `card_last4` 用于消歧，并对账本中缺失或冲突的 `card_last4` 元数据输出 lint 诊断。详见 [Posting 元数据与诊断](#posting-元数据与诊断)。
+按户管理的账户在同一个 Liability 账户下持有多张物理卡，账户名本身无法区分——配置 [`diagnostics.meta_check_accounts`](#posting-元数据与诊断) 后，Bean-Sieve 会在 posting 上自动注入 `card_last4`，并对账本中缺失或冲突的 `card_last4` 元数据输出 lint 诊断。
 
 ## Provider Metadata 字段
 
@@ -402,7 +402,7 @@ providers:
       - card_last4
 ```
 
-对于"按户管理"的账户（同一账户被多条 `account_mappings` pattern 指向，如 HXB/SPDB/CMB），`card_last4` 会被**自动注入 posting**，无需手动配置。详见下文 [Posting 元数据与诊断](#posting-元数据与诊断)。
+对于"按户管理"的账户（同一账户持有多张物理卡，如 HXB/SPDB/CMB），通过 `diagnostics.meta_check_accounts` 纳入检查后 `card_last4` 会被自动注入 posting，并在 ledger 缺失/冲突时产生诊断。详见下文 [Posting 元数据与诊断](#posting-元数据与诊断)。
 
 ## Provider 特定功能
 
@@ -485,35 +485,30 @@ providers:
 
 支付宝/微信等支付平台的账单中，`method` 字段（如 `华夏银行信用卡(3855)`）指向实际刷卡的物理银行卡。对于"按户管理"的银行（HXB、SPDB、CMB 等），同一个 Liability 账户名下会挂多张物理卡，账户名本身无法区分用的哪张卡——此时需要把 `card_last4` 写在 posting 下面来消歧。
 
-### 自动识别"共享账户"
-
-扫描 `account_mappings`，同一个 `account` 被 ≥2 条 pattern 指向就被视为共享账户，该账户的 posting 会自动带上 `card_last4`：
+通过 `diagnostics.meta_check_accounts`（子串匹配）列出需要检查的账户：
 
 ```yaml
-account_mappings:
-  - pattern: 华夏银行信用卡(3855)
-    account: Liabilities:Credit:HXB
-  - pattern: 华夏银行信用卡(9999)
-    account: Liabilities:Credit:HXB    # 两条 pattern 指向同一账户 → 共享
-  - pattern: 建设银行信用卡(0800)
-    account: Liabilities:Credit:CCB:0800  # 账户名已含卡号 → 不共享
+diagnostics:
+  meta_check: true
+  meta_check_accounts:
+    - Liabilities:Credit:HXB
+    - Liabilities:Credit:SPDB
+    - Liabilities:Credit:CMB
 ```
 
-输出：
+列在这里的账户会同时启用两件事：
+
+1. **Writer 自动注入** —— 输出新交易时在这些账户的 posting 下加 `card_last4`：
 
 ```beancount
 2025-03-15 ! "瑞幸咖啡" "拿铁"
   time: "10:23:00"
   Liabilities:Credit:HXB  -28.00 CNY
-    card_last4: "3855"             ; posting 级，标识具体是哪张卡
+    card_last4: "3855"
   Expenses:Food:Coffee  28.00 CNY
 ```
 
-非共享账户（如 CCB:0800）不会重复写 card_last4，避免冗余。
-
-### Metadata 诊断（hint / warn）
-
-对账时，`card_last4` 从硬过滤降级为软校验——匹配照常成立，差异以 lint 风格输出在 pending.bean 末尾：
+2. **Metadata 诊断** —— 对账时 `card_last4` 软校验，匹配照常成立，ledger 中缺失或冲突的以 lint 风格输出在 pending.bean 末尾：
 
 ```
 ; ============================================================
@@ -526,18 +521,7 @@ account_mappings:
 - **hint** — ledger 中该交易没有 `card_last4`，可照提示补上
 - **warn** — ledger 中 `card_last4` 与账单冲突，提示核对（交易本身仍被认为匹配，不会重复生成）
 
-**诊断作用域**：只对"账户名本身无法识别具体卡"的账户生效——即自动识别的共享账户（多 pattern → 单 account，如 `Liabilities:Credit:HXB`）。账户名已带卡号的（如 `Assets:Bank:ICBC:5625`、`Liabilities:Credit:BOCOM:U-东航金5871`）不会产生诊断。
-
-如果某账户不在自动识别范围内，但你希望始终在它下面带 `card_last4`，用 `meta_check_accounts`（子串匹配）手工纳入：
-
-```yaml
-diagnostics:
-  meta_check: true
-  meta_check_accounts:
-    - Liabilities:Credit:SPDB
-```
-
-显式纳入的账户同时也会触发 Writer 的自动 posting-meta 注入，两边保持一致。
+账户名已带卡号的（如 `Assets:Bank:ICBC:5625`、`Liabilities:Credit:BOCOM:U-东航金5871`）没必要纳入——不列就不做检查，也不产生诊断。
 
 如需恢复旧的硬过滤行为（冲突即视为不同交易、进 missing），显式关闭：
 

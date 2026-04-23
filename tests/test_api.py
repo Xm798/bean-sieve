@@ -1,43 +1,11 @@
 """Tests for api.py."""
 
-from bean_sieve.api import _build_check_scope, _infer_shared_account_metadata
+from bean_sieve.api import _build_check_scope
 from bean_sieve.config.schema import AccountMapping, Config, DiagnosticsConfig
 
 
-def test_shared_accounts_includes_account_with_multiple_patterns():
-    cfg = Config(
-        account_mappings=[
-            AccountMapping(
-                pattern="华夏银行信用卡(3855)", account="Liabilities:Credit:HXB"
-            ),
-            AccountMapping(
-                pattern="华夏银行信用卡(9999)", account="Liabilities:Credit:HXB"
-            ),
-            AccountMapping(
-                pattern="浦发银行信用卡(4192)", account="Liabilities:Credit:SPDB"
-            ),
-        ]
-    )
-    shared = _infer_shared_account_metadata(cfg)
-    assert "Liabilities:Credit:HXB" in shared
-    assert "Liabilities:Credit:SPDB" not in shared
-
-
-def test_shared_accounts_empty_when_all_unique():
-    cfg = Config(
-        account_mappings=[
-            AccountMapping(pattern="a", account="Assets:A"),
-            AccountMapping(pattern="b", account="Assets:B"),
-        ]
-    )
-    assert _infer_shared_account_metadata(cfg) == set()
-
-
-def test_shared_accounts_empty_config():
-    assert _infer_shared_account_metadata(Config()) == set()
-
-
-def test_check_scope_matches_auto_inferred_accounts():
+def test_check_scope_empty_without_explicit_config():
+    """No auto-detection: empty scope unless meta_check_accounts is set."""
     cfg = Config(
         account_mappings=[
             AccountMapping(
@@ -49,15 +17,11 @@ def test_check_scope_matches_auto_inferred_accounts():
         ]
     )
     scope = _build_check_scope(cfg)
-    assert scope("Liabilities:Credit:HXB") is True
-    assert scope("Assets:Bank:ICBC:5625") is False
+    assert scope("Liabilities:Credit:HXB") is False
 
 
 def test_check_scope_matches_explicit_keywords():
     cfg = Config(
-        account_mappings=[
-            AccountMapping(pattern="pudong", account="Liabilities:Credit:SPDB"),
-        ],
         diagnostics=DiagnosticsConfig(meta_check_accounts=["SPDB", "HXB"]),
     )
     scope = _build_check_scope(cfg)
@@ -66,35 +30,16 @@ def test_check_scope_matches_explicit_keywords():
     assert scope("Assets:Bank:ICBC:5625") is False
 
 
-def test_check_scope_unions_auto_and_explicit():
-    cfg = Config(
-        account_mappings=[
-            AccountMapping(
-                pattern="华夏银行信用卡(3855)", account="Liabilities:Credit:HXB"
-            ),
-            AccountMapping(
-                pattern="华夏银行信用卡(9999)", account="Liabilities:Credit:HXB"
-            ),
-        ],
-        diagnostics=DiagnosticsConfig(meta_check_accounts=["SPDB"]),
-    )
-    scope = _build_check_scope(cfg)
-    assert scope("Liabilities:Credit:HXB") is True  # auto-inferred
-    assert scope("Liabilities:Credit:SPDB") is True  # explicit keyword
-    assert scope("Assets:Bank:ICBC:5625") is False
-
-
 def test_check_scope_empty_when_no_config():
     scope = _build_check_scope(Config())
     assert scope("Liabilities:Credit:HXB") is False
 
 
-def test_generate_output_passes_shared_accounts_to_writer():
+def test_generate_output_passes_check_scope_to_writer():
     from datetime import date
     from decimal import Decimal
 
     from bean_sieve.api import generate_output
-    from bean_sieve.config.schema import AccountMapping, Config
     from bean_sieve.core.types import (
         MatchResult,
         ReconcileResult,
@@ -102,14 +47,7 @@ def test_generate_output_passes_shared_accounts_to_writer():
     )
 
     cfg = Config(
-        account_mappings=[
-            AccountMapping(
-                pattern="华夏银行信用卡(3855)", account="Liabilities:Credit:HXB"
-            ),
-            AccountMapping(
-                pattern="华夏银行信用卡(9999)", account="Liabilities:Credit:HXB"
-            ),
-        ]
+        diagnostics=DiagnosticsConfig(meta_check_accounts=["HXB"]),
     )
     txn = Transaction(
         date=date(2025, 3, 15),
