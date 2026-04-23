@@ -1,6 +1,7 @@
 """Beancount output generator."""
 
 import datetime as dt
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from io import StringIO
@@ -35,7 +36,7 @@ class BeancountWriter:
         output_metadata: list[str] | None = None,
         sort_by_time: str | None = "asc",
         default_flag: str = "!",
-        shared_accounts: set[str] | None = None,
+        check_scope: Callable[[str], bool] | None = None,
     ):
         self.default_expense = default_expense
         self.default_income = default_income
@@ -46,8 +47,8 @@ class BeancountWriter:
         self.sort_by_time = sort_by_time
         # Default transaction flag: "*" (cleared) or "!" (pending)
         self.default_flag = default_flag
-        # Accounts shared across providers: auto-emit card_last4 posting meta
-        self.shared_accounts = shared_accounts or set()
+        # Predicate answering "does this account need card_last4 posting meta?"
+        self.check_scope: Callable[[str], bool] = check_scope or (lambda _a: False)
 
     def format_transaction(self, txn: Transaction) -> str:
         """Format a single transaction as Beancount entry."""
@@ -110,7 +111,7 @@ class BeancountWriter:
         if (
             should_include("card_last4")
             and txn.card_last4
-            and txn.account not in self.shared_accounts
+            and not (txn.account and self.check_scope(txn.account))
         ):
             meta.append(f'card_last4: "{txn.card_last4}"')
 
@@ -166,8 +167,9 @@ class BeancountWriter:
 
         posting_meta_keys = list(txn.metadata.get("_posting_metadata", []))
         if (
-            txn.account in self.shared_accounts
+            txn.account
             and txn.card_last4
+            and self.check_scope(txn.account)
             and "card_last4" not in posting_meta_keys
         ):
             posting_meta_keys.append("card_last4")

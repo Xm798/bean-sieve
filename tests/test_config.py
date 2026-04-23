@@ -16,3 +16,12 @@ def test_diagnostics_meta_check_can_be_disabled_via_dict():
 def test_diagnostics_default_section_when_absent():
     cfg = Config.from_dict({})
     assert cfg.diagnostics.meta_check is True
+
+
+def test_diagnostics_meta_check_accounts_defaults_empty():
+    assert Config().diagnostics.meta_check_accounts == []
+
+
+def test_diagnostics_meta_check_accounts_loaded_from_dict():
+    cfg = Config.from_dict({"diagnostics": {"meta_check_accounts": ["SPDB", "HXB"]}})
+    assert cfg.diagnostics.meta_check_accounts == ["SPDB", "HXB"]

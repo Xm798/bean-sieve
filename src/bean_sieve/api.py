@@ -6,6 +6,7 @@ This module provides the public API for CLI and GUI frontends.
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -129,6 +130,7 @@ def reconcile(
         covered_accounts=covered_accounts,
         covered_ranges=covered_ranges,
         meta_check=config.diagnostics.meta_check,
+        check_scope=_build_check_scope(config),
     )
 
     # Process missing transactions
@@ -175,6 +177,20 @@ def _infer_shared_account_metadata(config: Config) -> set[str]:
     return {account for account, n in counts.items() if n >= 2}
 
 
+def _build_check_scope(config: Config) -> Callable[[str], bool]:
+    """
+    Return a predicate deciding whether an account is in the card_last4
+    check scope. An account qualifies if it is auto-inferred as shared
+    (>=2 patterns targeting it) or if any substring in
+    diagnostics.meta_check_accounts matches its name.
+    """
+    auto = _infer_shared_account_metadata(config)
+    keywords = tuple(config.diagnostics.meta_check_accounts)
+    if not keywords:
+        return lambda account: account in auto
+    return lambda account: account in auto or any(kw in account for kw in keywords)
+
+
 def generate_output(
     result: ReconcileResult,
     output_path: Path | None = None,
@@ -194,14 +210,13 @@ def generate_output(
         Generated Beancount content as string
     """
     config = config or Config()
-    shared_accounts = _infer_shared_account_metadata(config)
     writer = BeancountWriter(
         default_expense=config.defaults.expense_account,
         default_income=config.defaults.income_account,
         output_metadata=config.defaults.output_metadata,
         sort_by_time=config.defaults.sort_by_time,
         default_flag=config.defaults.flag,
-        shared_accounts=shared_accounts,
+        check_scope=_build_check_scope(config),
     )
 
     content = writer.format_result(result, source_info=source_info)
