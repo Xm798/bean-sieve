@@ -526,18 +526,18 @@ account_mappings:
 - **hint** — ledger 中该交易没有 `card_last4`，可照提示补上
 - **warn** — ledger 中 `card_last4` 与账单冲突，提示核对（交易本身仍被认为匹配，不会重复生成）
 
-**诊断作用域**：只对"需要消歧的账户"生效——即自动识别的共享账户（多 pattern → 单 account）。账户名里已带卡号的"按卡管理"账户（如 `Assets:Bank:ICBC:5625`、`Liabilities:Credit:BOCOM:5871`）不会产生诊断。
+**诊断作用域**：只对"账户名本身无法识别具体卡"的账户生效——即自动识别的共享账户（多 pattern → 单 account，如 `Liabilities:Credit:HXB`）。账户名已带卡号的（如 `Assets:Bank:ICBC:5625`、`Liabilities:Credit:BOCOM:U-东航金5871`）不会产生诊断。
 
-如果某账户目前只有一张卡（未触发自动识别）但想提前纳入检查，用 `meta_check_accounts`（子串匹配）：
+如果某账户不在自动识别范围内，但你希望始终在它下面带 `card_last4`，用 `meta_check_accounts`（子串匹配）手工纳入：
 
 ```yaml
 diagnostics:
   meta_check: true
   meta_check_accounts:
-    - Liabilities:Credit:SPDB   # 目前只有一张卡，但想统一写上 card_last4
+    - Liabilities:Credit:SPDB
 ```
 
-显式纳入的账户也会触发 Writer 的自动 posting-meta 注入，两边保持一致。
+显式纳入的账户同时也会触发 Writer 的自动 posting-meta 注入，两边保持一致。
 
 如需恢复旧的硬过滤行为（冲突即视为不同交易、进 missing），显式关闭：
 
