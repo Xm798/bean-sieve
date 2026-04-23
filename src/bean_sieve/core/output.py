@@ -249,6 +249,18 @@ class BeancountWriter:
             for entry in result.match_result.extra:
                 output.write(self._format_extra_entry(entry) + "\n\n")
 
+        diagnostics = result.match_result.meta_diagnostics
+        if diagnostics:
+            sorted_diags = sorted(
+                diagnostics, key=lambda d: (d.file, d.line, d.severity)
+            )
+            output.write("\n")
+            output.write("; " + "=" * 60 + "\n")
+            output.write(f"; Metadata diagnostics ({len(sorted_diags)})\n")
+            output.write("; " + "=" * 60 + "\n")
+            for d in sorted_diags:
+                output.write(f"; {d.message}\n")
+
         return output.getvalue()
 
     def _format_extra_entry(self, entry) -> str:
