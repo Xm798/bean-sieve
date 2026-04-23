@@ -128,6 +128,10 @@ class DiagnosticsConfig(BaseModel):
     """Diagnostic behavior toggles."""
 
     meta_check: bool = True
+    # Extra account-name substrings to include in card_last4 check scope.
+    # Auto-inferred set already covers accounts targeted by 2+ patterns in
+    # account_mappings; use this to opt additional accounts in explicitly.
+    meta_check_accounts: list[str] = Field(default_factory=list)
 
 
 class Config(BaseModel):

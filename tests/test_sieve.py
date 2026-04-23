@@ -267,3 +267,98 @@ def test_soft_check_warn_for_posting_level_conflict(tmp_path):
     d = result.meta_diagnostics[0]
     assert d.severity == "warn"
     assert d.actual == "4192"
+
+
+def test_check_scope_filters_out_accounts_not_in_scope(tmp_path):
+    """Diagnostics must not fire on accounts outside the check scope.
+
+    Accounts like Assets:Bank:ICBC:5625 already encode the card number in the
+    account name; they should not produce hint/warn diagnostics even when the
+    statement carries card_last4.
+    """
+    ledger = _write_ledger(
+        tmp_path,
+        """
+2025-03-15 * "某商户" "消费"
+    Assets:Bank:ICBC:5625  -28.00 CNY
+    Expenses:FIXME  28.00 CNY
+
+1900-01-01 open Assets:Bank:ICBC:5625
+1900-01-01 open Expenses:FIXME
+""".strip(),
+    )
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(ledger)
+
+    txn = Transaction(
+        date=date(2025, 3, 15),
+        amount=Decimal("28.00"),
+        currency="CNY",
+        description="消费",
+        payee="某商户",
+        card_last4="5625",
+        account="Assets:Bank:ICBC:5625",
+        provider="alipay",
+    )
+    result = sieve.match(
+        [txn],
+        meta_check=True,
+        check_scope=lambda _a: False,
+    )
+
+    assert len(result.matched) == 1
+    assert result.meta_diagnostics == []
+
+
+def test_check_scope_admits_only_scoped_accounts(tmp_path):
+    """Only accounts for which check_scope returns True produce diagnostics."""
+    ledger = _write_ledger(
+        tmp_path,
+        """
+2025-03-15 * "A" "a"
+    Liabilities:Credit:HXB  -28.00 CNY
+    Expenses:FIXME  28.00 CNY
+
+2025-03-16 * "B" "b"
+    Assets:Bank:ICBC:5625  -10.00 CNY
+    Expenses:FIXME  10.00 CNY
+
+1900-01-01 open Liabilities:Credit:HXB
+1900-01-01 open Assets:Bank:ICBC:5625
+1900-01-01 open Expenses:FIXME
+""".strip(),
+    )
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(ledger)
+
+    txns = [
+        Transaction(
+            date=date(2025, 3, 15),
+            amount=Decimal("28.00"),
+            currency="CNY",
+            description="a",
+            payee="A",
+            card_last4="3855",
+            account="Liabilities:Credit:HXB",
+            provider="alipay",
+        ),
+        Transaction(
+            date=date(2025, 3, 16),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="b",
+            payee="B",
+            card_last4="5625",
+            account="Assets:Bank:ICBC:5625",
+            provider="alipay",
+        ),
+    ]
+    result = sieve.match(
+        txns,
+        meta_check=True,
+        check_scope=lambda a: "HXB" in a,
+    )
+
+    assert len(result.matched) == 2
+    assert len(result.meta_diagnostics) == 1
+    assert result.meta_diagnostics[0].account == "Liabilities:Credit:HXB"

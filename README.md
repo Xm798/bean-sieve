@@ -251,6 +251,8 @@ rules:
 | **按卡管理** | 广发银行、建设银行 | 独立信报，**账单日合并**，**独立还款**。 |
 | **按卡管理** | 中信银行、光大银行、交通银行、农业银行、工商银行、兴业银行、中国银行、邮政储蓄 | 独立信报，独立账单，独立还款。 |
 
+按户管理的账户在同一个 Liability 账户下持有多张物理卡——Bean-Sieve 会自动在 posting 上注入 `card_last4` 用于消歧，并对账本中缺失或冲突的 `card_last4` 元数据输出 lint 诊断。详见 [Posting 元数据与诊断](#posting-元数据与诊断)。
+
 ## Provider Metadata 字段
 
 每个 Provider 解析账单时，除了标准字段（日期、金额、描述、收款方等）外，还会将账单中的其他列存入 `metadata`。可通过 `output_metadata` 配置控制哪些字段输出到 Beancount 文件。
@@ -391,6 +393,17 @@ providers:
       - counterparty_account
 ```
 
+`output_metadata` 写在交易头下，作用于整笔交易；若要把字段写在 posting 行下（如 `card_last4` 用于区分同一账户下的多张物理卡），使用 `posting_metadata`：
+
+```yaml
+providers:
+  hxb_credit:
+    posting_metadata:
+      - card_last4
+```
+
+对于"按户管理"的账户（同一账户被多条 `account_mappings` pattern 指向，如 HXB/SPDB/CMB），`card_last4` 会被**自动注入 posting**，无需手动配置。详见下文 [Posting 元数据与诊断](#posting-元数据与诊断)。
+
 ## Provider 特定功能
 
 ### 借记卡余额断言 (Balance Directive)
@@ -468,6 +481,71 @@ providers:
 ;   状态: ✅ 平账 (刷卡金 1.33)
 ```
 
+## Posting 元数据与诊断
+
+支付宝/微信等支付平台的账单中，`method` 字段（如 `华夏银行信用卡(3855)`）指向实际刷卡的物理银行卡。对于"按户管理"的银行（HXB、SPDB、CMB 等），同一个 Liability 账户名下会挂多张物理卡，账户名本身无法区分用的哪张卡——此时需要把 `card_last4` 写在 posting 下面来消歧。
+
+### 自动识别"共享账户"
+
+扫描 `account_mappings`，同一个 `account` 被 ≥2 条 pattern 指向就被视为共享账户，该账户的 posting 会自动带上 `card_last4`：
+
+```yaml
+account_mappings:
+  - pattern: 华夏银行信用卡(3855)
+    account: Liabilities:Credit:HXB
+  - pattern: 华夏银行信用卡(9999)
+    account: Liabilities:Credit:HXB    # 两条 pattern 指向同一账户 → 共享
+  - pattern: 建设银行信用卡(0800)
+    account: Liabilities:Credit:CCB:0800  # 账户名已含卡号 → 不共享
+```
+
+输出：
+
+```beancount
+2025-03-15 ! "瑞幸咖啡" "拿铁"
+  time: "10:23:00"
+  Liabilities:Credit:HXB  -28.00 CNY
+    card_last4: "3855"             ; posting 级，标识具体是哪张卡
+  Expenses:Food:Coffee  28.00 CNY
+```
+
+非共享账户（如 CCB:0800）不会重复写 card_last4，避免冗余。
+
+### Metadata 诊断（hint / warn）
+
+对账时，`card_last4` 从硬过滤降级为软校验——匹配照常成立，差异以 lint 风格输出在 pending.bean 末尾：
+
+```
+; ============================================================
+; Metadata diagnostics (2)
+; ============================================================
+; books/2025/q1.bean:1234  hint  missing posting meta `card_last4: "3855"` on Liabilities:Credit:HXB
+; books/2025/q2.bean:88    warn  posting meta `card_last4` mismatch on Liabilities:Credit:SPDB: ledger "4192", statement "3855"
+```
+
+- **hint** — ledger 中该交易没有 `card_last4`，可照提示补上
+- **warn** — ledger 中 `card_last4` 与账单冲突，提示核对（交易本身仍被认为匹配，不会重复生成）
+
+**诊断作用域**：只对"需要消歧的账户"生效——即自动识别的共享账户（多 pattern → 单 account）。账户名里已带卡号的"按卡管理"账户（如 `Assets:Bank:ICBC:5625`、`Liabilities:Credit:BOCOM:5871`）不会产生诊断。
+
+如果某账户目前只有一张卡（未触发自动识别）但想提前纳入检查，用 `meta_check_accounts`（子串匹配）：
+
+```yaml
+diagnostics:
+  meta_check: true
+  meta_check_accounts:
+    - Liabilities:Credit:SPDB   # 目前只有一张卡，但想统一写上 card_last4
+```
+
+显式纳入的账户也会触发 Writer 的自动 posting-meta 注入，两边保持一致。
+
+如需恢复旧的硬过滤行为（冲突即视为不同交易、进 missing），显式关闭：
+
+```yaml
+diagnostics:
+  meta_check: false
+```
+
 ## 数据格式约定
 
 ### Transaction 字段
@@ -480,6 +558,7 @@ providers:
 | `currency`    | str     | 币种                       |
 | `description` | str     | 原始描述                   |
 | `payee`       | str     | 交易对方                   |
+| `card_last4`  | str     | 银行卡末四位（银行卡 Provider 直接提取；Alipay/WeChat 从 `method` 尾部 `(XXXX)` 中提取） |
 | `order_id`    | str     | 订单号/流水号              |
 | `provider`    | str     | 数据源标识                 |
 | `metadata`    | dict    | 扩展元数据                 |

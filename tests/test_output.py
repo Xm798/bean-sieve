@@ -10,7 +10,7 @@ from bean_sieve.core.types import Transaction
 def test_shared_account_posting_emits_card_last4():
     writer = BeancountWriter(
         output_metadata=["source"],
-        shared_accounts={"Liabilities:Credit:HXB"},
+        check_scope=lambda a: a == "Liabilities:Credit:HXB",
     )
     txn = Transaction(
         date=date(2025, 3, 15),
@@ -29,7 +29,7 @@ def test_shared_account_posting_emits_card_last4():
 
 
 def test_non_shared_account_omits_card_last4_posting_meta():
-    writer = BeancountWriter(output_metadata=["source"], shared_accounts=set())
+    writer = BeancountWriter(output_metadata=["source"], check_scope=lambda _a: False)
     txn = Transaction(
         date=date(2025, 3, 15),
         amount=Decimal("28.00"),
@@ -49,7 +49,7 @@ def test_explicit_posting_metadata_does_not_duplicate():
     """Explicit _posting_metadata + shared account -> single card_last4 line."""
     writer = BeancountWriter(
         output_metadata=["source"],
-        shared_accounts={"Liabilities:Credit:HXB"},
+        check_scope=lambda a: a == "Liabilities:Credit:HXB",
     )
     txn = Transaction(
         date=date(2025, 3, 15),
@@ -162,7 +162,7 @@ def test_format_result_sorts_diagnostics():
 def test_shared_account_card_last4_not_duplicated_at_txn_level():
     """When account is shared and output_metadata emits all (None), card_last4
     should appear ONCE at posting level, not at transaction level too."""
-    writer = BeancountWriter(shared_accounts={"Liabilities:Credit:HXB"})
+    writer = BeancountWriter(check_scope=lambda a: a == "Liabilities:Credit:HXB")
     # output_metadata default is None = emit all fields
     txn = Transaction(
         date=date(2025, 3, 15),
@@ -186,7 +186,7 @@ def test_shared_account_card_last4_not_duplicated_at_txn_level():
 
 def test_non_shared_account_keeps_txn_level_card_last4():
     """For non-shared accounts, card_last4 is still emitted at txn level if output_metadata allows."""
-    writer = BeancountWriter(shared_accounts=set())
+    writer = BeancountWriter(check_scope=lambda _a: False)
     txn = Transaction(
         date=date(2025, 3, 15),
         amount=Decimal("28.00"),
