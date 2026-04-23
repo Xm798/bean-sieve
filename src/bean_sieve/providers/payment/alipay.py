@@ -13,6 +13,7 @@ from ...core.preset_rules import PresetRule, PresetRuleAction, PresetRuleConditi
 from ...core.types import ReconcileContext, Transaction
 from .. import register_provider
 from ..base import BaseProvider
+from ._utils import extract_card_last4
 
 
 class AlipayTxType(StrEnum):
@@ -33,8 +34,6 @@ STATEMENT_PERIOD_REGEX = re.compile(
     r"起始时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?\s+"
     r"终止时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?"
 )
-
-CARD_LAST4_REGEX = re.compile(r"\((\d{4})\)$")
 
 
 @register_provider
@@ -176,13 +175,7 @@ class AlipayProvider(BaseProvider):
             },
         )
 
-    @staticmethod
-    def _extract_card_last4(method: str | None) -> str | None:
-        """Extract 4-digit card suffix from method string, e.g. '某银行信用卡(3855)' -> '3855'."""
-        if not method:
-            return None
-        m = CARD_LAST4_REGEX.search(method)
-        return m.group(1) if m else None
+    _extract_card_last4 = staticmethod(extract_card_last4)
 
     def _get_tx_type(self, tx_type_str: str) -> AlipayTxType:
         """Convert transaction type string to enum."""

@@ -321,16 +321,11 @@ class Sieve:
         if date_diff > self.config.date_tolerance:
             return False
 
-        # Card suffix: hard filter only when meta_check is off (legacy behavior).
-        # When meta_check is on, mismatches are surfaced via _diagnose_meta instead
-        # of rejecting the match.
+        # Card suffix hard-filter is only active on the legacy path. With
+        # meta_check on, mismatches surface via _diagnose_meta instead.
         if not meta_check and txn.card_last4:
-            posting_meta_card = (posting.meta or {}).get("card_last4")
-            txn_meta_card = bean_txn.meta.get("card_last4")
-            meta_card = (
-                posting_meta_card if posting_meta_card is not None else txn_meta_card
-            )
-            if meta_card and str(meta_card) != txn.card_last4:
+            meta_card = _read_card_last4(entry)
+            if meta_card and meta_card != txn.card_last4:
                 return False
 
         return True
@@ -338,51 +333,49 @@ class Sieve:
     def _diagnose_meta(
         self, txn: Transaction, entry: TxnPosting
     ) -> MetaDiagnostic | None:
-        """Produce a MetaDiagnostic for card_last4 mismatch or absence."""
         if not txn.card_last4:
             return None
+        meta_card = _read_card_last4(entry)
+        if meta_card == txn.card_last4:
+            return None
+
         bean_txn = entry.txn
-        # card_last4 may live at posting level (writer's preferred location)
-        # or transaction level (legacy). Check both, preferring posting-level.
-        posting_meta = entry.posting.meta or {}
-        meta_card = posting_meta.get("card_last4")
-        if meta_card is None:
-            meta_card = bean_txn.meta.get("card_last4")
         file = bean_txn.meta.get("filename", "<unknown>")
-        line = int(bean_txn.meta.get("lineno", 0) or 0)
+        line = bean_txn.meta.get("lineno") or 0
         account = entry.posting.account
+        expected = txn.card_last4
 
         if meta_card is None:
+            severity = "hint"
             message = (
                 f"{file}:{line}  hint  missing posting meta "
-                f'`card_last4: "{txn.card_last4}"` on {account}'
+                f'`card_last4: "{expected}"` on {account}'
             )
-            return MetaDiagnostic(
-                severity="hint",
-                file=file,
-                line=line,
-                account=account,
-                key="card_last4",
-                expected=txn.card_last4,
-                actual=None,
-                message=message,
-            )
-        if str(meta_card) != txn.card_last4:
+        else:
+            severity = "warn"
             message = (
                 f"{file}:{line}  warn  posting meta `card_last4` mismatch on "
-                f'{account}: ledger "{meta_card}", statement "{txn.card_last4}"'
+                f'{account}: ledger "{meta_card}", statement "{expected}"'
             )
-            return MetaDiagnostic(
-                severity="warn",
-                file=file,
-                line=line,
-                account=account,
-                key="card_last4",
-                expected=txn.card_last4,
-                actual=str(meta_card),
-                message=message,
-            )
-        return None
+        return MetaDiagnostic(
+            severity=severity,
+            file=file,
+            line=line,
+            account=account,
+            key="card_last4",
+            expected=expected,
+            actual=meta_card,
+            message=message,
+        )
+
+
+def _read_card_last4(entry: TxnPosting) -> str | None:
+    """Read card_last4 metadata, preferring posting-level over transaction-level."""
+    posting_meta = entry.posting.meta or {}
+    value = posting_meta.get("card_last4")
+    if value is None:
+        value = entry.txn.meta.get("card_last4")
+    return str(value) if value is not None else None
 
 
 def create_sieve(
