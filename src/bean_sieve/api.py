@@ -165,30 +165,16 @@ def _apply_fixme_fallback(
     return transactions
 
 
-def _infer_shared_account_metadata(config: Config) -> set[str]:
-    """
-    Return the set of accounts that are targeted by 2+ patterns in
-    account_mappings. These are "shared" accounts (e.g. HXB/SPDB) where
-    posting-level card_last4 is needed to disambiguate physical cards.
-    """
-    counts: dict[str, int] = defaultdict(int)
-    for mapping in config.account_mappings:
-        counts[mapping.account] += 1
-    return {account for account, n in counts.items() if n >= 2}
-
-
 def _build_check_scope(config: Config) -> Callable[[str], bool]:
     """
     Return a predicate deciding whether an account is in the card_last4
-    check scope. An account qualifies if it is auto-inferred as shared
-    (>=2 patterns targeting it) or if any substring in
+    check scope. An account qualifies if any substring in
     diagnostics.meta_check_accounts matches its name.
     """
-    auto = _infer_shared_account_metadata(config)
     keywords = tuple(config.diagnostics.meta_check_accounts)
     if not keywords:
-        return lambda account: account in auto
-    return lambda account: account in auto or any(kw in account for kw in keywords)
+        return lambda _account: False
+    return lambda account: any(kw in account for kw in keywords)
 
 
 def generate_output(
