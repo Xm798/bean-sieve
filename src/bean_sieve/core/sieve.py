@@ -325,8 +325,12 @@ class Sieve:
         # When meta_check is on, mismatches are surfaced via _diagnose_meta instead
         # of rejecting the match.
         if not meta_check and txn.card_last4:
-            meta_card = bean_txn.meta.get("card_last4")
-            if meta_card and meta_card != txn.card_last4:
+            posting_meta_card = (posting.meta or {}).get("card_last4")
+            txn_meta_card = bean_txn.meta.get("card_last4")
+            meta_card = (
+                posting_meta_card if posting_meta_card is not None else txn_meta_card
+            )
+            if meta_card and str(meta_card) != txn.card_last4:
                 return False
 
         return True
@@ -338,7 +342,12 @@ class Sieve:
         if not txn.card_last4:
             return None
         bean_txn = entry.txn
-        meta_card = bean_txn.meta.get("card_last4")
+        # card_last4 may live at posting level (writer's preferred location)
+        # or transaction level (legacy). Check both, preferring posting-level.
+        posting_meta = entry.posting.meta or {}
+        meta_card = posting_meta.get("card_last4")
+        if meta_card is None:
+            meta_card = bean_txn.meta.get("card_last4")
         file = bean_txn.meta.get("filename", "<unknown>")
         line = int(bean_txn.meta.get("lineno", 0) or 0)
         account = entry.posting.account
