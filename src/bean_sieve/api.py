@@ -162,6 +162,18 @@ def _apply_fixme_fallback(
     return transactions
 
 
+def _infer_shared_account_metadata(config: Config) -> set[str]:
+    """
+    Return the set of accounts that are targeted by 2+ patterns in
+    account_mappings. These are "shared" accounts (e.g. HXB/SPDB) where
+    posting-level card_last4 is needed to disambiguate physical cards.
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for mapping in config.account_mappings:
+        counts[mapping.account] += 1
+    return {account for account, n in counts.items() if n >= 2}
+
+
 def generate_output(
     result: ReconcileResult,
     output_path: Path | None = None,
