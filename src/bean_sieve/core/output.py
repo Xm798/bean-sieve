@@ -107,7 +107,11 @@ class BeancountWriter:
         if should_include("order_id") and txn.order_id:
             meta.append(f'order_id: "{txn.order_id}"')
 
-        if should_include("card_last4") and txn.card_last4:
+        if (
+            should_include("card_last4")
+            and txn.card_last4
+            and txn.account not in self.shared_accounts
+        ):
             meta.append(f'card_last4: "{txn.card_last4}"')
 
         if should_include("reference"):

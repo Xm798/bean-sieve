@@ -157,3 +157,49 @@ def test_format_result_sorts_diagnostics():
     idx_a50 = output.index("books/a.bean:50")
     idx_b10 = output.index("books/b.bean:10")
     assert idx_a10 < idx_a50 < idx_b10
+
+
+def test_shared_account_card_last4_not_duplicated_at_txn_level():
+    """When account is shared and output_metadata emits all (None), card_last4
+    should appear ONCE at posting level, not at transaction level too."""
+    writer = BeancountWriter(shared_accounts={"Liabilities:Credit:HXB"})
+    # output_metadata default is None = emit all fields
+    txn = Transaction(
+        date=date(2025, 3, 15),
+        amount=Decimal("28.00"),
+        currency="CNY",
+        description="拿铁",
+        payee="瑞幸咖啡",
+        card_last4="3855",
+        account="Liabilities:Credit:HXB",
+        contra_account="Expenses:Food:Coffee",
+        provider="alipay",
+    )
+    output = writer.format_transaction(txn)
+    assert output.count('card_last4: "3855"') == 1
+    # And the single occurrence should be at posting level (8-space indent)
+    lines = output.split("\n")
+    card_lines = [ln for ln in lines if "card_last4" in ln]
+    assert len(card_lines) == 1
+    assert card_lines[0].startswith("        ")  # 8-space = posting level
+
+
+def test_non_shared_account_keeps_txn_level_card_last4():
+    """For non-shared accounts, card_last4 is still emitted at txn level if output_metadata allows."""
+    writer = BeancountWriter(shared_accounts=set())
+    txn = Transaction(
+        date=date(2025, 3, 15),
+        amount=Decimal("28.00"),
+        currency="CNY",
+        description="拿铁",
+        payee="瑞幸咖啡",
+        card_last4="3855",
+        account="Assets:Bank:CCB:1386",
+        contra_account="Expenses:Food:Coffee",
+        provider="alipay",
+    )
+    output = writer.format_transaction(txn)
+    lines = output.split("\n")
+    card_lines = [ln for ln in lines if "card_last4" in ln]
+    assert len(card_lines) == 1
+    assert card_lines[0].startswith("    ") and not card_lines[0].startswith("        ")
