@@ -198,3 +198,72 @@ def test_matched_ledger_with_identical_card_last4_no_diagnostic(tmp_path):
 
     assert len(result.matched) == 1
     assert result.meta_diagnostics == []
+
+
+def test_soft_check_recognizes_posting_level_card_last4(tmp_path):
+    """card_last4 emitted at posting level (writer's format) should clear the diagnostic."""
+    ledger = _write_ledger(
+        tmp_path,
+        """
+2025-03-15 * "瑞幸咖啡" "拿铁"
+    Liabilities:Credit:HXB  -28.00 CNY
+        card_last4: "3855"
+    Expenses:Food:Coffee  28.00 CNY
+
+1900-01-01 open Liabilities:Credit:HXB
+1900-01-01 open Expenses:Food:Coffee
+""".strip(),
+    )
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(ledger)
+
+    txn = Transaction(
+        date=date(2025, 3, 15),
+        amount=Decimal("28.00"),
+        currency="CNY",
+        description="拿铁",
+        payee="瑞幸咖啡",
+        card_last4="3855",
+        account="Liabilities:Credit:HXB",
+        provider="alipay",
+    )
+    result = sieve.match([txn], meta_check=True)
+
+    assert len(result.matched) == 1
+    assert result.meta_diagnostics == []
+
+
+def test_soft_check_warn_for_posting_level_conflict(tmp_path):
+    """Conflicting card_last4 at posting level should produce warn, not hint."""
+    ledger = _write_ledger(
+        tmp_path,
+        """
+2025-03-15 * "瑞幸咖啡" "拿铁"
+    Liabilities:Credit:HXB  -28.00 CNY
+        card_last4: "4192"
+    Expenses:Food:Coffee  28.00 CNY
+
+1900-01-01 open Liabilities:Credit:HXB
+1900-01-01 open Expenses:Food:Coffee
+""".strip(),
+    )
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(ledger)
+
+    txn = Transaction(
+        date=date(2025, 3, 15),
+        amount=Decimal("28.00"),
+        currency="CNY",
+        description="拿铁",
+        payee="瑞幸咖啡",
+        card_last4="3855",
+        account="Liabilities:Credit:HXB",
+        provider="alipay",
+    )
+    result = sieve.match([txn], meta_check=True)
+
+    assert len(result.matched) == 1
+    assert len(result.meta_diagnostics) == 1
+    d = result.meta_diagnostics[0]
+    assert d.severity == "warn"
+    assert d.actual == "4192"
