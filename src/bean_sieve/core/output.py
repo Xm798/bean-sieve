@@ -1,11 +1,14 @@
 """Beancount output generator."""
 
 import datetime as dt
+import linecache
 from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
+
+from beancount.parser import printer
 
 from .types import MatchSource, ReconcileResult, Transaction
 
@@ -48,7 +51,7 @@ class BeancountWriter:
         # Default transaction flag: "*" (cleared) or "!" (pending)
         self.default_flag = default_flag
         # Predicate answering "does this account need card_last4 posting meta?"
-        self.check_scope: Callable[[str], bool] = check_scope or (lambda _a: False)
+        self.check_scope: Callable[[str], bool] = check_scope or (lambda _: False)
 
     def format_transaction(self, txn: Transaction) -> str:
         """Format a single transaction as Beancount entry."""
@@ -268,58 +271,40 @@ class BeancountWriter:
 
         return output.getvalue()
 
-    def _format_extra_entry(self, entry) -> str:
-        """Format an extra ledger entry with source file link."""
-        txn = entry.txn
-        lines = []
+    def _extract_entry_source(self, filename: str, lineno: int) -> str | None:
+        """Extract the original text of a Beancount entry from its source file.
 
-        # Source file link comment
+        Boundary: starts at lineno (1-based); ends at the next non-blank,
+        non-indented line (next top-level directive or comment) or EOF.
+        """
+        src = linecache.getlines(filename)
+        if not src or lineno < 1 or lineno > len(src):
+            return None
+        start = lineno - 1
+        end = start + 1
+        while end < len(src):
+            line = src[end]
+            if line and not line[0].isspace() and line.strip():
+                break
+            end += 1
+        return "".join(src[start:end]).rstrip()
+
+    def _format_extra_entry(self, entry) -> str:
+        """Format an extra ledger entry, preferring the original source text."""
+        txn = entry.txn
         filename = txn.meta.get("filename")
         lineno = txn.meta.get("lineno")
+
         if filename and lineno:
-            lines.append(f"; Source: {filename}:{lineno}")
+            body = self._extract_entry_source(filename, lineno)
+            if body is not None:
+                return f"; Source: {filename}:{lineno}\n{body}"
 
-        # Transaction header: date flag "payee" "narration"
-        flag = txn.flag
-        payee_str = f'"{txn.payee}"' if txn.payee else '""'
-        narration = (txn.narration or "").replace('"', '\\"')
-        lines.append(f'{txn.date} {flag} {payee_str} "{narration}"')
-
-        # Metadata (skip internal fields)
-        skip_meta = {"filename", "lineno", "__tolerances__"}
-        for key, value in txn.meta.items():
-            if key in skip_meta:
-                continue
-            if isinstance(value, str):
-                lines.append(f'    {key}: "{value}"')
-            elif isinstance(value, bool):
-                lines.append(f"    {key}: {str(value).upper()}")
-            elif value is not None:
-                lines.append(f"    {key}: {value}")
-
-        # Tags and links
-        if txn.tags:
-            for tag in txn.tags:
-                lines.append(f"    #{tag}")
-        if txn.links:
-            for link in txn.links:
-                lines.append(f"    ^{link}")
-
-        # All postings
-        for p in txn.postings:
-            if p.units:
-                posting_line = f"    {p.account}  {p.units.number} {p.units.currency}"
-            else:
-                posting_line = f"    {p.account}"
-            # Cost
-            if p.cost:
-                posting_line += f" {{{p.cost.number} {p.cost.currency}}}"
-            # Price
-            if p.price:
-                posting_line += f" @ {p.price.number} {p.price.currency}"
-            lines.append(posting_line)
-
-        return "\n".join(lines)
+        # Fallback: re-serialize from the parsed entry via Beancount's printer
+        body = printer.format_entry(txn).rstrip()
+        if filename and lineno:
+            return f"; Source: {filename}:{lineno}\n{body}"
+        return body
 
 
 def write_output(
