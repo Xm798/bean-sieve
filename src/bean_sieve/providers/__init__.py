@@ -1,15 +1,18 @@
 """Statement providers registry."""
 
 from pathlib import Path
+from typing import TypeVar
 
 from .base import BaseProvider
+
+_P = TypeVar("_P", bound=BaseProvider)
 
 # Provider registry: provider_id -> provider class
 # Providers are registered when their modules are imported
 PROVIDERS: dict[str, type[BaseProvider]] = {}
 
 
-def register_provider(provider_cls: type[BaseProvider]) -> type[BaseProvider]:
+def register_provider(provider_cls: type[_P]) -> type[_P]:
     """
     Decorator to register a provider class.
 

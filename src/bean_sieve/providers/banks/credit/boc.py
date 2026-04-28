@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date
 from decimal import Decimal
@@ -10,6 +11,8 @@ from pathlib import Path
 from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 @register_provider
@@ -40,7 +43,6 @@ class BOCCreditProvider(BaseProvider):
         doc = fitz.open(file_path)
         transactions: list[Transaction] = []
 
-        # Extract statement period from filename or content
         statement_period = self._extract_statement_period(doc, file_path)
 
         # Track current card
@@ -121,6 +123,14 @@ class BOCCreditProvider(BaseProvider):
                     transactions.append(txn)
 
         doc.close()
+
+        # Delayed-settlement entries can fall before the computed cycle start
+        if transactions and statement_period:
+            min_date = min(t.date for t in transactions)
+            if min_date < statement_period[0]:
+                for t in transactions:
+                    t.statement_period = (min_date, statement_period[1])
+
         return transactions
 
     def _group_by_row(
@@ -170,7 +180,7 @@ class BOCCreditProvider(BaseProvider):
         deposit: str = ""
         expense: str = ""
 
-        for x1, _x0, content in sorted_blocks:
+        for x1, _, content in sorted_blocks:
             lines = content.split("\n")
             for line in lines:
                 line = line.strip()
@@ -245,36 +255,53 @@ class BOCCreditProvider(BaseProvider):
     def _extract_statement_period(
         self, doc, file_path: Path
     ) -> tuple[date, date] | None:
-        """Extract statement period from filename or content."""
-        # Try filename first: 中国银行信用卡电子合并账单2025年12月账单.PDF
+        """Extract statement period.
+
+        BOC's closing day varies per cardholder, so the actual Statement
+        Closing Date must be read from the PDF; the filename only encodes
+        the statement month, not the cycle boundaries.
+        """
+        closing_date = self._find_closing_date(doc)
+        if closing_date:
+            return (self._months_back(closing_date, 1), closing_date)
+
         filename_match = re.search(r"(\d{4})年(\d{2})月", file_path.name)
         if filename_match:
             year = int(filename_match.group(1))
             month = int(filename_match.group(2))
-            # Statement month, estimate period as previous month's 5th to this month's 4th
-            start = date(year - 1, 12, 5) if month == 1 else date(year, month - 1, 5)
-            end = date(year, month, 4)
+            start = date(year - 1, 12, 1) if month == 1 else date(year, month - 1, 1)
+            end = date(year, month, calendar.monthrange(year, month)[1])
             return (start, end)
 
-        # Try to find statement date in content
-        if doc.page_count > 0:
-            text = doc[0].get_text()
-            # Look for Statement Closing Date
-            date_match = re.search(r"(\d{4}-\d{2}-\d{2})", text)
-            if date_match:
-                closing_date = self._parse_date(date_match.group(1))
-                if closing_date:
-                    # Estimate period as ~30 days before closing
-                    if closing_date.month == 1:
-                        start = date(closing_date.year - 1, 12, closing_date.day + 1)
-                    else:
-                        start = date(
-                            closing_date.year,
-                            closing_date.month - 1,
-                            closing_date.day + 1,
-                        )
-                    return (start, closing_date)
+        return None
 
+    @staticmethod
+    def _months_back(d: date, months: int) -> date:
+        """Subtract whole months, clamping the day to the target month's length."""
+        total = d.year * 12 + (d.month - 1) - months
+        year, month = divmod(total, 12)
+        month += 1
+        last_day = calendar.monthrange(year, month)[1]
+        return date(year, month, min(d.day, last_day))
+
+    def _find_closing_date(self, doc) -> date | None:
+        """Locate the Statement Closing Date on page 1."""
+        if doc.page_count == 0:
+            return None
+
+        # Summary block layout: "payment_due_date\nclosing_date\n..."
+        for block in doc[0].get_text("blocks"):
+            content = str(block[4])
+            lines = [ln.strip() for ln in content.split("\n") if ln.strip()]
+            if (
+                len(lines) >= 2
+                and _DATE_RE.match(lines[0])
+                and _DATE_RE.match(lines[1])
+            ):
+                due = self._parse_date(lines[0])
+                closing = self._parse_date(lines[1])
+                if due and closing and closing < due:
+                    return closing
         return None
 
     def _parse_date(self, date_str: str | None) -> date | None:

@@ -62,10 +62,10 @@ class TestBOCStatementPeriodExtraction:
     """Tests for statement period extraction from filename."""
 
     def test_extract_period_from_filename(self, tmp_path):
-        """Test extracting statement period from filename pattern."""
-        # Create mock document
+        """Filename fallback: span the whole previous-and-current months."""
+        # Mock document with no extractable closing date
         mock_page = MagicMock()
-        mock_page.get_text.return_value = ""
+        mock_page.get_text.return_value = []
 
         mock_doc = MagicMock()
         mock_doc.page_count = 1
@@ -80,12 +80,34 @@ class TestBOCStatementPeriodExtraction:
 
         assert period is not None
         start, end = period
-        assert end.month == 12
-        assert end.year == 2025
-        # Period should be previous month's 5th to this month's 4th
-        assert end.day == 4
-        assert start.month == 11
-        assert start.day == 5
+        # Conservative span: whole previous month start to current month end
+        assert (start.year, start.month, start.day) == (2025, 11, 1)
+        assert (end.year, end.month, end.day) == (2025, 12, 31)
+
+    def test_extract_period_from_pdf_closing_date(self, tmp_path):
+        """Prefer the actual closing date parsed from PDF blocks."""
+        # Block layout: payment_due_date then closing_date in same block
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = [
+            (0, 0, 0, 0, "2025-12-25\n2025-12-04\n95.59\nUSD  0.00\n", 0, 0),
+        ]
+
+        mock_doc = MagicMock()
+        mock_doc.page_count = 1
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
+
+        file_path = tmp_path / "中国银行信用卡电子合并账单2025年12月账单.PDF"
+        file_path.write_bytes(b"%PDF-1.4")
+
+        provider = BOCCreditProvider()
+        with patch("fitz.open", return_value=mock_doc):
+            period = provider._extract_statement_period(mock_doc, file_path)
+
+        assert period is not None
+        start, end = period
+        # End = closing date; start = same day one month earlier
+        assert end == date(2025, 12, 4)
+        assert start == date(2025, 11, 4)
 
 
 class TestBOCRowGrouping:
