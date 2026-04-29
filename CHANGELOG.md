@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-04-29
+
+### 新增
+
+- **元数据诊断（card_last4 软校验）**：从支付宝/微信 `method` 字段提取卡号末四位；对共享账户（多卡共用，由 `account_mappings` 自动推断或 `meta_check_accounts` 显式声明）做软校验，不一致时输出 `MetaDiagnostic`，结果渲染到 output 的 diagnostics section
+- **配置开关**：新增 `diagnostics.meta_check`（默认开启）和 `meta_check_accounts` 显式账户列表，配套更新 `bean-sieve.example.yaml` 和 JSON Schema
+
+### 修复
+
+- **BOC 信用卡**：从 PDF 读取真实账单截止日期，账单周期更准确
+- **Output**：extra ledger entries 保留原始源文本
+
+### 其他
+
+- 借记卡 provider import 语句整理
+
 ## [0.3.1] - 2026-04-20
 
 ### 修复
@@ -65,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 可配置的元数据字段，4 空格缩进
 - Provider 生命周期钩子（`pre_reconcile`、`post_output`）
 
+[0.4.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.4.0
+[0.3.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.3.1
 [0.2.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.1.0

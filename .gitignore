@@ -2,6 +2,10 @@ data/
 external/
 *.bean
 
+# Local-only design notes / planning docs (kept out of releases)
+docs/plans/
+docs/superpowers/
+
 .claude/settings.local.json
 
 # User config
