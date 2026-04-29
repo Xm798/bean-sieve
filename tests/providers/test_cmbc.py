@@ -37,14 +37,12 @@ def create_cmbc_html_with_transactions(transactions: list[dict]) -> str:
     """
     rows = []
     for txn in transactions:
-        row = f"""<span id='fixBand9'>
-            <table><tr>
-                <td>{txn["trans_date"]}</td>
-                <td>{txn["post_date"]}</td>
-                <td><span id='fixBand22'>{txn["description"]}</span></td>
-                <td><span id='fixBand8'>{txn["amount"]}</span></td>
-                <td><span id='fixBand2'>{txn["card_last4"]}</span></td>
-            </tr></table>
+        full_text = f"{txn['trans_date']}{txn['post_date']}{txn['description']}{txn['amount'].replace(',', '').lstrip('-')}{txn['card_last4']}"
+        row = f"""<span id='fixBand1'>
+            <span id='fixBand8'>{full_text}</span>
+            <span id='fixBand82'>{txn["description"]}</span>
+            <span id='fixBand22'>{txn["amount"]}</span>
+            <span id='fixBand9'>{txn["card_last4"]}</span>
         </span>"""
         rows.append(row)
 
@@ -55,7 +53,9 @@ def create_cmbc_html_with_transactions(transactions: list[dict]) -> str:
 <div>2025年12月对账单</div>
 <div>Statement Date</div><div>2025/12/10</div>
 <span id='loopBand3'>
-    {"".join(rows)}
+    <span id='loopBand1'>
+        {"".join(rows)}
+    </span>
 </span>
 </body>
 </html>"""
