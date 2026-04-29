@@ -186,6 +186,55 @@ class TestAlipayRefundHandling:
         assert len(transactions) == 1
         assert transactions[0].order_id == "ORDER001"
 
+    def test_user_initiated_refund_keeps_expense_sign(self):
+        """User-initiated refund (paying back to someone) is recorded by Alipay as
+        tx_type=支出. The alipay_refund preset rule must NOT flip its sign — that
+        would turn an outflow into a phantom inflow and break reconciliation."""
+        from bean_sieve.config.schema import Config
+        from bean_sieve.core.rules import RulesEngine
+        from bean_sieve.core.types import Transaction
+
+        engine = RulesEngine(Config(), preset_rules=AlipayProvider.get_preset_rules())
+        txn = Transaction(
+            date=date(2030, 1, 2),
+            amount=Decimal("10.00"),  # positive = expense (user paying out)
+            currency="CNY",
+            description="退款",
+            payee="payee-a",
+            provider="alipay",
+            metadata={"tx_type": "支出", "method": "余额", "status": "交易成功"},
+        )
+
+        result = engine.apply(txn)
+
+        assert result.amount == Decimal("10.00"), (
+            "User-initiated refund (tx_type=支出) must stay positive; "
+            f"got {result.amount} (sign was flipped)"
+        )
+
+    def test_received_refund_still_flipped_to_income(self):
+        """Regression guard: refunds received from a merchant (tx_type=不计收支
+        with description starting with 退款) must still be flipped to negative
+        so they reconcile against the original purchase as income."""
+        from bean_sieve.config.schema import Config
+        from bean_sieve.core.rules import RulesEngine
+        from bean_sieve.core.types import Transaction
+
+        engine = RulesEngine(Config(), preset_rules=AlipayProvider.get_preset_rules())
+        txn = Transaction(
+            date=date(2030, 1, 2),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="退款-商品",
+            payee="merchant-a",
+            provider="alipay",
+            metadata={"tx_type": "不计收支", "method": "", "status": "退款成功"},
+        )
+
+        result = engine.apply(txn)
+
+        assert result.amount == Decimal("-10.00")
+
 
 def test_card_last4_extracted_from_method_with_suffix():
     """Alipay method like '华夏银行信用卡(1234)' should populate card_last4."""

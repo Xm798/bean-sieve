@@ -297,12 +297,16 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="余额宝", negate=True),
                 priority=110,
             ),
-            # 退款（只对正数金额翻转，避免双重翻转）
+            # 退款：仅对收入/不计收支类型翻转。用户主动退款给他人时
+            # tx_type=支出，金额方向已正确，不能再翻转。
             PresetRule(
                 rule_id="alipay_refund",
                 name="退款",
                 provider="alipay",
-                condition=PresetRuleCondition(description=r"^退款"),
+                condition=PresetRuleCondition(
+                    description=r"^退款",
+                    metadata={"tx_type": r"^(收入|不计收支)$"},
+                ),
                 action=PresetRuleAction(negate=True),
                 priority=100,
             ),
