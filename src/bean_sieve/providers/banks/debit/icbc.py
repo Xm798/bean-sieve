@@ -64,6 +64,11 @@ class ICBCDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
+        # ICBC exports rows in reverse-chronological order (latest first).
+        # Reverse so callers receive chronological order; this matters for
+        # balance directive selection when multiple transactions share a date
+        # and the parser has no time field to disambiguate.
+        transactions.reverse()
         return transactions
 
     def _read_lines(self, file_path: Path) -> list[str]:

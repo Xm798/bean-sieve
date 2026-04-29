@@ -142,46 +142,42 @@ class TestICBCDebitProvider:
         """Test expense transactions are positive."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
-        txn = transactions[0]
+        txn = next(t for t in transactions if "还款" in t.description)
 
         assert txn.date == date(2026, 3, 2)
         assert txn.amount == Decimal("14955.00")
         assert txn.is_expense
         assert txn.currency == "CNY"
         assert txn.payee == "支付宝（中国）网络技术有限公司"
-        assert "还款" in txn.description
         assert txn.provider == "icbc_debit"
 
     def test_income_transaction(self, icbc_csv_file: Path) -> None:
         """Test income transactions are negative."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
-        txn = transactions[1]
+        txn = next(t for t in transactions if "他行汇入" in t.description)
 
         assert txn.date == date(2026, 3, 2)
         assert txn.amount == Decimal("-60000.00")
         assert txn.is_income
-        assert "他行汇入" in txn.description
 
     def test_small_amount(self, icbc_csv_file: Path) -> None:
         """Test small amount transactions."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
-        txn = transactions[2]
+        txn = next(t for t in transactions if "消费" in t.description)
 
         assert txn.amount == Decimal("0.01")
-        assert "消费" in txn.description
 
     def test_interest_income(self, icbc_csv_file: Path) -> None:
         """Test interest income without counterparty."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
-        txn = transactions[3]
+        txn = next(t for t in transactions if "利息" in t.description)
 
         assert txn.date == date(2025, 12, 21)
         assert txn.amount == Decimal("-0.05")
         assert txn.is_income
-        assert "利息" in txn.description
         assert txn.payee is None
 
     def test_card_last4_extraction(self, icbc_csv_file: Path) -> None:
@@ -285,6 +281,47 @@ class TestICBCEdgeCases:
         assert transactions[0].metadata["summary"] == "消费"
         assert transactions[0].metadata["detail"] == "some detail"
         assert transactions[0].metadata["location"] == "手机银行"
+
+    def test_chronological_order_for_same_date(self, tmp_path: Path) -> None:
+        """ICBC CSV is sorted descending; provider must return chronological order
+        so that the last entry per date is the latest (correct closing balance)."""
+        # Rows are written in the file's native (descending) order. The two
+        # same-date entries are the critical case: the one at the top of the
+        # file is chronologically latest and must end up LAST in the result.
+        rows = [
+            {
+                "date": "2030-01-02",
+                "summary": "later-same-day",
+                "location": "loc-a",
+                "income": "10.00",
+            },
+            {
+                "date": "2030-01-02",
+                "summary": "earlier-same-day",
+                "location": "loc-b",
+                "expense": "20.00",
+            },
+            {
+                "date": "2030-01-01",
+                "summary": "previous-day",
+                "location": "loc-c",
+                "expense": "30.00",
+            },
+        ]
+        file_path = create_icbc_csv(tmp_path, rows)
+        provider = ICBCDebitProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 3
+        # Ascending by date: oldest first, newest last.
+        assert transactions[0].date == date(2030, 1, 1)
+        assert transactions[-1].date == date(2030, 1, 2)
+        # For same-date entries, the one that was FIRST in the file
+        # (chronologically latest) must end up LAST in the list.
+        same_day = [t for t in transactions if t.date == date(2030, 1, 2)]
+        assert len(same_day) == 2
+        assert "later-same-day" in same_day[-1].description
+        assert "earlier-same-day" in same_day[0].description
 
     def test_gbk_encoding_fallback(self, tmp_path: Path) -> None:
         """Test GBK encoding fallback."""
