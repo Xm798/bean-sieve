@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-04-29
+
+### 修复
+
+- **支付宝**：`alipay_refund` 预设规则误把所有 `退款` 开头的交易翻转为收入，导致用户主动发起的退款（`tx_type=支出`）变成幻象收入而无法对账。规则限定为 `tx_type=收入|不计收支`
+- **民生信用卡**：补充解析对账单中的 `loopBand7`（退货）与 `loopBand5`（还款）两个区段，修复退款与还款记录此前完全缺失的问题
+- **工行借记卡**：保证返回的交易按时间顺序排列
+
+### 其他
+
+- CI/Release workflow 升级到 `astral-sh/setup-uv@v8.1.0`
+
 ## [0.4.0] - 2026-04-29
 
 ### 新增
@@ -81,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 可配置的元数据字段，4 空格缩进
 - Provider 生命周期钩子（`pre_reconcile`、`post_output`）
 
+[0.4.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.3.1
 [0.2.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.2.1
