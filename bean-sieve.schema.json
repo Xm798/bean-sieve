@@ -349,6 +349,10 @@
         "zabank_debit": {
           "description": "众安银行",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["exchange_info", "counterparty", "balance"] } } } }]
+        },
+        "cncbi_debit": {
+          "description": "中信银行（国际）",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["balance"] } } } }]
         }
       },
       "additionalProperties": { "$ref": "#/$defs/providerConfig" }

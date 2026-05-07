@@ -169,6 +169,11 @@ providers:
       USD: Assets:Bank:ZABank:USD
     balance: true
 
+  cncbi_debit:
+    # 中信银行（国际） account
+    accounts:
+      "default": Assets:Bank:CNCBI:HKD
+
 # 规则匹配
 rules:
   # 正则匹配 description，设置 target_payee
