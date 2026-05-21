@@ -117,6 +117,12 @@ providers:
     accounts:
       "1234": Liabilities:CreditCard:CNCB:1234
 
+  hsbchk_credit:
+    # 文件名带卡后四位（推荐：TransactionHistory_8888.csv）
+    # 仅 1 张卡时也可保持原文件名 TransactionHistory.csv，仅配一个 account 即可
+    accounts:
+      "8888": Liabilities:CreditCard:HSBCHK:8888
+
   cgb_credit:
     accounts:
       "1234": Liabilities:CreditCard:CGB:1234
@@ -173,6 +179,11 @@ providers:
     # 中信银行（国际） account
     accounts:
       "default": Assets:Bank:CNCBI:HKD
+
+  hsbchk_debit:
+    # 汇丰香港 储蓄账户（CSV 不含账号，配置单一账户即可）
+    accounts:
+      "default": Assets:Bank:HSBCHK:HKD
 
 # 规则匹配
 rules:

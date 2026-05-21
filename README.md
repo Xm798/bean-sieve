@@ -86,6 +86,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `cncb_credit`  | 中信银行信用卡 | XLS  | 网银导出账单       |
 | `cmb_credit`   | 招商银行信用卡 | EML  | 邮件账单           |
 | `cmbc_credit`  | 民生银行信用卡 | EML  | 邮件账单           |
+| `hsbchk_credit`| 汇丰香港信用卡 | CSV  | 网银导出账单（多卡需加 `_<后四位>` 后缀） |
 | `hxb_credit`   | 华夏银行信用卡 | EML  | 邮件账单           |
 
 ### 借记卡
@@ -100,6 +101,8 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `cmb_debit`    | 招商银行借记卡 | CSV       | CSV 导出账单       |
 | `cib_debit`    | 兴业银行借记卡 | XLS       | XLS 导出账单       |
 | `pab_debit`    | 平安银行借记卡 | XLS/XLSX  | Excel 导出账单     |
+| `cncbi_debit`  | 中信银行（国际）| CSV      | 网银导出账单       |
+| `hsbchk_debit` | 汇丰香港储蓄账户| CSV      | 网银导出账单       |
 | `zabank_debit` | 众安银行       | PDF       | 综合月结单         |
 
 更多 Provider 正在开发中。
@@ -228,6 +231,8 @@ rules:
 | 招商银行 | [专业版](https://cmbchina.com/pbankwebNew/downloadPage.aspx) PC 客户端 | Windows | 需安装客户端 |
 | 兴业银行 | [个人网上银行](https://personalbank.cib.com.cn/) | Windows / macOS | 需安装安全控件，查询→交易明细查询→流水下载→Excel |
 | 平安银行 | [个人网上银行](https://bank.pingan.com.cn/m/main/index.html) | Windows / macOS | 扫码登录无需安全控件 |
+| 汇丰香港 | [HSBC HK Online Banking](https://www.hsbc.com.hk/) | Windows / macOS | 储蓄账户：交易记录页 → Download → CSV，导出文件名为 `TransactionHistory.csv` |
+| 中信银行（国际） | [inet Online Banking](https://ibanking.cncbinternational.com/) | Windows / macOS | 账户活动 → 下载 CSV |
 
 ### 信用卡
 
@@ -236,6 +241,7 @@ rules:
 | 银行 | 下载方式 | 备注 |
 | :--- | :--- | :--- |
 | 中信银行 | [信用卡网银](https://e.creditcard.ecitic.com/citiccard/ebank-ocp/ebankpc/bill.html) | 登录后导出已出账单明细 XLS |
+| 汇丰香港 | [HSBC HK Online Banking](https://www.hsbc.com.hk/) | 信用卡交易页 → Download → CSV，文件名为 `TransactionHistory.csv`。**多张卡时**请将下载文件重命名为 `TransactionHistory_<卡后四位>.csv`（如 `TransactionHistory_8888.csv`）以便对应账户 |
 
 ### 其他
 
@@ -277,6 +283,7 @@ rules:
 | `cmb_credit` | `posting_date` |
 | `cmbc_credit` | `posting_date` |
 | `hxb_credit` | `original_date` |
+| `hsbchk_credit` | `transaction_status`, `country`, `district`, `direction` |
 | `abc_credit` | — |
 | `bosc_credit` | — |
 | `ccb_credit` | — |
@@ -372,6 +379,13 @@ rules:
 | `balance` | 交易后余额 |
 | `counterparty` | 对手方信息（姓名+账号）|
 | `exchange_info` | 换汇的 sell/buy 详情 |
+
+#### 汇丰香港 `hsbchk_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `balance` | 交易后余额 |
+| `balance_currency` | 余额币种（与交易币种不同时才输出）|
 
 ### 配置示例
 

@@ -86,7 +86,12 @@
               "purpose",
               "remark",
               "exchange_info",
-              "counterparty"
+              "counterparty",
+              "transaction_status",
+              "country",
+              "district",
+              "direction",
+              "balance_currency"
             ]
           },
           "examples": [
@@ -314,6 +319,10 @@
           "description": "华夏银行信用卡",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["original_date"] } } } }]
         },
+        "hsbchk_credit": {
+          "description": "汇丰香港信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["transaction_status", "country", "district", "direction"] } } } }]
+        },
         "boc_debit": {
           "description": "中国银行借记卡",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "balance", "channel", "counterparty_account", "cash_remit"] } } } }]
@@ -353,6 +362,10 @@
         "cncbi_debit": {
           "description": "中信银行（国际）",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["balance"] } } } }]
+        },
+        "hsbchk_debit": {
+          "description": "汇丰香港储蓄账户",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["balance", "balance_currency"] } } } }]
         }
       },
       "additionalProperties": { "$ref": "#/$defs/providerConfig" }
