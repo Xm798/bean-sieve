@@ -54,8 +54,8 @@ class TestMeituanProvider:
         tx = txns[0]
         assert tx.amount == Decimal("100.00")
         assert tx.currency == "CNY"
-        assert tx.description == "测试餐厅-代金券"
         assert tx.payee == "测试餐厅"  # prefix before first "-"
+        assert tx.description == "代金券"  # remainder; merchant not repeated
         assert tx.card_last4 == "8888"
         assert tx.order_id == "TX1000000001"
         assert tx.date == date(2030, 1, 15)
@@ -89,6 +89,8 @@ class TestMeituanProvider:
         txns = MeituanProvider().parse(_write(tmp_path, rows))
         assert len(txns) == 1
         assert txns[0].amount == Decimal("18.00")
+        assert txns[0].payee == "测试奶茶店"
+        assert txns[0].description == "果茶"  # merchant stripped from description
         assert txns[0].metadata["order_amount"] == "20.00"
 
     def test_methods_without_card(self, tmp_path: Path) -> None:

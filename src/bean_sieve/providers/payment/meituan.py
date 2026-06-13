@@ -60,7 +60,9 @@ class MeituanProvider(BaseProvider):
     Notes:
     - Meituan has no dedicated counterparty column; the merchant is embedded in
       the order title (``商户名-商品/订单号``). The prefix before the first ``-``
-      is used as payee; titles without ``-`` leave payee empty.
+      becomes the payee and the remainder becomes the description (so the
+      merchant is not repeated); titles without ``-`` leave payee empty and
+      keep the whole title as description.
     - Refund (退款) rows are emitted as standalone income transactions. Meituan
       refund order IDs share no prefix with the original payment, so they are
       not linked back to the original order.
@@ -155,11 +157,16 @@ class MeituanProvider(BaseProvider):
         if direction == MeituanTxType.INCOME and amount > 0:
             amount = -amount
 
-        # Extract merchant as payee from the title prefix (before the first "-").
-        # Titles without "-" (e.g. "江苏联通200元") leave payee empty.
+        # Meituan titles look like "商户名-商品/订单号". Split on the first "-":
+        # the prefix is the merchant (payee), the remainder is the description.
+        # Titles without "-" (e.g. "江苏联通200元") leave payee empty and keep
+        # the whole title as the description.
         payee: str | None = None
+        description = title
         if "-" in title:
-            payee = title.split("-", 1)[0].strip() or None
+            prefix, remainder = title.split("-", 1)
+            payee = prefix.strip() or None
+            description = remainder.strip() or title
 
         metadata: dict[str, str] = {
             "tx_type": tx_type_str,
@@ -179,7 +186,7 @@ class MeituanProvider(BaseProvider):
             time=tx_datetime.time(),
             amount=amount,
             currency="CNY",
-            description=title,
+            description=description,
             payee=payee,
             order_id=order_id or None,
             card_last4=self._extract_card_last4(method),

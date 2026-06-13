@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 新增
 
-- **美团**：新增美团（`meituan`）支付平台 Provider，解析美团 CSV 账单（UTF-8 BOM、20 行表头）。以实付金额作为交易金额，存在优惠时将订单原价记入 `order_amount` 元数据；从订单标题前缀提取商户作为 payee；支持纯日期格式的账单周期
+- **美团**：新增美团（`meituan`）支付平台 Provider，解析美团 CSV 账单（UTF-8 BOM、20 行表头）。以实付金额作为交易金额，存在优惠时将订单原价记入 `order_amount` 元数据；从订单标题首个 `-` 前缀提取商户作为 payee、`-` 之后作为描述（不重复商户名）；支持纯日期格式的账单周期
 - **汇丰香港**：新增汇丰香港（`hsbchk`）信用卡与借记卡 Provider
 - **中信银行国际**：新增中信银行国际（`cncbi`）借记卡 Provider
 
