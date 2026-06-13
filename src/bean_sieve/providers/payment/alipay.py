@@ -28,6 +28,20 @@ class AlipayTxType(StrEnum):
 # Number of header lines to skip in Alipay CSV
 ALIPAY_HEADER_LINES = 24
 
+
+def _refund_original_order_id(order_id: str) -> str | None:
+    """Extract the original order ID from a refund order ID.
+
+    Known refund order ID formats:
+    - old: ``{original}_{suffix}``
+    - new (since 2026): ``{original}*REFUND_{suffix}``
+
+    Returns None if order_id carries no refund suffix.
+    """
+    original = re.split(r"[*_]", order_id, maxsplit=1)[0]
+    return original if original and original != order_id else None
+
+
 # Regex to extract statement period from header
 # Format: 起始时间：[2025-01-01 00:00:00]    终止时间：[2025-01-31 23:59:59]
 STATEMENT_PERIOD_REGEX = re.compile(
@@ -210,12 +224,14 @@ class AlipayProvider(BaseProvider):
         filtered = [txn for txn in transactions if txn.amount != 0]
 
         # Build set of order_ids that have refunds (for linking original transactions)
-        # Refund order_ids have format: original_order_id_suffix
+        # Refund order_ids carry a suffix; see _refund_original_order_id for formats
         refunded_order_ids: set[str] = set()
         for txn in filtered:
             status = txn.metadata.get("status", "")
-            if status == "退款成功" and txn.order_id and "_" in txn.order_id:
-                refunded_order_ids.add(txn.order_id.split("_")[0])
+            if status == "退款成功" and txn.order_id:
+                original_id = _refund_original_order_id(txn.order_id)
+                if original_id:
+                    refunded_order_ids.add(original_id)
 
         result = []
         for txn in filtered:
@@ -234,8 +250,9 @@ class AlipayProvider(BaseProvider):
             # Link both original and refund transactions
             if txn.order_id:
                 # Refund transaction: link to original order_id
-                if status == "退款成功" and "_" in txn.order_id:
-                    original_id = txn.order_id.split("_")[0]
+                if status == "退款成功" and (
+                    original_id := _refund_original_order_id(txn.order_id)
+                ):
                     txn = txn.model_copy(update={"links": [original_id]})
                 # Original transaction that was refunded: link to itself
                 elif txn.order_id in refunded_order_ids:

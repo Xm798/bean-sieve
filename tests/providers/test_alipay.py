@@ -163,6 +163,46 @@ class TestAlipayRefundHandling:
         file_path.write_text(content, encoding="gbk")
         return file_path
 
+    def test_refund_links_old_format(self, alipay_with_refund):
+        """Old refund order ID format ``{original}_{suffix}``: both sides link
+        to the clean original order ID."""
+        provider = AlipayProvider()
+        transactions = provider.parse(alipay_with_refund)
+
+        assert len(transactions) == 2
+        original, refund = transactions
+        assert original.order_id == "ORDER001"
+        assert original.links == ["ORDER001"]
+        assert refund.links == ["ORDER001"]
+
+    def test_refund_links_new_star_refund_format(self, tmp_path):
+        """New refund order ID format ``{original}*REFUND_{suffix}`` (rolled out
+        by Alipay in 2026): the ``*REFUND`` marker must be stripped, otherwise
+        the link becomes ``^ORDER001*REFUND`` (invalid Beancount link) and the
+        original transaction never gets back-linked."""
+        header_lines = "\n".join(["---"] * 23)
+        header_lines += "\n------------------------分隔线------------------------"
+
+        data_header = "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注,"
+
+        data_rows = [
+            "2030-01-02 10:00:00,日用百货,商家A,merchant@example.com,商品,支出,20.00,余额,交易成功,ORDER001,M001,",
+            "2030-01-03 10:00:00,退款,商家A,merchant@example.com,退款-商品,不计收支,20.00,,退款成功,ORDER001*REFUND_P001R001,REFUND_P001R001,",
+        ]
+
+        content = header_lines + "\n" + data_header + "\n" + "\n".join(data_rows)
+        file_path = tmp_path / "alipay_star_refund.csv"
+        file_path.write_text(content, encoding="gbk")
+
+        provider = AlipayProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 2
+        original, refund = transactions
+        assert original.order_id == "ORDER001"
+        assert original.links == ["ORDER001"]
+        assert refund.links == ["ORDER001"]
+
     def test_closed_transaction_filtered(self, tmp_path):
         """Test that closed transactions with '不计收支' are filtered."""
         header_lines = "\n".join(["---"] * 23)
