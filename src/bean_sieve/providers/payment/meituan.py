@@ -63,9 +63,9 @@ class MeituanProvider(BaseProvider):
       becomes the payee and the remainder becomes the description (so the
       merchant is not repeated); titles without ``-`` leave payee empty and
       keep the whole title as description.
-    - Refund (退款) rows are emitted as standalone income transactions. Meituan
-      refund order IDs share no prefix with the original payment, so they are
-      not linked back to the original order.
+    - Refund (退款) rows are emitted as standalone income transactions tagged
+      ``#refund``. Meituan refund order IDs share no prefix with the original
+      payment, so they are only tagged, not linked back to the original order.
     """
 
     provider_id = "meituan"
@@ -181,6 +181,10 @@ class MeituanProvider(BaseProvider):
         if order_amount is not None and order_amount != abs(amount):
             metadata["order_amount"] = str(order_amount)
 
+        # Tag refunds (#refund) — Meituan provides no linkable original order ID,
+        # so we only mark them rather than linking to the original payment.
+        tags = ["refund"] if tx_type_str == "退款" else []
+
         return Transaction(
             date=tx_datetime.date(),
             time=tx_datetime.time(),
@@ -194,6 +198,7 @@ class MeituanProvider(BaseProvider):
             source_file=file_path,
             source_line=line_num,
             statement_period=statement_period,
+            tags=tags,
             metadata=metadata,
         )
 

@@ -56,6 +56,7 @@ class TestMeituanProvider:
         assert tx.currency == "CNY"
         assert tx.payee == "测试餐厅"  # prefix before first "-"
         assert tx.description == "代金券"  # remainder; merchant not repeated
+        assert tx.tags == []  # non-refund payments are untagged
         assert tx.card_last4 == "8888"
         assert tx.order_id == "TX1000000001"
         assert tx.date == date(2030, 1, 15)
@@ -78,6 +79,7 @@ class TestMeituanProvider:
         assert len(txns) == 1
         assert txns[0].amount == Decimal("-30.00")
         assert txns[0].metadata["tx_type"] == "退款"
+        assert "refund" in txns[0].tags  # tagged #refund
 
     def test_discount_records_order_amount(self, tmp_path: Path) -> None:
         """When paid differs from order amount, keep nominal order_amount."""
