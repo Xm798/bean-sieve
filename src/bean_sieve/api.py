@@ -551,7 +551,7 @@ def _set_target_accounts(
             method = txn.metadata.get("method", "")
             if method:
                 for mapping in config.account_mappings:
-                    if mapping.pattern in method or method in mapping.pattern:
+                    if mapping.pattern in method:
                         update = {"account": mapping.account}
                         txn = txn.model_copy(update=update)
                         if mapping.rebate_account and txn.metadata.get("rebate"):
@@ -684,7 +684,7 @@ def _resolve_target_account(txn: Transaction, config: Config) -> str | None:
     method = txn.metadata.get("method", "")
     if method:
         for mapping in config.account_mappings:
-            if mapping.pattern in method or method in mapping.pattern:
+            if mapping.pattern in method:
                 return mapping.account
 
     # Try card_last4 in all provider accounts

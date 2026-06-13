@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 修复
 
+- **账户映射**：`account_mappings` 改为单向子串匹配（配置 `pattern` 包含于交易 `method`）。此前的双向匹配会让泛化的支付渠道（如美团 `云闪付`）误命中更具体的配置 pattern（如 `云闪付-交通银行(5871)`）而错误归属到具体卡，并连带挡住与 ledger 的正常匹配；现在无绑卡信息的泛化渠道会保留为 `Assets:FIXME`
 - **支付宝**：剥离新格式（2026 起）退款订单号中的 `*REFUND` 标记，使退款记录能正确关联原始订单
 
 ### 其他

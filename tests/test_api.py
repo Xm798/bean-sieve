@@ -105,3 +105,69 @@ def test_reconcile_honors_diagnostics_meta_check_flag(tmp_path):
     result = reconcile([txn], sieve, config=cfg)
     # With hard filter, conflicting meta causes no match -> txn goes to missing -> processed
     assert len(result.processed) == 1
+
+
+def test_account_mapping_generic_method_not_matched_to_specific_pattern():
+    """A generic payment channel must NOT match a card-specific pattern.
+
+    Regression: bidirectional substring matching let method='云闪付' match
+    pattern='云闪付-交通银行(5871)' (method ⊂ pattern) and wrongly resolve to a
+    specific card account. Generic channels with no card info must stay
+    unresolved (-> FIXME) rather than guessing a card.
+    """
+    from datetime import date
+    from decimal import Decimal
+
+    from bean_sieve.api import _resolve_target_account, _set_target_accounts
+    from bean_sieve.config.schema import AccountMapping, Config
+    from bean_sieve.core.types import Transaction
+
+    cfg = Config(
+        account_mappings=[
+            AccountMapping(
+                pattern="云闪付-交通银行(5871)",
+                account="Liabilities:Credit:BOCOM:5871",
+            ),
+        ]
+    )
+    txn = Transaction(
+        date=date(2026, 6, 3),
+        amount=Decimal("200.00"),
+        currency="CNY",
+        description="江苏联通200元",
+        provider="meituan",
+        metadata={"method": "云闪付"},
+    )
+    assert _resolve_target_account(txn, cfg) is None
+    [result] = _set_target_accounts([txn], cfg)
+    assert result.account is None
+
+
+def test_account_mapping_pattern_contained_in_method_still_matches():
+    """Forward direction still works: config pattern ⊂ actual method string."""
+    from datetime import date
+    from decimal import Decimal
+
+    from bean_sieve.api import _resolve_target_account, _set_target_accounts
+    from bean_sieve.config.schema import AccountMapping, Config
+    from bean_sieve.core.types import Transaction
+
+    cfg = Config(
+        account_mappings=[
+            AccountMapping(
+                pattern="交通银行信用卡",
+                account="Liabilities:Credit:BOCOM:5871",
+            ),
+        ]
+    )
+    txn = Transaction(
+        date=date(2026, 6, 3),
+        amount=Decimal("42.50"),
+        currency="CNY",
+        description="测试消费",
+        provider="alipay",
+        metadata={"method": "交通银行信用卡(5871)"},
+    )
+    assert _resolve_target_account(txn, cfg) == "Liabilities:Credit:BOCOM:5871"
+    [result] = _set_target_accounts([txn], cfg)
+    assert result.account == "Liabilities:Credit:BOCOM:5871"
