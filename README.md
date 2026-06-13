@@ -70,6 +70,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `alipay` | 支付宝   | CSV        | 支付宝导出的交易明细                              |
 | `app_store` | App Store | HAR     | App Store 购买历史 (reportaproblem.apple.com HAR 导出) |
 | `jd`     | 京东支付 | CSV        | 京东交易流水导出文件                              |
+| `meituan` | 美团    | CSV        | 美团交易账单明细导出文件                          |
 | `wechat` | 微信支付 | CSV / XLSX | 微信支付账单流水文件                              |
 
 ### 信用卡
@@ -270,6 +271,7 @@ rules:
 | `alipay` | `category`, `peer_account`, `method`, `status`, `merchant_id`, `tx_type`, `remarks` |
 | `wechat` | `tx_type`, `method`, `status`, `merchant_id`, `remarks`, `order_type`, `commission`, `rebate`, `rebate_currency` |
 | `jd` | `method`, `transaction_type`, `transaction_status`, `transaction_category`, `merchant_order_id`, `notes`, `refund_amount` |
+| `meituan` | `tx_type`, `method`, `merchant_id`, `remarks`, `order_amount` |
 | `app_store` | `media_type`, `item_id`, `adam_id` |
 
 ### 信用卡
