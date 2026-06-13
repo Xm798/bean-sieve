@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .core.suggest import SuggestedRule
 import platform
+import subprocess
 from datetime import date, datetime
 from pathlib import Path
 
@@ -618,11 +619,62 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
 CLOSED_MARKER = "[CLOSED]"
 
 
-def _interactive_select(methods, accounts, closed: set[str]) -> list[tuple[str, str]]:
-    """Interactive account selection using fzf."""
+def _fzf_executable() -> str | None:
+    """Return the fzf binary path (bundled with iterfzf), or None if unavailable."""
     try:
-        from iterfzf import iterfzf
+        from iterfzf import BUNDLED_EXECUTABLE, EXECUTABLE_NAME
     except ImportError:
+        return None
+    return str(BUNDLED_EXECUTABLE or EXECUTABLE_NAME)
+
+
+def _fzf_pick(
+    exe: str, options: list[str], header: str, prompt: str
+) -> tuple[str | None, str | None]:
+    """Run fzf with hotkey support, returning (key, selection).
+
+    key is "" when Enter is pressed, or the bound key name ("esc"/"ctrl-q").
+    Returns ("ctrl-q", None) when fzf is aborted (e.g. Ctrl-C), and
+    (None, None) when fzf cannot be launched.
+    """
+    cmd = [
+        exe,
+        f"--prompt={prompt}",
+        "--height=50%",
+        "--no-sort",
+        f"--header={header}",
+        "--expect=esc,ctrl-q",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            input="\n".join(options),
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+    except (FileNotFoundError, OSError):
+        return None, None
+
+    # Non-zero/non-one exit means abort (Ctrl-C, exit 130) -> treat as quit
+    if proc.returncode not in (0, 1):
+        return "ctrl-q", None
+
+    # With --expect, line 0 is the key ("" for Enter), line 1 is the selection.
+    # str.split always yields a non-empty list, so lines[0] is safe.
+    lines = proc.stdout.split("\n")
+    key = lines[0]
+    selection = lines[1] if len(lines) > 1 and lines[1] else None
+    return key, selection
+
+
+def _interactive_select(methods, accounts, closed: set[str]) -> list[tuple[str, str]]:
+    """Interactive account selection using fzf with hotkeys.
+
+    Enter selects an account; Esc skips the current method; Ctrl-Q quits and
+    keeps mappings chosen so far.
+    """
+    exe = _fzf_executable()
+    if exe is None:
         console.print("[red]iterfzf not installed. Run: pip install iterfzf[/red]")
         console.print("[yellow]Also ensure fzf is installed on your system.[/yellow]")
         return []
@@ -637,6 +689,8 @@ def _interactive_select(methods, accounts, closed: set[str]) -> list[tuple[str, 
         if method.is_credit is not None:
             card_type = "信用卡" if method.is_credit else "储蓄卡"
             header_lines.append(f"  → {card_type}")
+        # Always show the hotkeys so skipping/quitting is discoverable
+        header_lines.append("  ↵ 选中账户 · Esc 跳过此项 · Ctrl-Q 退出")
         header = "\n".join(header_lines)
 
         # Smart sort accounts (closed accounts go to the end)
@@ -647,30 +701,24 @@ def _interactive_select(methods, accounts, closed: set[str]) -> list[tuple[str, 
             acc + CLOSED_MARKER if acc in closed else acc for acc in sorted_accounts
         ]
 
-        # Add special options
-        options = display_accounts + ["[s] 跳过", "[q] 退出"]
+        key, selected = _fzf_pick(exe, display_accounts, header, "选择账户 → ")
 
-        # fzf selection with header (half screen)
-        selected = iterfzf(
-            options,
-            prompt="选择账户 → ",
-            __extra__=["--header", header, "--height=50%"],
-        )
-
-        if selected is None or selected == "[q] 退出":
+        if key is None:
+            console.print("[red]Failed to launch fzf.[/red]")
+            break
+        if key == "ctrl-q":
             console.print("[yellow]已退出[/yellow]")
             break
-        elif selected == "[s] 跳过":
+        if key == "esc" or selected is None:
             console.print(f"[dim]{escape(method.raw)} → 已跳过[/dim]", emoji=False)
             continue
-        else:
-            # Strip closed marker before saving
-            assert isinstance(selected, str)
-            account = selected.removesuffix(CLOSED_MARKER)
-            mappings.append((method.raw, account))
-            console.print(
-                f"[green]{escape(method.raw)} → {escape(account)}[/green]", emoji=False
-            )
+
+        # Strip closed marker before saving
+        account = selected.removesuffix(CLOSED_MARKER)
+        mappings.append((method.raw, account))
+        console.print(
+            f"[green]{escape(method.raw)} → {escape(account)}[/green]", emoji=False
+        )
 
     return mappings
 
