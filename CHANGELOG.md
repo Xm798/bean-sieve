@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-06-13
+
+### 新增
+
+- **美团**：新增美团（`meituan`）支付平台 Provider，解析美团 CSV 账单（UTF-8 BOM、20 行表头）。以实付金额作为交易金额，存在优惠时将订单原价记入 `order_amount` 元数据；从订单标题前缀提取商户作为 payee；支持纯日期格式的账单周期
+- **汇丰香港**：新增汇丰香港（`hsbchk`）信用卡与借记卡 Provider
+- **中信银行国际**：新增中信银行国际（`cncbi`）借记卡 Provider
+
+### 修复
+
+- **支付宝**：剥离新格式（2026 起）退款订单号中的 `*REFUND` 标记，使退款记录能正确关联原始订单
+
+### 其他
+
+- **Schema**：从 `field_mapping` enum 中移除 `transaction_status`
+
 ## [0.4.1] - 2026-04-29
 
 ### 修复
@@ -93,6 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 可配置的元数据字段，4 空格缩进
 - Provider 生命周期钩子（`pre_reconcile`、`post_output`）
 
+[0.5.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.4.0
 [0.3.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.3.1
