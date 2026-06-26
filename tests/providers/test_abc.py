@@ -160,6 +160,45 @@ class TestABCCreditProvider:
         provider = ABCCreditProvider()
         assert provider.per_card_statement is True
 
+    def test_supplementary_card_row(self, tmp_path):
+        """附卡 rows carry a 主/附 suffix on the card field (e.g. '5678附').
+
+        Such rows must still parse, with card_last4 reduced to the 4 digits.
+        """
+        html = """<html>
+<body>
+<table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
+<table>
+    <tr>
+        <td>300102</td>
+        <td>300102</td>
+        <td>5678附</td>
+        <td>网上消费 财付通，payee-a</td>
+        <td>-0.01/CNY</td>
+        <td>-0.01/CNY</td>
+    </tr>
+    <tr>
+        <td>300103</td>
+        <td>300103</td>
+        <td>1234主</td>
+        <td>网上消费 支付宝，payee-b</td>
+        <td>-20.00/CNY</td>
+        <td>-20.00/CNY</td>
+    </tr>
+</table>
+</body></html>"""
+        file_path = tmp_path / "农业银行金穗信用卡.eml"
+        file_path.write_text(create_abc_eml(html), encoding="utf-8")
+
+        provider = ABCCreditProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 2
+        assert transactions[0].card_last4 == "5678"
+        assert transactions[0].amount == Decimal("0.01")
+        assert transactions[1].card_last4 == "1234"
+        assert transactions[1].amount == Decimal("20.00")
+
     def test_empty_statement(self, tmp_path):
         """Test handling of statement with no transactions."""
         html = """<html>

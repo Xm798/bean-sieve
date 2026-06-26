@@ -124,9 +124,11 @@ class ABCCreditProvider(BaseProvider):
             if not trans_date:
                 return None
 
-            # Validate card number (4 digits)
-            if not re.match(r"^\d{4}$", card_last4):
+            # Card field may carry a 主/附 suffix (e.g. "5678附"); keep the 4 digits.
+            card_match = re.match(r"^(\d{4})[主附]?$", card_last4)
+            if not card_match:
                 return None
+            card_last4 = card_match.group(1)
 
             # Parse amount and currency (e.g., "-10.00/CNY" or "14.00/CNY")
             amount, currency = self._parse_amount(settle_amount)
