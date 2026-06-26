@@ -337,6 +337,20 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(negate=True),
                 priority=100,
             ),
+            # 花呗还款（信用借还）：账单录为一行，但账本里是「银行卡腿 → 花呗腿」
+            # 两条余额表分录。让这一行去匹配花呗腿（流入花呗、抵消负债，需翻转符号），
+            # 银行卡腿交给对应银行流水匹配。否则花呗腿会悬空被报成 Extra。
+            PresetRule(
+                rule_id="alipay_huabei_repay",
+                name="花呗还款",
+                provider="alipay",
+                condition=PresetRuleCondition(
+                    description=r"花呗.*还款",
+                    metadata={"category": r"信用借还"},
+                ),
+                action=PresetRuleAction(account_keyword="花呗", negate=True),
+                priority=95,
+            ),
             # 花呗消费
             PresetRule(
                 rule_id="alipay_huabei",

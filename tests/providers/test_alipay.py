@@ -271,6 +271,40 @@ class TestAlipayRefundHandling:
         assert len(transactions) == 2
         assert all(t.links == ["ORDER001"] for t in transactions)
 
+    def test_huabei_repayment_maps_to_huabei_and_flips_sign(self):
+        """花呗主动还款 (信用借还) must map to the 花呗 account with a flipped sign
+        so it matches the liability (花呗) leg of the ledger repayment entry,
+        instead of the bank leg — otherwise the 花呗 leg surfaces as Extra."""
+        from bean_sieve.config.schema import AccountMapping, Config
+        from bean_sieve.core.rules import RulesEngine
+        from bean_sieve.core.types import Transaction
+
+        config = Config(
+            account_mappings=[
+                AccountMapping(pattern="花呗", account="Liabilities:Credit:Huabei")
+            ]
+        )
+        engine = RulesEngine(config, preset_rules=AlipayProvider.get_preset_rules())
+        txn = Transaction(
+            date=date(2030, 1, 2),
+            amount=Decimal("36.00"),  # 不计收支 → parsed as positive
+            currency="CNY",
+            description="花呗主动还款-2030年01月账单",
+            payee="花呗",
+            provider="alipay",
+            metadata={
+                "tx_type": "不计收支",
+                "category": "信用借还",
+                "method": "某银行储蓄卡(9999)",
+                "status": "还款成功",
+            },
+        )
+
+        result = engine.apply(txn)
+
+        assert result.account == "Liabilities:Credit:Huabei"
+        assert result.amount == Decimal("-36.00")
+
     def test_user_initiated_refund_keeps_expense_sign(self):
         """User-initiated refund (paying back to someone) is recorded by Alipay as
         tx_type=支出. The alipay_refund preset rule must NOT flip its sign — that
