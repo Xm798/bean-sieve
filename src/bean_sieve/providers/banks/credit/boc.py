@@ -136,10 +136,47 @@ class BOCCreditProvider(BaseProvider):
     def _group_by_row(
         self, blocks: list[tuple[float, float, float, str]], tolerance: float = 20
     ) -> list[list[tuple[float, float, str]]]:
-        """Group blocks by y-coordinate into rows."""
+        """Group blocks into transaction rows, anchored on the date column.
+
+        Each transaction row begins with a block whose first line is the
+        transaction date (交易日 column). Such blocks seed the rows; every other
+        fragment (e.g. a description wrapping onto a second visual line) is
+        attached to the nearest anchor by y-coordinate.
+
+        Anchoring is used instead of a flat y-tolerance because consecutive rows
+        can be closer together than a description's own line spacing: a blanket
+        tolerance wide enough to absorb a wrapped description would also merge
+        two adjacent rows, dropping a transaction. When no date anchors are
+        present (e.g. synthetic input), fall back to proximity grouping.
+        """
         if not blocks:
             return []
 
+        anchors: list[tuple[float, float, float, str]] = []
+        others: list[tuple[float, float, float, str]] = []
+        for block in blocks:
+            first_line = block[3].split("\n", 1)[0].strip()
+            (anchors if _DATE_RE.match(first_line) else others).append(block)
+
+        if not anchors:
+            return self._group_by_proximity(blocks, tolerance)
+
+        anchors.sort(key=lambda b: b[0])
+        anchor_ys = [b[0] for b in anchors]
+        rows: list[list[tuple[float, float, str]]] = [
+            [(b[1], b[2], b[3])] for b in anchors
+        ]
+
+        for y0, x1, x0, content in others:
+            idx = min(enumerate(anchor_ys), key=lambda t: abs(t[1] - y0))[0]
+            rows[idx].append((x1, x0, content))
+
+        return rows
+
+    def _group_by_proximity(
+        self, blocks: list[tuple[float, float, float, str]], tolerance: float
+    ) -> list[list[tuple[float, float, str]]]:
+        """Group blocks by y-coordinate proximity (fallback)."""
         # Sort by y, then x
         sorted_blocks = sorted(blocks, key=lambda b: (b[0], b[2]))
 

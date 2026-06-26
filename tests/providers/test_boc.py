@@ -150,6 +150,35 @@ class TestBOCRowGrouping:
         result = provider._group_by_row(blocks)
         assert len(result) == 3
 
+    def test_group_by_row_adjacent_rows_not_merged(self):
+        """Tightly-spaced rows must stay separate when each is date-anchored.
+
+        Regression: two consecutive same-day rows only ~16pt apart were merged
+        by the flat tolerance (20pt), and the second amount overwrote the first,
+        dropping one transaction entirely.
+        """
+        provider = BOCCreditProvider()
+        # Synthetic blocks: (y0, x1, x0, content). The two anchors are 16pt
+        # apart (< the 20pt tolerance) to reproduce the merge.
+        blocks = [
+            (100.0, 452.7, 42.1, "2030-01-02\n2030-01-02\n1234\npayee-a\n10.00"),
+            (116.0, 452.7, 42.1, "2030-01-02\n2030-01-02\n1234\npayee-b\n20.00"),
+        ]
+        result = provider._group_by_row(blocks)
+        assert len(result) == 2
+
+    def test_group_by_row_wrapped_description_attaches(self):
+        """A description wrapping onto a second visual line stays in its row."""
+        provider = BOCCreditProvider()
+        blocks = [
+            (200.0, 260.3, 42.1, "2030-01-02\n2030-01-03\n1234"),  # anchor
+            (190.0, 390.0, 298.6, "payee-long-part-one"),  # desc line 1 (above)
+            (200.0, 539.0, 319.3, "part-two\n30.00"),  # desc line 2 + expense
+        ]
+        result = provider._group_by_row(blocks)
+        assert len(result) == 1
+        assert len(result[0]) == 3
+
 
 class TestBOCTransactionRowParsing:
     """Tests for individual transaction row parsing."""
