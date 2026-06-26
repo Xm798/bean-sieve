@@ -226,6 +226,51 @@ class TestAlipayRefundHandling:
         assert len(transactions) == 1
         assert transactions[0].order_id == "ORDER001"
 
+    def test_closed_income_without_refund_filtered(self, tmp_path):
+        """闲鱼-style 收入+交易关闭 order (buyer cancelled, no money received and
+        no paired 退款成功 line) must be filtered, not kept as phantom income."""
+        header_lines = "\n".join(["---"] * 23)
+        header_lines += "\n------------------------分隔线------------------------"
+
+        data_header = "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注,"
+
+        data_rows = [
+            "2030-01-02 10:00:00,二手交易,buyer-a,buyer@example.com,item-a,收入,99.00,,交易成功,ORDER001,M001,",
+            "2030-01-02 11:00:00,二手交易,buyer-b,buyer@example.com,item-b,收入,10.00,,交易关闭,ORDER002,M002,",
+        ]
+
+        content = header_lines + "\n" + data_header + "\n" + "\n".join(data_rows)
+        file_path = tmp_path / "alipay_closed_income.csv"
+        file_path.write_text(content, encoding="gbk")
+
+        transactions = AlipayProvider().parse(file_path)
+
+        assert len(transactions) == 1
+        assert transactions[0].order_id == "ORDER001"
+
+    def test_closed_with_paired_refund_kept(self, tmp_path):
+        """A closed expense that has a paired 退款成功 line (money moved then was
+        refunded) must be kept so both sides link into a net-zero pair."""
+        header_lines = "\n".join(["---"] * 23)
+        header_lines += "\n------------------------分隔线------------------------"
+
+        data_header = "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注,"
+
+        data_rows = [
+            "2030-01-02 10:00:00,日用百货,merchant-a,merchant@example.com,item-a,支出,20.00,余额,交易关闭,ORDER001,M001,",
+            "2030-01-03 10:00:00,退款,merchant-a,merchant@example.com,退款-item-a,不计收支,20.00,,退款成功,ORDER001_REFUND,M001,",
+        ]
+
+        content = header_lines + "\n" + data_header + "\n" + "\n".join(data_rows)
+        file_path = tmp_path / "alipay_closed_refunded.csv"
+        file_path.write_text(content, encoding="gbk")
+
+        transactions = AlipayProvider().parse(file_path)
+
+        # Both kept and linked via the original order id.
+        assert len(transactions) == 2
+        assert all(t.links == ["ORDER001"] for t in transactions)
+
     def test_user_initiated_refund_keeps_expense_sign(self):
         """User-initiated refund (paying back to someone) is recorded by Alipay as
         tx_type=支出. The alipay_refund preset rule must NOT flip its sign — that

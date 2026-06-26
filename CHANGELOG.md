@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### 修复
+
+- **支付宝**：`交易关闭`/`已关闭` 的交易仅在存在配对退款（`退款成功`）时保留，否则一律过滤，不再只过滤 `不计收支`。修复闲鱼等场景下买家取消订单产生的 `收入+交易关闭` 记录被当作幻象收入生成 pending 分录的问题
+
 ## [0.5.0] - 2026-06-13
 
 ### 新增

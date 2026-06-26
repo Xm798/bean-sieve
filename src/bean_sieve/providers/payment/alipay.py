@@ -236,14 +236,15 @@ class AlipayProvider(BaseProvider):
         result = []
         for txn in filtered:
             status = txn.metadata.get("status", "")
-            tx_type = txn.metadata.get("tx_type", "")
 
-            # Skip closed transactions only if tx_type is 不计收支 (neutral/no money movement)
-            # Keep closed transactions with 支出/收入 - these indicate refunded transactions
-            # where money actually moved before being refunded
+            # Closed/cancelled transactions never settled — the money returns.
+            # Keep one only if it has a paired refund (money moved, then was
+            # refunded; both sides are linked for a net-zero pair); otherwise
+            # filter regardless of tx_type. This drops 闲鱼-style 收入+交易关闭
+            # orders that were cancelled before completion (no refund line).
             if (
                 status in ("交易关闭", "已关闭")
-                and tx_type == AlipayTxType.NEUTRAL.value
+                and txn.order_id not in refunded_order_ids
             ):
                 continue
 
