@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **美团**：新增美团（`meituan`）支付平台 Provider，解析美团 CSV 账单（UTF-8 BOM、20 行表头）。以实付金额作为交易金额，存在优惠时将订单原价记入 `order_amount` 元数据；从订单标题首个 `-` 前缀提取商户作为 payee、`-` 之后作为描述（不重复商户名）；退款交易打 `#refund` 标签；支持纯日期格式的账单周期
 - **汇丰香港**：新增汇丰香港（`hsbchk`）信用卡与借记卡 Provider
 - **中信银行国际**：新增中信银行国际（`cncbi`）借记卡 Provider
+- **汇立银行**：新增汇立银行（`welab_debit`）借记卡 Provider，解析 WeLab App 下载的多币种综合电子月结单 PDF。按币种代码映射账户，依坐标重建交易表（币种段可跨页，续页无段头时按上一页币种结转），借记/贷记符号转换为 bean-sieve 约定；跨币种兑换的两腿（卖出币种借记 + 买入币种贷记，共享 `Ref: FX…`）各自保留为独立交易，以便与 ledger 中同账户两腿的 `@@` 兑换记法逐腿匹配；退款交易打 `#refund` 标签并以 `^<订单号>` 关联；外币消费的实际交易日与换汇 `FX Ref` 记入元数据；交易种类/换汇详情/收款方亦记入元数据
 
 ### 修复
 

@@ -107,6 +107,7 @@ from .banks.debit import hsbchk as hsbchk_debit  # noqa: E402, F401
 from .banks.debit import (  # noqa: E402, F401
     icbc,
     pab,
+    welab,
     zabank,  # noqa: E402, F401
 )
 

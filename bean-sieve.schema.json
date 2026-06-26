@@ -91,7 +91,9 @@
               "district",
               "direction",
               "balance_currency",
-              "order_amount"
+              "order_amount",
+              "fx_ref",
+              "transaction_date"
             ]
           },
           "examples": [
@@ -362,6 +364,10 @@
         "zabank_debit": {
           "description": "众安银行",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["exchange_info", "counterparty", "balance"] } } } }]
+        },
+        "welab_debit": {
+          "description": "汇立银行（WeLab Bank）",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["transaction_type", "exchange_info", "counterparty", "fx_ref", "transaction_date"] } } } }]
         },
         "cncbi_debit": {
           "description": "中信银行（国际）",

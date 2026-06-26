@@ -175,6 +175,14 @@ providers:
       USD: Assets:Bank:ZABank:USD
     balance: true
 
+  welab_debit:
+    # 汇立银行（WeLab Bank）uses currency code as account key
+    accounts:
+      HKD: Assets:Bank:WeLab:HKD
+      CNY: Assets:Bank:WeLab:CNY
+      USD: Assets:Bank:WeLab:USD
+    balance: true
+
   cncbi_debit:
     # 中信银行（国际） account
     accounts:

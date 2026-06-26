@@ -105,6 +105,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `cncbi_debit`  | 中信银行（国际）| CSV      | 网银导出账单       |
 | `hsbchk_debit` | 汇丰香港储蓄账户| CSV      | 网银导出账单       |
 | `zabank_debit` | 众安银行       | PDF       | 综合月结单         |
+| `welab_debit`  | 汇立银行       | PDF       | 多币种综合月结单   |
 
 更多 Provider 正在开发中。
 
@@ -234,6 +235,7 @@ rules:
 | 平安银行 | [个人网上银行](https://bank.pingan.com.cn/m/main/index.html) | Windows / macOS | 扫码登录无需安全控件 |
 | 汇丰香港 | [HSBC HK Online Banking](https://www.hsbc.com.hk/) | Windows / macOS | 储蓄账户：交易记录页 → Download → CSV，导出文件名为 `TransactionHistory.csv` |
 | 中信银行（国际） | [inet Online Banking](https://ibanking.cncbinternational.com/) | Windows / macOS | 账户活动 → 下载 CSV |
+| 汇立银行 | [WeLab Bank App](https://www.welab.bank/) | iOS / Android | App 内「总览 → 月结单」下载电子月结单 PDF（多币种综合单） |
 
 ### 信用卡
 
@@ -388,6 +390,36 @@ rules:
 | :--- | :--- |
 | `balance` | 交易后余额 |
 | `balance_currency` | 余额币种（与交易币种不同时才输出）|
+
+#### 汇立银行 `welab_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `transaction_type` | 交易种类（英文，如 Debit Card spending）|
+| `counterparty` | 收款方信息（Receive money from …）|
+| `exchange_info` | 换汇详情（汇率与借/贷记日期）|
+| `fx_ref` | 该笔消费对应的换汇 `FX Ref`（外币消费经换汇结算时出现）|
+| `transaction_date` | 实际交易日期（与入账日不同时出现，如 `7 May 2026`）|
+
+WeLab（汇立银行）电子月结单为多币种综合单，按 HKD / CNY / USD 等币种分段；本 Provider 以币种代码作为账户映射键（见 `accounts` 配置）。某一币种的交易段可跨多页，续页没有段头时按上一页的币种结转。
+
+跨币种兑换在月结单中表现为**两腿**：卖出币种段的一笔借记与买入币种段的一笔贷记，二者共享同一 `Ref: FX…`。本 Provider **保留两腿为各自独立的交易**，从而能与 ledger 中「同账户两腿」的兑换记法逐腿对账，例如：
+
+```beancount
+2026-05-05 * "WeLab" "外币兑换 HKD→CNY"
+    Assets:Bank:HK:WeLab    -13.90 HKD @@ 12.12 CNY
+    Assets:Bank:HK:WeLab     12.12 CNY
+```
+
+HKD 腿匹配 `-13.90 HKD` posting、CNY 腿匹配 `12.12 CNY` posting。（若合并成单腿 `@@`，另一条 posting 会变成无法匹配的 Extra。）
+
+退款交易（`借记卡退款 Debit Card Refund`）会自动打上 `#refund` 标签，并以 `^<订单号>` 关联其订单号，便于在账本中检索与原始消费关联：
+
+```beancount
+2030-01-22 * "WEIXIN*测试商户" "WEIXIN*测试商户 CHN Online 5999" #refund ^FT30D4
+    Assets:WeLab:CNY     30.00 CNY
+    Income:FIXME        -30.00 CNY
+```
 
 ### 配置示例
 
