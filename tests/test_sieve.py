@@ -267,3 +267,129 @@ def test_soft_check_warn_for_posting_level_conflict(tmp_path):
     d = result.meta_diagnostics[0]
     assert d.severity == "warn"
     assert d.actual == "5678"
+
+
+# Two same-date, same-amount transactions whose asset/clearing legs share the
+# same amount, so the card-swipe posting is not the only viable candidate.
+_AMBIGUOUS_LEDGER = """
+2030-01-02 * "loc-a" "clearing settlement"
+    Assets:Clearing:Settlement  -200.00 CNY
+    Assets:Clearing:Acquirer  200.00 CNY
+
+2030-01-02 * "loc-b" "card swipe"
+    Liabilities:Credit:HXB  -200.00 CNY
+    Assets:Clearing:Settlement  200.00 CNY
+
+1900-01-01 open Liabilities:Credit:HXB
+1900-01-01 open Assets:Clearing:Settlement
+1900-01-01 open Assets:Clearing:Acquirer
+""".strip()
+
+
+def _stmt_txn(account: str | None) -> Transaction:
+    return Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("200.00"),
+        currency="CNY",
+        description="card swipe",
+        account=account,
+        provider="hxb_credit",
+    )
+
+
+def test_ambiguous_match_without_account_constraint(tmp_path):
+    """No target account -> the greedy pick grabs the clearing leg and warns."""
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(_write_ledger(tmp_path, _AMBIGUOUS_LEDGER))
+
+    result = sieve.match([_stmt_txn(None)])
+
+    assert len(result.matched) == 1
+    assert len(result.match_diagnostics) == 1
+    d = result.match_diagnostics[0]
+    assert d.alternatives == 1
+    assert d.chosen_account == "Assets:Clearing:Settlement"
+    assert "Ambiguous match" in d.message
+
+
+def test_account_constraint_disambiguates(tmp_path):
+    """A target account constrains matching, so there is no ambiguity."""
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(_write_ledger(tmp_path, _AMBIGUOUS_LEDGER))
+
+    result = sieve.match([_stmt_txn("Liabilities:Credit:HXB")])
+
+    assert len(result.matched) == 1
+    assert result.matched[0][1].posting.account == "Liabilities:Credit:HXB"
+    assert result.match_diagnostics == []
+
+
+def test_constrained_same_account_collision_not_ambiguous(tmp_path):
+    """Multiple same-amount postings on the constrained account pair up 1:1
+    and must not warn (benign interchangeable duplicates)."""
+    ledger = _write_ledger(
+        tmp_path,
+        """
+2030-01-02 * "loc-a" "charge one"
+    Liabilities:Credit:HXB  -1.00 CNY
+    Expenses:Misc  1.00 CNY
+
+2030-01-02 * "loc-b" "charge two"
+    Liabilities:Credit:HXB  -1.00 CNY
+    Expenses:Misc  1.00 CNY
+
+1900-01-01 open Liabilities:Credit:HXB
+1900-01-01 open Expenses:Misc
+""".strip(),
+    )
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(ledger)
+
+    def one_cny():
+        return Transaction(
+            date=date(2030, 1, 2),
+            amount=Decimal("1.00"),
+            currency="CNY",
+            description="charge",
+            account="Liabilities:Credit:HXB",
+            provider="hxb_credit",
+        )
+
+    result = sieve.match([one_cny(), one_cny()])
+
+    assert len(result.matched) == 2
+    assert result.match_diagnostics == []
+
+
+def test_ambiguous_check_can_be_disabled(tmp_path):
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(_write_ledger(tmp_path, _AMBIGUOUS_LEDGER))
+
+    result = sieve.match([_stmt_txn(None)], ambiguous_check=False)
+
+    assert len(result.matched) == 1
+    assert result.match_diagnostics == []
+
+
+def test_same_entry_multiple_legs_not_ambiguous(tmp_path):
+    """Multiple same-amount legs within one ledger entry are not a conflict."""
+    ledger = _write_ledger(
+        tmp_path,
+        """
+2030-01-02 * "loc-c" "split charge"
+    Liabilities:Credit:HXB  -200.00 CNY
+    Liabilities:Credit:CCB  -200.00 CNY
+    Expenses:Misc  400.00 CNY
+
+1900-01-01 open Liabilities:Credit:HXB
+1900-01-01 open Liabilities:Credit:CCB
+1900-01-01 open Expenses:Misc
+""".strip(),
+    )
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(ledger)
+
+    result = sieve.match([_stmt_txn(None)])
+
+    assert len(result.matched) == 1
+    assert result.match_diagnostics == []

@@ -184,6 +184,22 @@ class MetaDiagnostic(BaseModel):
     message: str
 
 
+class MatchDiagnostic(BaseModel):
+    """Ambiguous-match diagnostic emitted during reconciliation.
+
+    Raised when an *unconstrained* statement transaction (no target account)
+    matched a ledger posting, but other postings from different ledger
+    transactions were equally valid candidates (same date/amount/sign). The
+    greedy pick may be wrong.
+    """
+
+    file: str
+    line: int
+    chosen_account: str
+    alternatives: int
+    message: str
+
+
 class MatchResult(BaseModel):
     """Reconciliation result from Sieve engine."""
 
@@ -193,6 +209,7 @@ class MatchResult(BaseModel):
     missing: list[Transaction] = Field(default_factory=list)
     extra: list[TxnPosting] = Field(default_factory=list)
     meta_diagnostics: list[MetaDiagnostic] = Field(default_factory=list)
+    match_diagnostics: list[MatchDiagnostic] = Field(default_factory=list)
 
     @computed_field
     @property

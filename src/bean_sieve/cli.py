@@ -740,15 +740,24 @@ def _output_template(methods, output_path):
         console.print(content)
 
 
+def _print_match_counts(match_result):
+    """Print the Matched/Missing/Extra/Ambiguous count lines."""
+    console.print(f"  [green]✅ Matched:[/green] {len(match_result.matched)}")
+    console.print(f"  [yellow]⚠️  Missing:[/yellow] {len(match_result.missing)}")
+    console.print(f"  [red]❓ Extra:[/red] {len(match_result.extra)}")
+    if match_result.match_diagnostics:
+        console.print(
+            f"  [yellow]⚠️  Ambiguous:[/yellow] {len(match_result.match_diagnostics)}"
+        )
+
+
 def _display_result(result, verbose: bool = False):
     """Display reconciliation result."""
     mr = result.match_result
 
     # Summary
     console.print("\n[bold]Summary:[/bold]")
-    console.print(f"  [green]✅ Matched:[/green] {len(mr.matched)}")
-    console.print(f"  [yellow]⚠️  Missing:[/yellow] {len(mr.missing)}")
-    console.print(f"  [red]❓ Extra:[/red] {len(mr.extra)}")
+    _print_match_counts(mr)
 
     # Categorization stats
     if result.processed:
@@ -776,9 +785,7 @@ def _display_result(result, verbose: bool = False):
 def _display_check_result(match_result):
     """Display check command result."""
     console.print("\n[bold]Reconciliation Check:[/bold]")
-    console.print(f"  [green]✅ Matched:[/green] {len(match_result.matched)}")
-    console.print(f"  [yellow]⚠️  Missing:[/yellow] {len(match_result.missing)}")
-    console.print(f"  [red]❓ Extra:[/red] {len(match_result.extra)}")
+    _print_match_counts(match_result)
 
     if match_result.missing:
         console.print("\n[bold]Missing transactions:[/bold]")

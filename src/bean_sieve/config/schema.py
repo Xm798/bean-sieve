@@ -131,6 +131,9 @@ class DiagnosticsConfig(BaseModel):
     # Account-name substrings that opt into card_last4 checks and
     # posting-meta injection. Empty list = no accounts in scope.
     meta_check_accounts: list[str] = Field(default_factory=list)
+    # Warn when a statement transaction matched a ledger posting but other
+    # postings from different ledger transactions were equally valid.
+    ambiguous_match: bool = True
 
 
 class Config(BaseModel):

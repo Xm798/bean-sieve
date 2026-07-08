@@ -394,6 +394,11 @@
           "items": { "type": "string" },
           "default": [],
           "description": "Extra account-name substrings to include in the card_last4 check scope. The auto-inferred set already covers accounts targeted by 2+ patterns in account_mappings; use this to opt additional accounts in explicitly."
+        },
+        "ambiguous_match": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, warn when a statement transaction matched a ledger posting but other postings from different ledger transactions were equally valid candidates (same date/amount/sign). Happens when the same amount appears on multiple accounts the same day; configure an accounts mapping to disambiguate."
         }
       },
       "additionalProperties": false

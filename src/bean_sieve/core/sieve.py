@@ -10,7 +10,7 @@ from beancount import loader
 from beancount.core.data import Directive, TxnPosting
 from beancount.core.data import Transaction as BeanTransaction
 
-from .types import MatchResult, MetaDiagnostic, Transaction
+from .types import MatchDiagnostic, MatchResult, MetaDiagnostic, Transaction
 
 
 @dataclass
@@ -129,6 +129,7 @@ class Sieve:
         covered_accounts: list[str] | None = None,
         covered_ranges: dict[str, list[tuple[date, date]]] | None = None,
         meta_check: bool = True,
+        ambiguous_check: bool = True,
     ) -> MatchResult:
         """
         Match statement transactions against loaded ledger entries.
@@ -148,19 +149,28 @@ class Sieve:
                 a covered range are reported as Extra. Used for per-card statements.
             meta_check: When True (default), card_last4 is a soft check producing
                 MetaDiagnostic entries. When False, card_last4 hard-filters matches.
+            ambiguous_check: When True (default), matches with multiple viable
+                candidates from different ledger transactions surface as
+                MatchDiagnostic entries.
 
         Returns:
             MatchResult with matched pairs, missing, extra transactions, and
-            meta diagnostics.
+            meta/match diagnostics.
         """
         transactions = list(transactions)
         matched: list[tuple[Transaction, TxnPosting]] = []
         missing: list[Transaction] = []
         diagnostics: list[MetaDiagnostic] = []
+        match_diagnostics: list[MatchDiagnostic] = []
         used_ledger_entries: set[int] = set()
 
         for txn in transactions:
-            match = self._find_match(txn, used_ledger_entries, meta_check=meta_check)
+            match, n_others = self._find_match(
+                txn,
+                used_ledger_entries,
+                meta_check=meta_check,
+                ambiguous_check=ambiguous_check,
+            )
             if match:
                 matched.append((txn, match))
                 used_ledger_entries.add(id(match))
@@ -168,6 +178,10 @@ class Sieve:
                     diag = self._diagnose_meta(txn, match)
                     if diag is not None:
                         diagnostics.append(diag)
+                if n_others:
+                    match_diagnostics.append(
+                        self._diagnose_ambiguous(txn, match, n_others)
+                    )
             else:
                 missing.append(txn)
 
@@ -198,6 +212,7 @@ class Sieve:
             missing=missing,
             extra=extra,
             meta_diagnostics=diagnostics,
+            match_diagnostics=match_diagnostics,
         )
 
     def _in_covered_range(
@@ -212,26 +227,52 @@ class Sieve:
         return any(start <= entry_date <= end for start, end in covered_ranges[account])
 
     def _find_match(
-        self, txn: Transaction, used: set[int], meta_check: bool = True
-    ) -> TxnPosting | None:
-        """Find a matching ledger entry for the given transaction."""
-        # First try exact order_id match if available
+        self,
+        txn: Transaction,
+        used: set[int],
+        meta_check: bool = True,
+        ambiguous_check: bool = True,
+    ) -> tuple[TxnPosting | None, int]:
+        """Find a matching ledger entry for the given transaction.
+
+        Returns the chosen match (or None) and the number of other viable
+        candidates belonging to *different* ledger transactions. A non-zero
+        count means the greedy pick was ambiguous.
+
+        Ambiguity is only reported when the transaction has no target account
+        (nothing to disambiguate with). When it is constrained to an account,
+        multiple same-amount postings on that account pair up 1:1 and the pick
+        is harmless, so the first match short-circuits and the count is 0.
+        """
+        # First try exact order_id match if available. order_id is a strong
+        # key, so an order_id match is never treated as ambiguous.
         if txn.order_id:
             for entry in self._ledger_entries:
                 if id(entry) in used:
                     continue
                 if self._match_by_order_id(txn, entry):
-                    return entry
+                    return entry, 0
 
-        # Try fuzzy matching by date and amount
-        candidates = self._get_candidates(txn)
-        for candidate in candidates:
-            if id(candidate) in used:
-                continue
-            if self._is_match(txn, candidate, meta_check=meta_check):
-                return candidate
+        candidates = (
+            candidate
+            for candidate in self._get_candidates(txn)
+            if id(candidate) not in used
+            and self._is_match(txn, candidate, meta_check=meta_check)
+        )
+        # Only scan all candidates to detect ambiguity for unconstrained
+        # transactions; otherwise stop at the first match.
+        if not (ambiguous_check and txn.account is None):
+            return next(candidates, None), 0
 
-        return None
+        viable = list(candidates)
+        if not viable:
+            return None, 0
+
+        chosen = viable[0]
+        # Only count candidates from a different ledger transaction as
+        # ambiguous; multiple postings of the same entry are not a conflict.
+        n_others = sum(1 for c in viable[1:] if c.txn is not chosen.txn)
+        return chosen, n_others
 
     def _get_candidates(self, txn: Transaction) -> list[TxnPosting]:
         """Get candidate ledger entries for matching."""
@@ -330,6 +371,26 @@ class Sieve:
 
         return True
 
+    def _diagnose_ambiguous(
+        self, txn: Transaction, chosen: TxnPosting, n_others: int
+    ) -> MatchDiagnostic:
+        file, line, account = _entry_location(chosen)
+        bean_txn = chosen.txn
+        payee = bean_txn.payee or bean_txn.narration or ""
+        message = (
+            f"Ambiguous match: {txn.date} {txn.amount} {txn.currency} matched "
+            f"{account} ({payee}); {n_others} other same-date/amount candidate(s); "
+            "statement not constrained to a target account; configure an "
+            "`accounts` mapping for this payment method to disambiguate"
+        )
+        return MatchDiagnostic(
+            file=file,
+            line=line,
+            chosen_account=account,
+            alternatives=n_others,
+            message=message,
+        )
+
     def _diagnose_meta(
         self, txn: Transaction, entry: TxnPosting
     ) -> MetaDiagnostic | None:
@@ -339,10 +400,7 @@ class Sieve:
         if meta_card == txn.card_last4:
             return None
 
-        bean_txn = entry.txn
-        file = bean_txn.meta.get("filename", "<unknown>")
-        line = bean_txn.meta.get("lineno") or 0
-        account = entry.posting.account
+        file, line, account = _entry_location(entry)
         expected = txn.card_last4
 
         if meta_card is None:
@@ -367,6 +425,14 @@ class Sieve:
             actual=meta_card,
             message=message,
         )
+
+
+def _entry_location(entry: TxnPosting) -> tuple[str, int, str]:
+    """Return (filename, lineno, account) for a ledger posting."""
+    bean_txn = entry.txn
+    file = bean_txn.meta.get("filename", "<unknown>")
+    line = bean_txn.meta.get("lineno") or 0
+    return file, line, entry.posting.account
 
 
 def _read_card_last4(entry: TxnPosting) -> str | None:

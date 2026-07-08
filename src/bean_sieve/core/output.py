@@ -10,7 +10,13 @@ from pathlib import Path
 
 from beancount.parser import printer
 
-from .types import MatchSource, ReconcileResult, Transaction
+from .types import (
+    MatchDiagnostic,
+    MatchSource,
+    MetaDiagnostic,
+    ReconcileResult,
+    Transaction,
+)
 
 
 def _sort_key(t: Transaction) -> tuple:
@@ -255,21 +261,40 @@ class BeancountWriter:
             for entry in result.match_result.extra:
                 output.write(self._format_extra_entry(entry) + "\n\n")
 
-        diagnostics = [
-            d
-            for d in result.match_result.meta_diagnostics
-            if self.check_scope(d.account)
-        ]
-        if diagnostics:
-            diagnostics.sort(key=lambda d: (d.file, d.line, d.severity))
-            output.write("\n")
-            output.write("; " + "=" * 60 + "\n")
-            output.write(f"; Metadata diagnostics ({len(diagnostics)})\n")
-            output.write("; " + "=" * 60 + "\n")
-            for d in diagnostics:
-                output.write(f"; {d.message}\n")
+        diagnostics = sorted(
+            (
+                d
+                for d in result.match_result.meta_diagnostics
+                if self.check_scope(d.account)
+            ),
+            key=lambda d: (d.file, d.line, d.severity),
+        )
+        self._write_diagnostic_section(output, "Metadata diagnostics", diagnostics)
+
+        # Ambiguous matches are not gated by check_scope: the chosen account
+        # (e.g. a clearing account) often falls outside the meta_check scope.
+        ambiguous = sorted(
+            result.match_result.match_diagnostics, key=lambda d: (d.file, d.line)
+        )
+        self._write_diagnostic_section(output, "Ambiguous matches", ambiguous)
 
         return output.getvalue()
+
+    @staticmethod
+    def _write_diagnostic_section(
+        output: StringIO,
+        title: str,
+        items: list[MetaDiagnostic] | list[MatchDiagnostic],
+    ) -> None:
+        """Write a `; ===` banner and one comment line per diagnostic message."""
+        if not items:
+            return
+        output.write("\n")
+        output.write("; " + "=" * 60 + "\n")
+        output.write(f"; {title} ({len(items)})\n")
+        output.write("; " + "=" * 60 + "\n")
+        for d in items:
+            output.write(f"; {d.message}\n")
 
     def _extract_entry_source(self, filename: str, lineno: int) -> str | None:
         """Extract the original text of a Beancount entry from its source file.

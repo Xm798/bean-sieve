@@ -227,8 +227,13 @@ rules:
 #   需要在 posting 上写 card_last4 来消歧；列在这里的账户既会触发
 #   诊断，也会在 Writer 输出时自动注入 card_last4 posting meta。
 #   默认为空 —— 不填则不做任何 card_last4 相关的检查和注入。
+# ambiguous_match=true (默认): 当一条账单交易匹配上某条 ledger posting，
+#   但还有来自其它 ledger 交易的同日同额候选时，发出 lint 风格警告。
+#   同一金额同日出现在多个账户上时，贪心匹配可能配错；为该卡配置
+#   accounts 映射（约束目标账户）即可消歧。
 diagnostics:
   meta_check: true
   meta_check_accounts: []
   #   - Liabilities:Credit:HXB
   #   - Liabilities:Credit:SPDB
+  ambiguous_match: true

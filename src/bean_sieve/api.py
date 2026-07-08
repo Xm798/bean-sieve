@@ -130,6 +130,7 @@ def reconcile(
         covered_accounts=covered_accounts,
         covered_ranges=covered_ranges,
         meta_check=config.diagnostics.meta_check,
+        ambiguous_check=config.diagnostics.ambiguous_match,
     )
 
     # Process missing transactions
