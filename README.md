@@ -229,7 +229,7 @@ rules:
 | 农业银行 | [个人网上银行](https://perbank.abchina.com/EbankSite/ebank/startup) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
 | 工商银行 | [个人网上银行](https://mybank.icbc.com.cn/icbc/newperbank/perbank3/frame/frame_index.jsp) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
 | 建设银行 | [个人网上银行](https://ibsbjstar.ccb.com.cn/CCBIS/V6/STY1/CN/login.jsp) | Windows / macOS | Chrome 即可，无需安全控件 |
-| 交通银行 | [个人网上银行](https://pbank.bankcomm.com/personbank/) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
+| 交通银行 | [个人网上银行](https://pbank.bankcomm.cn/personbank/system/index.html#/login) | Windows / macOS | 需安装安全控件，macOS 需用 Safari |
 | 招商银行 | [专业版](https://cmbchina.com/pbankwebNew/downloadPage.aspx) PC 客户端 | Windows | 需安装客户端 |
 | 兴业银行 | [个人网上银行](https://personalbank.cib.com.cn/) | Windows / macOS | 需安装安全控件，查询→交易明细查询→流水下载→Excel |
 | 平安银行 | [个人网上银行](https://bank.pingan.com.cn/m/main/index.html) | Windows / macOS | 扫码登录无需安全控件 |
