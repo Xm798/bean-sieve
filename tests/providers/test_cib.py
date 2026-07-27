@@ -183,6 +183,37 @@ class TestCIBCreditProvider:
         provider = CIBCreditProvider()
         assert provider.per_card_statement is True
 
+    def test_trans_date_with_time(self, tmp_path):
+        """Trans date may carry a HH:MM time (e.g. EV charging rows).
+
+        Regression: date.fromisoformat("2030-01-02 12:30") raises ValueError,
+        which previously caused these rows to be silently dropped.
+        """
+        html = """<html>
+<body>
+<table id="detail_table_156">
+    <tbody>
+        <td name="masterMsg">**** 本卡明细(卡号末四位 4321) ****</td>
+        <tr id="detail_tr_156">
+            <td>&nbsp;<span id="detail_tdate_156">2030-01-02 12:30</span></td>
+            <td><span id="detail_adate_156">2030-01-02</span></td>
+            <td><span id="detail_desc1_156">merchant-a</span></td>
+            <td></td>
+            <td><span id="detail_tamt_156">88.88</span></td>
+        </tr>
+    </tbody>
+</table>
+</body></html>"""
+        file_path = tmp_path / "兴业银行信用卡.eml"
+        file_path.write_text(create_cib_eml(html), encoding="utf-8")
+
+        provider = CIBCreditProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 1
+        assert transactions[0].date == date(2030, 1, 2)
+        assert transactions[0].amount == Decimal("88.88")
+
 
 class TestCIBAmountParsing:
     """Tests for CIB amount parsing edge cases."""

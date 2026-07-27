@@ -121,9 +121,13 @@ class CIBCreditProvider(BaseProvider):
             description = desc_span.get_text(strip=True)
             amount_str = amt_span.get_text(strip=True)
 
-            # Parse date (YYYY-MM-DD format)
-            trans_date = date.fromisoformat(trans_date_str)
-            post_date = date.fromisoformat(post_date_str) if post_date_str else None
+            # Parse date. Trans date may carry a HH:MM time suffix
+            # (e.g. "2026-06-22 12:30" on EV-charging rows), which
+            # date.fromisoformat() rejects, so keep only the date part.
+            trans_date = date.fromisoformat(trans_date_str.split()[0])
+            post_date = (
+                date.fromisoformat(post_date_str.split()[0]) if post_date_str else None
+            )
 
             # Parse amount (already in correct sign convention)
             amount = self._parse_amount(amount_str)
