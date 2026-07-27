@@ -1,6 +1,7 @@
 """Tests for Agricultural Bank of China (ABC) credit card statement provider."""
 
 import base64
+import logging
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -198,6 +199,110 @@ class TestABCCreditProvider:
         assert transactions[0].amount == Decimal("0.01")
         assert transactions[1].card_last4 == "1234"
         assert transactions[1].amount == Decimal("20.00")
+
+    def test_repayment_row_without_card_number(self, tmp_path):
+        """约定还款 rows leave the 卡号后四位 cell empty (account-level repayment).
+
+        Such rows must still parse, falling back to the statement's own card.
+        """
+        html = """<html>
+<body>
+<table>
+    <tr><td><span>620000******1234</span></td></tr>
+    <tr><td><span>2030/01/01-2030/01/31</span></td></tr>
+</table>
+<table>
+    <tr>
+        <td>300110</td>
+        <td>300110</td>
+        <td>1234</td>
+        <td>desc-a</td>
+        <td>33.33/CNY</td>
+        <td>33.33/CNY</td>
+    </tr>
+    <tr>
+        <td>300113</td>
+        <td>300113</td>
+        <td></td>
+        <td>约定还款</td>
+        <td>22.22/CNY</td>
+        <td>22.22/CNY</td>
+    </tr>
+    <tr>
+        <td>300115</td>
+        <td>300115</td>
+        <td>1234</td>
+        <td>desc-b</td>
+        <td>-11.11/CNY</td>
+        <td>-11.11/CNY</td>
+    </tr>
+</table>
+</body></html>"""
+        file_path = tmp_path / "农业银行金穗信用卡.eml"
+        file_path.write_text(create_abc_eml(html), encoding="utf-8")
+
+        provider = ABCCreditProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 3
+        repayment = transactions[1]
+        assert repayment.date == date(2030, 1, 13)
+        assert repayment.amount == Decimal("-22.22")
+        assert repayment.card_last4 == "1234"
+        assert repayment.description == "约定还款"
+        assert repayment.is_income
+
+    def test_repayment_row_without_statement_card(self, tmp_path):
+        """A card-less row still parses when the statement card is unavailable."""
+        html = """<html>
+<body>
+<table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
+<table>
+    <tr>
+        <td>300113</td>
+        <td>300113</td>
+        <td></td>
+        <td>约定还款</td>
+        <td>22.22/CNY</td>
+        <td>22.22/CNY</td>
+    </tr>
+</table>
+</body></html>"""
+        file_path = tmp_path / "农业银行金穗信用卡.eml"
+        file_path.write_text(create_abc_eml(html), encoding="utf-8")
+
+        provider = ABCCreditProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 1
+        assert transactions[0].card_last4 is None
+        assert transactions[0].amount == Decimal("-22.22")
+
+    def test_malformed_card_cell_is_warned(self, tmp_path, caplog):
+        """A row with an unrecognisable card field is dropped, but never silently."""
+        html = """<html>
+<body>
+<table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
+<table>
+    <tr>
+        <td>300113</td>
+        <td>300113</td>
+        <td>not-a-card</td>
+        <td>desc-a</td>
+        <td>-44.44/CNY</td>
+        <td>-44.44/CNY</td>
+    </tr>
+</table>
+</body></html>"""
+        file_path = tmp_path / "农业银行金穗信用卡.eml"
+        file_path.write_text(create_abc_eml(html), encoding="utf-8")
+
+        provider = ABCCreditProvider()
+        with caplog.at_level(logging.WARNING):
+            transactions = provider.parse(file_path)
+
+        assert transactions == []
+        assert "not-a-card" in caplog.text
 
     def test_empty_statement(self, tmp_path):
         """Test handling of statement with no transactions."""

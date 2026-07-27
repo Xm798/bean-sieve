@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -12,6 +13,13 @@ from ....config.schema import ProviderConfig
 from ....core.types import ReconcileContext, ReconcileResult, Transaction
 from ... import register_provider
 from ...base import BaseProvider
+
+logger = logging.getLogger(__name__)
+
+# Statement's own masked card number, e.g. "620000******1234"
+_MASKED_CARD_RE = re.compile(r"^\d{6}\*{6}\d{4}$")
+# Transaction date cell, YYMMDD
+_ROW_DATE_RE = re.compile(r"^\d{6}$")
 
 
 @dataclass
@@ -51,8 +59,11 @@ class ABCCreditProvider(BaseProvider):
 
         # Extract statement period for per-card statement support
         statement_period = self._extract_statement_period(soup)
+        statement_card = self._extract_statement_card_last4(soup)
 
-        return self._parse_transactions(soup, file_path, statement_period)
+        return self._parse_transactions(
+            soup, file_path, statement_period, statement_card
+        )
 
     def _extract_statement_period(self, soup) -> tuple[date, date] | None:
         """Extract statement period (e.g., '2025/10/24-2025/11/23')."""
@@ -69,11 +80,20 @@ class ABCCreditProvider(BaseProvider):
                 return (start, end)
         return None
 
+    def _extract_statement_card_last4(self, soup) -> str | None:
+        """Extract the statement's own card number (e.g. '620000******1234')."""
+        for span in soup.find_all("span"):
+            text = span.get_text(strip=True)
+            if _MASKED_CARD_RE.match(text):
+                return text[-4:]
+        return None
+
     def _parse_transactions(
         self,
         soup,
         file_path: Path,
         statement_period: tuple[date, date] | None,
+        statement_card: str | None,
     ) -> list[Transaction]:
         """Parse transactions from HTML tables."""
         transactions = []
@@ -87,11 +107,25 @@ class ABCCreditProvider(BaseProvider):
             for row in direct_rows:
                 cells = row.find_all("td", recursive=False)
                 if len(cells) != 6:
+                    # Layout tables are full of non-transaction rows; only flag
+                    # rows that look like details. Check the cell count band
+                    # first: get_text() on a layout cell walks the whole subtree,
+                    # which for a top-level wrapper is the entire document.
+                    if 4 <= len(cells) <= 8 and _ROW_DATE_RE.match(
+                        self.clean_text(cells[0].get_text())
+                    ):
+                        logger.warning(
+                            "Skipping ABC transaction-like row in %s: "
+                            "expected 6 cells, got %d (%s)",
+                            file_path.name,
+                            len(cells),
+                            " | ".join(self.clean_text(c.get_text()) for c in cells),
+                        )
                     continue
 
                 line_num += 1
                 txn = self._parse_transaction_row(
-                    cells, file_path, line_num, statement_period
+                    cells, file_path, line_num, statement_period, statement_card
                 )
                 if txn:
                     transactions.append(txn)
@@ -104,19 +138,20 @@ class ABCCreditProvider(BaseProvider):
         file_path: Path,
         row_idx: int,
         statement_period: tuple[date, date] | None,
+        statement_card: str | None,
     ) -> Transaction | None:
         """Parse a single transaction row."""
         try:
             # Extract cell contents
             trans_date_str = self.clean_text(cells[0].get_text())
             # post_date_str = self.clean_text(cells[1].get_text())  # Not used
-            card_last4 = self.clean_text(cells[2].get_text())
+            card_cell = self.clean_text(cells[2].get_text())
             description = self.clean_text(cells[3].get_text())
             # trans_amount = self.clean_text(cells[4].get_text())  # Original amount
             settle_amount = self.clean_text(cells[5].get_text())  # Settlement amount
 
             # Validate date format (YYMMDD)
-            if not re.match(r"^\d{6}$", trans_date_str):
+            if not _ROW_DATE_RE.match(trans_date_str):
                 return None
 
             # Parse date (YYMMDD -> YYYY-MM-DD)
@@ -125,10 +160,22 @@ class ABCCreditProvider(BaseProvider):
                 return None
 
             # Card field may carry a 主/附 suffix (e.g. "5678附"); keep the 4 digits.
-            card_match = re.match(r"^(\d{4})[主附]?$", card_last4)
-            if not card_match:
+            # Account-level rows (e.g. 约定还款) leave it empty — those belong to
+            # the statement's own card, since each statement covers a single card.
+            card_last4: str | None
+            card_match = re.match(r"^(\d{4})[主附]?$", card_cell)
+            if card_match:
+                card_last4 = card_match.group(1)
+            elif not card_cell:
+                card_last4 = statement_card
+            else:
+                logger.warning(
+                    "Skipping ABC row %d in %s: unrecognised card field %r",
+                    row_idx,
+                    file_path.name,
+                    card_cell,
+                )
                 return None
-            card_last4 = card_match.group(1)
 
             # Parse amount and currency (e.g., "-10.00/CNY" or "14.00/CNY")
             amount, currency = self._parse_amount(settle_amount)
@@ -150,7 +197,10 @@ class ABCCreditProvider(BaseProvider):
                 statement_period=statement_period,
             )
 
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Failed to parse ABC row %d in %s: %s", row_idx, file_path.name, exc
+            )
             return None
 
     def _parse_date(self, date_str: str) -> date | None:
@@ -191,7 +241,7 @@ class ABCCreditProvider(BaseProvider):
             text = span.get_text(strip=True)
 
             # 卡号 (e.g., 620000******1234)
-            if re.match(r"^\d{6}\*{6}\d{4}$", text):
+            if _MASKED_CARD_RE.match(text):
                 summary.card_number = text
 
             # 账单周期
