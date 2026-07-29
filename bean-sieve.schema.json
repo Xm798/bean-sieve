@@ -62,9 +62,13 @@
               "remarks",
               "section",
               "trans_type",
+              "card_type",
               "original_date",
               "original_trans_date",
               "original_post_date",
+              "original_amount",
+              "original_currency",
+              "original_transaction",
               "posting_date",
               "counterparty_bank",
               "counterparty_account",
@@ -328,6 +332,10 @@
         "hsbchk_credit": {
           "description": "汇丰香港信用卡",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["transaction_status", "country", "district", "direction"] } } } }]
+        },
+        "spdb_credit": {
+          "description": "浦发银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["card_type", "original_amount", "original_currency", "original_transaction"] } } } }]
         },
         "boc_debit": {
           "description": "中国银行借记卡",

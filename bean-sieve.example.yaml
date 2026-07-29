@@ -96,6 +96,14 @@ providers:
     posting_metadata:
       - card_last4
 
+  spdb_credit:
+    # 按户管理：每张物理卡后四位均映射到同一个负债账户
+    accounts:
+      "1234": Liabilities:CreditCard:SPDB
+      "5678": Liabilities:CreditCard:SPDB
+    posting_metadata:
+      - card_last4
+
   bocom_credit:
     accounts:
       "1111": Liabilities:CreditCard:BOCOM:1111

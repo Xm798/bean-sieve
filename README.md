@@ -89,6 +89,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `cmbc_credit`  | 民生银行信用卡 | EML  | 邮件账单           |
 | `hsbchk_credit`| 汇丰香港信用卡 | CSV  | 网银导出账单（多卡需加 `_<后四位>` 后缀） |
 | `hxb_credit`   | 华夏银行信用卡 | EML  | 邮件账单           |
+| `spdb_credit`  | 浦发银行信用卡 | XLS  | 网银导出账单 |
 
 ### 借记卡
 
@@ -244,6 +245,7 @@ rules:
 | 银行 | 下载方式 | 备注 |
 | :--- | :--- | :--- |
 | 中信银行 | [信用卡网银](https://e.creditcard.ecitic.com/citiccard/ebank-ocp/ebankpc/bill.html) | 登录后导出已出账单明细 XLS |
+| 浦发银行 | 邮件账单跳转网银账单页面 | 导出 XLS |
 | 汇丰香港 | [HSBC HK Online Banking](https://www.hsbc.com.hk/) | 信用卡交易页 → Download → CSV，文件名为 `TransactionHistory.csv`。**多张卡时**请将下载文件重命名为 `TransactionHistory_<卡后四位>.csv`（如 `TransactionHistory_8888.csv`）以便对应账户 |
 
 ### 其他
@@ -288,6 +290,7 @@ rules:
 | `cmbc_credit` | `posting_date` |
 | `hxb_credit` | `original_date` |
 | `hsbchk_credit` | `transaction_status`, `country`, `district`, `direction` |
+| `spdb_credit` | `card_type`, `original_amount`, `original_currency`, `original_transaction` |
 | `abc_credit` | — |
 | `bosc_credit` | — |
 | `ccb_credit` | — |
