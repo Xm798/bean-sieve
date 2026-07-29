@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-29
+
+### 新增
+
+- **浦发信用卡**：新增浦发银行信用卡（`spdb_credit`）Provider，解析网银导出的 XLS 交易明细，支持多卡后四位、交易日与记账日、原始交易金额与币种元数据，并根据交易日期推断账单周期
+
 ## [0.5.0] - 2026-07-27
 
 ### 新增
@@ -121,6 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 可配置的元数据字段，4 空格缩进
 - Provider 生命周期钩子（`pre_reconcile`、`post_output`）
 
+[0.6.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.4.0
