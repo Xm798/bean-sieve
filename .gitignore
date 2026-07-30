@@ -5,6 +5,7 @@ external/
 # Local-only design notes / planning docs (kept out of releases)
 docs/plans/
 docs/superpowers/
+.worktrees/
 
 .claude/settings.local.json
 
