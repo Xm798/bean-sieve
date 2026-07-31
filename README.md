@@ -89,7 +89,8 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `cmbc_credit`  | 民生银行信用卡 | EML  | 邮件账单           |
 | `hsbchk_credit`| 汇丰香港信用卡 | CSV  | 网银导出账单（多卡需加 `_<后四位>` 后缀） |
 | `hxb_credit`   | 华夏银行信用卡 | EML  | 邮件账单           |
-| `spdb_credit`  | 浦发银行信用卡 | XLS  | 网银导出账单 |
+| `psbc_credit`  | 邮储银行信用卡 | EML  | 邮件账单           |
+| `spdb_credit`  | 浦发银行信用卡 | XLS  | 网银导出账单       |
 
 ### 借记卡
 
@@ -290,6 +291,7 @@ rules:
 | `cmbc_credit` | `posting_date` |
 | `hxb_credit` | `original_date` |
 | `hsbchk_credit` | `transaction_status`, `country`, `district`, `direction` |
+| `psbc_credit` | `country`, `domestic_or_overseas` |
 | `spdb_credit` | `card_type`, `original_amount`, `original_currency`, `original_transaction` |
 | `abc_credit` | — |
 | `bosc_credit` | — |

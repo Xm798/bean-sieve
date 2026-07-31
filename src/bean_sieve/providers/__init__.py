@@ -95,6 +95,7 @@ from .banks.credit import (  # noqa: E402, F401
     cncb,
     hsbchk,
     hxb,
+    psbc,
     spdb,
 )
 from .banks.debit import abc as abc_debit  # noqa: E402, F401

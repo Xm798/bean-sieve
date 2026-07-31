@@ -96,8 +96,11 @@ providers:
     posting_metadata:
       - card_last4
 
+  psbc_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:PSBC:1234
+
   spdb_credit:
-    # 按户管理：每张物理卡后四位均映射到同一个负债账户
     accounts:
       "1234": Liabilities:CreditCard:SPDB
       "5678": Liabilities:CreditCard:SPDB
@@ -126,7 +129,7 @@ providers:
       "1234": Liabilities:CreditCard:CNCB:1234
 
   hsbchk_credit:
-    # 文件名带卡后四位（推荐：TransactionHistory_8888.csv）
+    # 文件名需包含卡后四位，如：TransactionHistory_8888.csv
     # 仅 1 张卡时也可保持原文件名 TransactionHistory.csv，仅配一个 account 即可
     accounts:
       "8888": Liabilities:CreditCard:HSBCHK:8888

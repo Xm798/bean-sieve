@@ -92,6 +92,7 @@
               "exchange_info",
               "counterparty",
               "country",
+              "domestic_or_overseas",
               "district",
               "direction",
               "balance_currency",
@@ -332,6 +333,10 @@
         "hsbchk_credit": {
           "description": "汇丰香港信用卡",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["transaction_status", "country", "district", "direction"] } } } }]
+        },
+        "psbc_credit": {
+          "description": "邮储银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["country", "domestic_or_overseas"] } } } }]
         },
         "spdb_credit": {
           "description": "浦发银行信用卡",

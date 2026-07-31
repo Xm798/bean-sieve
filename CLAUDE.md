@@ -102,7 +102,7 @@ rules:  # map transactions to expense/income accounts
 
 providers:
   hxb_credit:
-    card_accounts:
+    accounts:
       "1234": Liabilities:CreditCard:HXB
 ```
 
