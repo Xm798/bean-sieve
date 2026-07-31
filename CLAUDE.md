@@ -13,6 +13,9 @@ Bean-Sieve is a rule-based statement importer and reconciler for Beancount. It p
 uv sync
 uv sync --extra dev  # with dev dependencies
 
+# Install git hooks
+uv run pre-commit install
+
 # Run tests
 uv run pytest                      # all tests
 uv run pytest tests/test_rules.py  # single file
