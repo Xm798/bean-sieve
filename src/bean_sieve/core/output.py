@@ -10,6 +10,15 @@ from pathlib import Path
 
 from beancount.parser import printer
 
+from .metadata_keys import (
+    IGNORED,
+    MATCHED_RULE,
+    ORIGINAL_PAYEE,
+    OUTPUT_METADATA,
+    POSTING_METADATA,
+    REBATE_ACCOUNT,
+    REFERENCE,
+)
 from .types import (
     MatchDiagnostic,
     MatchSource,
@@ -93,7 +102,7 @@ class BeancountWriter:
         """Format transaction metadata."""
         meta = []
         # Use per-transaction override if set (from provider config), else global
-        allowed = txn.metadata.get("_output_metadata", self.output_metadata)
+        allowed = txn.metadata.get(OUTPUT_METADATA, self.output_metadata)
         # Force output 'method' when account not matched (for manual processing)
         force_method = not txn.account
 
@@ -124,8 +133,8 @@ class BeancountWriter:
         ):
             meta.append(f'card_last4: "{txn.card_last4}"')
 
-        if should_include("reference"):
-            ref = txn.metadata.get("reference")
+        if should_include(REFERENCE):
+            ref = txn.metadata.get(REFERENCE)
             if ref and not is_empty_value(ref):
                 meta.append(f'reference: "{ref}"')
 
@@ -134,11 +143,11 @@ class BeancountWriter:
             meta.append(f'source: "{txn.provider}"')
 
         # Match source for debug (rule pattern)
-        if should_include("matched_rule") and txn.metadata.get("matched_rule"):
-            meta.append(f'matched_rule: "{txn.metadata["matched_rule"]}"')
+        if should_include(MATCHED_RULE) and txn.metadata.get(MATCHED_RULE):
+            meta.append(f'{MATCHED_RULE}: "{txn.metadata[MATCHED_RULE]}"')
 
         # Additional metadata from provider (only if allowed)
-        skip_keys = {"_ignored", "matched_rule", "reference", "original_payee"}
+        skip_keys = {IGNORED, MATCHED_RULE, REFERENCE, ORIGINAL_PAYEE}
         for key, value in txn.metadata.items():
             if key in skip_keys:
                 continue
@@ -174,7 +183,7 @@ class BeancountWriter:
 
         postings.append(f"{account}  {amount} {txn.currency}")
 
-        posting_meta_keys = list(txn.metadata.get("_posting_metadata", []))
+        posting_meta_keys = list(txn.metadata.get(POSTING_METADATA, []))
         if (
             txn.account
             and txn.card_last4
@@ -196,7 +205,7 @@ class BeancountWriter:
         if rebate:
             # Rebate posting (income-like, negative)
             # Use per-transaction rebate account if set, else fall back to default
-            rebate_account = txn.metadata.get("_rebate_account") or self.default_rebate
+            rebate_account = txn.metadata.get(REBATE_ACCOUNT) or self.default_rebate
             postings.append(f"{rebate_account}  -{rebate} {rebate_currency}")
             # Contra account includes rebate (total expense = paid + rebate)
             contra_amount = txn.amount + rebate

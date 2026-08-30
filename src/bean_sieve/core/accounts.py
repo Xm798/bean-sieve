@@ -12,6 +12,7 @@ import re
 from collections.abc import Sequence
 
 from ..config.schema import AccountMapping
+from .metadata_keys import REBATE_ACCOUNT
 from .types import Transaction
 
 
@@ -60,4 +61,4 @@ def resolve_by_keyword_regex(
 def apply_rebate_account(txn: Transaction, mapping: AccountMapping) -> None:
     """Record the mapping's rebate account when the transaction carries a rebate."""
     if mapping.rebate_account and txn.metadata.get("rebate"):
-        txn.metadata["_rebate_account"] = mapping.rebate_account
+        txn.metadata[REBATE_ACCOUNT] = mapping.rebate_account

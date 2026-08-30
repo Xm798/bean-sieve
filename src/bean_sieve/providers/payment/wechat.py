@@ -11,6 +11,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from ...core.metadata_keys import WITHDRAWAL_TARGET
 from ...core.preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
 from ...core.types import Transaction
 from .. import register_provider
@@ -309,7 +310,7 @@ class WechatProvider(BaseProvider):
                 "commission": str(commission) if commission else None,
                 "rebate": str(rebate) if rebate else None,
                 "rebate_currency": rebate_currency,
-                "_withdrawal_target": withdrawal_target,
+                WITHDRAWAL_TARGET: withdrawal_target,
             },
         )
 
@@ -369,7 +370,7 @@ class WechatProvider(BaseProvider):
                 ),
                 action=PresetRuleAction(
                     account_keyword="零钱",
-                    contra_account_metadata_key="_withdrawal_target",
+                    contra_account_metadata_key=WITHDRAWAL_TARGET,
                 ),
                 priority=90,
             ),
@@ -383,7 +384,7 @@ class WechatProvider(BaseProvider):
                 ),
                 action=PresetRuleAction(
                     account_keyword="经营账户",
-                    contra_account_metadata_key="_withdrawal_target",
+                    contra_account_metadata_key=WITHDRAWAL_TARGET,
                 ),
                 priority=90,
             ),

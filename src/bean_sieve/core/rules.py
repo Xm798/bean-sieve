@@ -12,6 +12,13 @@ from .accounts import (
     resolve_by_keyword_substring,
     resolve_by_method_ci,
 )
+from .metadata_keys import (
+    IGNORED,
+    MATCHED_PRESET_RULE,
+    MATCHED_RULE,
+    ORIGINAL_DESCRIPTION,
+    ORIGINAL_PAYEE,
+)
 from .preset_rules import PresetRule
 from .types import MatchSource, Transaction
 
@@ -96,7 +103,7 @@ class RulesEngine:
         action = preset.action
 
         if action.ignore:
-            txn.metadata["_ignored"] = True
+            txn.metadata[IGNORED] = True
             return txn
 
         # Keyword-based account lookup
@@ -106,7 +113,7 @@ class RulesEngine:
             )
             if account:
                 txn.account = account
-                txn.metadata["matched_preset_rule"] = preset.rule_id
+                txn.metadata[MATCHED_PRESET_RULE] = preset.rule_id
 
         # The metadata value is a full method string (e.g. "交通银行(8888)"), so it
         # resolves the same way as txn.metadata["method"] does.
@@ -218,7 +225,7 @@ class RulesEngine:
 
         if action.ignore:
             # Mark as ignored (will be filtered out later)
-            txn.metadata["_ignored"] = True
+            txn.metadata[IGNORED] = True
             return txn
 
         if action.contra_account:
@@ -227,18 +234,18 @@ class RulesEngine:
             txn.match_source = MatchSource.RULE
             # Store which rule matched for debugging
             if rule.condition.description:
-                txn.metadata["matched_rule"] = rule.condition.description
+                txn.metadata[MATCHED_RULE] = rule.condition.description
 
         if action.payee:
             # Store original payee before overriding
             if txn.payee and txn.payee != action.payee:
-                txn.metadata["original_payee"] = txn.payee
+                txn.metadata[ORIGINAL_PAYEE] = txn.payee
             txn.payee = action.payee
 
         if action.description:
             # Store original description before overriding
             if txn.description and txn.description != action.description:
-                txn.metadata["original_description"] = txn.description
+                txn.metadata[ORIGINAL_DESCRIPTION] = txn.description
             txn.description = action.description
 
         if action.tags:
@@ -273,6 +280,6 @@ def apply_rules(
     for txn in transactions:
         processed = engine.apply(txn)
         # Filter out ignored transactions
-        if not processed.metadata.get("_ignored"):
+        if not processed.metadata.get(IGNORED):
             result.append(processed)
     return result

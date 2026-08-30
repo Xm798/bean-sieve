@@ -28,6 +28,12 @@ from .core.accounts import (
     resolve_by_keyword_regex,
     resolve_by_method,
 )
+from .core.metadata_keys import (
+    IGNORED,
+    MATCHED_PRESET_RULE,
+    OUTPUT_METADATA,
+    POSTING_METADATA,
+)
 from .core.types import MatchSource
 from .providers import (
     ProviderSet,
@@ -144,7 +150,7 @@ def reconcile(
     processed = [rules_engine.apply(txn) for txn in missing]
 
     # Filter out ignored transactions
-    processed = [t for t in processed if not t.metadata.get("_ignored")]
+    processed = [t for t in processed if not t.metadata.get(IGNORED)]
 
     # Apply FIXME fallback for unmatched transactions
     processed = _apply_fixme_fallback(processed, config)
@@ -399,7 +405,7 @@ def _apply_provider_output_config(
 
         # Set posting_metadata from provider config
         if provider_config.posting_metadata:
-            txn.metadata["_posting_metadata"] = provider_config.posting_metadata
+            txn.metadata[POSTING_METADATA] = provider_config.posting_metadata
 
         # Merge output_metadata: global + provider
         if provider_config.output_metadata:
@@ -407,7 +413,7 @@ def _apply_provider_output_config(
             merged = list(global_meta) + [
                 m for m in provider_config.output_metadata if m not in global_meta
             ]
-            txn.metadata["_output_metadata"] = merged
+            txn.metadata[OUTPUT_METADATA] = merged
 
         result.append(txn)
 
@@ -496,7 +502,7 @@ def _set_target_accounts(
                             "account": account,
                             "metadata": {
                                 **txn.metadata,
-                                "matched_preset_rule": preset.rule_id,
+                                MATCHED_PRESET_RULE: preset.rule_id,
                             },
                         }
                     )
