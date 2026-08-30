@@ -67,12 +67,11 @@ class CCBCreditProvider(BaseProvider):
                     continue
 
                 row_counter += 1
-                txn = self._parse_row(
-                    cell_texts, file_path, row_counter, statement_period
-                )
+                txn = self._parse_row(cell_texts, file_path, row_counter)
                 if txn:
                     transactions.append(txn)
 
+        self.assign_statement_periods(transactions, statement_period)
         return transactions
 
     def _extract_statement_period(self, soup) -> tuple[date, date] | None:
@@ -94,7 +93,6 @@ class CCBCreditProvider(BaseProvider):
         cells: list[str],
         file_path: Path,
         row_idx: int,
-        statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
         """Parse a single transaction row.
 
@@ -128,7 +126,6 @@ class CCBCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx,
-                statement_period=statement_period,
             )
         except (IndexError, ValueError):
             return None
