@@ -109,9 +109,7 @@ class ProviderSet:
         if self.explicit_provider is not None:
             return [(self.explicit_provider, list(transactions))]
 
-        instances: dict[str, BaseProvider] = {}
-        for _path, provider in self.files:
-            instances.setdefault(provider.provider_id, provider)
+        instances = {p.provider_id: p for p in self.providers}
 
         by_provider: dict[str, list[Transaction]] = defaultdict(list)
         for txn in transactions:

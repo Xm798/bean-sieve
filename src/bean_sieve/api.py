@@ -348,7 +348,6 @@ def full_reconcile(
         source_info = ", ".join(p.name for p in statement_paths)
         content = generate_output(result, source_info=source_info, config=config)
 
-        # Post-output hook, once per provider taking part in the run
         for provider in pset.providers:
             content = provider.post_output(content, result, context)
 
