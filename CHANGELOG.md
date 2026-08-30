@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### 其他
+
+- **账户映射**：`account_mappings` 的解析逻辑集中到 `core/accounts.py`。此前 `api.py` 与 `rules.py` 中有六处内联循环，各自实现四种不同的匹配语义（pattern 子串匹配区分/不区分大小写、preset keyword 子串匹配、preset keyword 正则匹配），改动一处无法看见其余几处。现在四种语义各为一个具名函数，调用方按名选择；行为不变
+
 ## [0.6.0] - 2026-07-29
 
 ### 新增
