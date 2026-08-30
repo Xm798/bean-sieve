@@ -75,12 +75,9 @@ class CNCBCreditProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
-        # Infer statement_period from transaction date range
-        if transactions:
-            dates = [t.date for t in transactions]
-            statement_period = (min(dates), max(dates))
-            for t in transactions:
-                t.statement_period = statement_period
+        # The export carries no billing cycle, so each card's own transaction
+        # date range is the narrowest safe approximation.
+        self.assign_statement_periods(transactions)
 
         return transactions
 

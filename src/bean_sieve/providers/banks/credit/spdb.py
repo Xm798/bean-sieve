@@ -117,13 +117,9 @@ class SPDBCreditProvider(BaseProvider):
             if transaction:
                 transactions.append(transaction)
 
-        if transactions:
-            # The export has no explicit query period, so use the observed
-            # transaction-date range as the narrowest safe approximation.
-            transaction_dates = [transaction.date for transaction in transactions]
-            statement_period = (min(transaction_dates), max(transaction_dates))
-            for transaction in transactions:
-                transaction.statement_period = statement_period
+        # The export has no explicit query period, so use each card's own
+        # transaction-date range as the narrowest safe approximation.
+        self.assign_statement_periods(transactions)
 
         return transactions
 

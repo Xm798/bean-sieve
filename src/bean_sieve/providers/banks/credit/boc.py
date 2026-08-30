@@ -116,7 +116,6 @@ class BOCCreditProvider(BaseProvider):
                     current_card,
                     file_path,
                     row_counter,
-                    statement_period,
                 )
                 if txn:
                     row_counter += 1
@@ -124,12 +123,8 @@ class BOCCreditProvider(BaseProvider):
 
         doc.close()
 
-        # Delayed-settlement entries can fall before the computed cycle start
-        if transactions and statement_period:
-            min_date = min(t.date for t in transactions)
-            if min_date < statement_period[0]:
-                for t in transactions:
-                    t.statement_period = (min_date, statement_period[1])
+        # Delayed-settlement entries can fall outside the computed cycle
+        self.assign_statement_periods(transactions, statement_period)
 
         return transactions
 
@@ -204,7 +199,6 @@ class BOCCreditProvider(BaseProvider):
         current_card: str,
         file_path: Path,
         row_idx: int,
-        statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
         """Parse a single transaction row from blocks."""
         # Sort blocks by x position
@@ -282,7 +276,6 @@ class BOCCreditProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=row_idx + 1,
-            statement_period=statement_period,
             metadata={
                 "original_trans_date": trans_date,
                 "original_post_date": post_date or "",

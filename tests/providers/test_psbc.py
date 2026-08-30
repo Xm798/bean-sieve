@@ -521,3 +521,68 @@ def test_per_card_coverage_isolated_to_parsed_suffixes(tmp_path: Path) -> None:
     ]
     assert provider.get_covered_accounts(unknown, config) == []
     assert provider.get_covered_ranges(unknown, config) is None
+
+
+def test_each_card_gets_its_own_period_when_header_period_is_unusable(
+    tmp_path: Path,
+) -> None:
+    path = create_psbc_eml(
+        tmp_path / "synthetic-multi-card.eml",
+        period=None,
+        rows=[
+            {
+                "交易日": "20300905",
+                "记账日": "20300906",
+                "交易摘要": "测试多卡甲",
+                "人民币金额": "￥314.15",
+                "卡号末四位": "0007",
+                "交易国别": "",
+                "境内外交易标识": "",
+            },
+            {
+                "交易日": "20300911",
+                "记账日": "20300912",
+                "交易摘要": "测试多卡乙",
+                "人民币金额": "￥271.82",
+                "卡号末四位": "8888",
+                "交易国别": "",
+                "境内外交易标识": "",
+            },
+            {
+                "交易日": "20300926",
+                "记账日": "20300927",
+                "交易摘要": "测试多卡丙",
+                "人民币金额": "￥161.80",
+                "卡号末四位": "0007",
+                "交易国别": "",
+                "境内外交易标识": "",
+            },
+        ],
+    )
+
+    transactions = get_provider("psbc_credit").parse(path)
+    config = Config.from_dict(
+        {
+            "providers": {
+                "psbc_credit": {
+                    "accounts": {
+                        "0007": "Liabilities:CreditCard:PSBC:0007",
+                        "8888": "Liabilities:CreditCard:PSBC:8888",
+                    }
+                }
+            }
+        }
+    )
+
+    assert [
+        (transaction.card_last4, transaction.statement_period)
+        for transaction in transactions
+    ] == [
+        ("0007", (date(2030, 9, 5), date(2030, 9, 26))),
+        ("8888", (date(2030, 9, 11), date(2030, 9, 11))),
+        ("0007", (date(2030, 9, 5), date(2030, 9, 26))),
+    ]
+    assert get_provider("psbc_credit").get_covered_ranges(transactions, config) == {
+        "Liabilities:CreditCard:PSBC:0007": [(date(2030, 9, 5), date(2030, 9, 26))],
+        "Liabilities:CreditCard:PSBC:8888": [(date(2030, 9, 11), date(2030, 9, 11))],
+    }

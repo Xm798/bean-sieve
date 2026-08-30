@@ -7,6 +7,7 @@ import email
 import quopri
 import re
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from datetime import date
 from email.header import decode_header
 from email.message import Message
@@ -160,6 +161,41 @@ class BaseProvider(ABC):
         """
         return content
 
+    # === Statement Period ===
+
+    @staticmethod
+    def assign_statement_periods(
+        transactions: list[Transaction],
+        cycle: tuple[date, date] | None = None,
+    ) -> None:
+        """
+        Derive each card's coverage period from its own transactions.
+
+        Cards billed on one statement rarely share the same first and last
+        transaction date. A file-wide span stretches every card's coverage to
+        the outermost dates of the whole file, so ledger entries sitting in
+        another card's tail get reported as Extra.
+
+        Args:
+            transactions: Transactions to annotate, modified in place
+            cycle: Billing cycle read from the statement. Cards share it as the
+                statement states it, widened for a card whose delayed
+                settlements fall outside it. Omit it when the statement prints
+                no cycle, leaving each card its own transaction-date span.
+        """
+        by_card: dict[str | None, list[Transaction]] = defaultdict(list)
+        for txn in transactions:
+            by_card[txn.card_last4].append(txn)
+
+        for card_txns in by_card.values():
+            first = min(txn.date for txn in card_txns)
+            last = max(txn.date for txn in card_txns)
+            if cycle:
+                first = min(first, cycle[0])
+                last = max(last, cycle[1])
+            for txn in card_txns:
+                txn.statement_period = (first, last)
+
     # === Coverage Scope ===
 
     def get_covered_accounts(
@@ -237,7 +273,7 @@ class BaseProvider(ABC):
         (account, date) falls within a covered range are reported as Extra.
 
         Default behavior depends on per_card_statement:
-        - False: Uses union of statement_periods for all covered accounts
+        - False: Uses each distinct statement_period for all covered accounts
         - True: Maps accounts to date ranges via card_last4 in transactions
 
         Args:
@@ -248,30 +284,28 @@ class BaseProvider(ABC):
             Dict mapping account name to list of (start, end) date ranges,
             or None if no range filtering should be applied
         """
-        from collections import defaultdict
-
         provider_config = config.get_provider_config(self.provider_id)
         card_to_account = provider_config.accounts
 
         if not self.per_card_statement:
-            # For non-per-card providers, use statement_period union for all accounts
-            statement_periods = [
-                t.statement_period for t in transactions if t.statement_period
-            ]
-            if not statement_periods:
+            # Every statement period stays a range of its own: merging them into
+            # one span would cover the gap between two statements, where the
+            # ledger has entries no statement accounts for.
+            periods: list[tuple[date, date]] = []
+            seen_periods: set[tuple[date, date]] = set()
+            for txn in transactions:
+                if txn.statement_period and txn.statement_period not in seen_periods:
+                    seen_periods.add(txn.statement_period)
+                    periods.append(txn.statement_period)
+            if not periods:
                 return None
 
-            # Calculate union of all statement periods
-            min_date = min(p[0] for p in statement_periods)
-            max_date = max(p[1] for p in statement_periods)
-            period = (min_date, max_date)
-
-            # Apply to all covered accounts
+            # Statements of these banks cover the whole account, cards included
             covered_accounts = list(card_to_account.values())
             if not covered_accounts:
                 return None
 
-            return {account: [period] for account in covered_accounts}
+            return {account: list(periods) for account in covered_accounts}
 
         # Per-card statement: collect date ranges per card
         card_ranges: dict[str, list[tuple[date, date]]] = defaultdict(list)

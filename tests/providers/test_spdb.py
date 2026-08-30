@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from bean_sieve.config import Config
 from bean_sieve.providers import get_provider
 from bean_sieve.providers.banks.credit.spdb import SPDBCreditProvider
 
@@ -173,21 +174,20 @@ class TestSPDBCreditProvider:
         no_original_amount = transactions[2]
         assert no_original_amount.metadata == {"card_type": "测试虚拟卡"}
 
-    def test_statement_period_is_inferred(
+    def test_statement_period_is_inferred_per_card(
         self,
         spdb_xls_file: Path,
     ) -> None:
         transactions = SPDBCreditProvider().parse(spdb_xls_file)
 
-        assert transactions
-        assert all(
-            transaction.statement_period
-            == (
-                date(2030, 1, 2),
-                date(2030, 1, 31),
-            )
+        assert [
+            (transaction.card_last4, transaction.statement_period)
             for transaction in transactions
-        )
+        ] == [
+            ("8888", (date(2030, 1, 2), date(2030, 1, 31))),
+            ("1234", (date(2030, 1, 17), date(2030, 1, 17))),
+            ("8888", (date(2030, 1, 2), date(2030, 1, 31))),
+        ]
 
     def test_empty_statement(self, tmp_path: Path) -> None:
         path = create_spdb_xls([], tmp_path / "empty.xls")
@@ -379,3 +379,23 @@ class TestSPDBMalformedReports:
         path.write_bytes(b"not an Excel workbook")
 
         assert SPDBCreditProvider().parse(path) == []
+
+
+def test_covered_ranges_keep_each_statement_period(spdb_xls_file: Path) -> None:
+    """Per-account statements list every period instead of one merged span.
+
+    SPDB bills per account, so both cards' periods land on the one configured
+    account; what this pins is that they stay two ranges rather than one span
+    stretched over the days between them.
+    """
+    provider = SPDBCreditProvider()
+    config = Config.from_dict(
+        {"providers": {"spdb_credit": {"accounts": {"8888": "Liabilities:CC:SPDB"}}}}
+    )
+
+    assert provider.get_covered_ranges(provider.parse(spdb_xls_file), config) == {
+        "Liabilities:CC:SPDB": [
+            (date(2030, 1, 2), date(2030, 1, 31)),
+            (date(2030, 1, 17), date(2030, 1, 17)),
+        ]
+    }

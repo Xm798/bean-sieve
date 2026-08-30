@@ -274,7 +274,9 @@ def full_reconcile(
             t.statement_period for t in transactions if t.statement_period
         ]
         if statement_periods:
-            # Use the union of all statement periods
+            # Cards carry periods of their own, so this hull is only a coarse
+            # bound for loading the ledger; get_covered_ranges narrows Extra
+            # back down per account.
             min_date = min(p[0] for p in statement_periods) - timedelta(days=tolerance)
             max_date = max(p[1] for p in statement_periods) + timedelta(days=tolerance)
         else:

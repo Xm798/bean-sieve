@@ -204,7 +204,6 @@ class TestBOCTransactionRowParsing:
             "1234",
             file_path,
             0,
-            (date(2025, 11, 5), date(2025, 12, 4)),
         )
 
         assert result is not None
@@ -234,7 +233,6 @@ class TestBOCTransactionRowParsing:
             "1234",
             file_path,
             0,
-            None,
         )
 
         assert result is not None
@@ -258,7 +256,6 @@ class TestBOCTransactionRowParsing:
             "1234",
             file_path,
             0,
-            None,
         )
 
         assert result is None
@@ -283,7 +280,6 @@ class TestBOCTransactionRowParsing:
             "1234",
             file_path,
             0,
-            None,
         )
 
         assert result is not None

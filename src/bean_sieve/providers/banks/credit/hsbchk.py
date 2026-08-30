@@ -78,11 +78,7 @@ class HSBCHKCreditProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
-        if transactions:
-            dates = [t.date for t in transactions]
-            statement_period = (min(dates), max(dates))
-            for t in transactions:
-                t.statement_period = statement_period
+        self.assign_statement_periods(transactions)
 
         return transactions
 
