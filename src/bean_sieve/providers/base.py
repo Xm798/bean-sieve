@@ -57,8 +57,10 @@ class BaseProvider(ABC):
     content_keywords: list[str] = []  # e.g., ["微信支付账单明细"]
 
     # Statement scope: True if the bank sends separate statements per card.
-    # It decides where a configured account the file never names stands: off
-    # this statement (True), or on it and covered by the file's periods (False).
+    # It decides how far coverage reaches past the rows the config can place: a
+    # row whose card is not a config key is dropped (True) or covers the whole
+    # statement (False), and a configured account the file never names is off
+    # this statement (True) or on it, covered by the file's periods (False).
     per_card_statement: bool = False
 
     @classmethod
@@ -244,13 +246,13 @@ class BaseProvider(ABC):
         Used to filter Extra entries - only ledger entries where
         (account, date) falls within a covered range are reported as Extra.
 
-        Each period lands on the account of the row's card. What a row whose
-        card is not a config key means is left to per_card_statement: on a
-        statement-wide file every configured account the file never names is
-        covered by the union of the file's periods, because one such statement
-        speaks for the whole set of accounts - a household statement, or a
-        multi-currency one keyed on currency - so a silent account's ledger
-        entries really are Extra. A per-card file claims nothing for them.
+        Each period lands on the account of the row's card. What the file says
+        beyond that is left to per_card_statement: a statement-wide file speaks
+        for the whole set of accounts - a household statement, or a
+        multi-currency one keyed on currency - so a row it cannot place covers
+        every configured account, and an account the file never names is covered
+        by the union of the file's periods, its ledger entries there really
+        being Extra. A per-card file claims neither.
 
         Args:
             transactions: Parsed transactions from this provider
@@ -267,29 +269,38 @@ class BaseProvider(ABC):
         # entries no statement accounts for.
         periods_by_account: dict[str, list[tuple[date, date]]] = {}
         all_periods: list[tuple[date, date]] = []
+        attributed: set[str] = set()
+
+        def cover(account: str, period: tuple[date, date]) -> None:
+            ranges = periods_by_account.setdefault(account, [])
+            if period not in ranges:
+                ranges.append(period)
 
         for txn in transactions:
             period = txn.statement_period
             if not period:
                 continue
-            if period not in all_periods:
-                all_periods.append(period)
 
             # Payment platforms key their config on the wallet while card_last4
             # holds a bank card suffix, so a row whose card is not a key says
             # nothing about which account it belongs to.
             account = card_to_account.get(txn.card_last4 or "")
-            if account is None:
-                continue
-            ranges = periods_by_account.setdefault(account, [])
-            if period not in ranges:
-                ranges.append(period)
+            if account is not None:
+                attributed.add(account)
+                cover(account, period)
 
-        if self.per_card_statement or not all_periods:
-            return periods_by_account or None
+            if self.per_card_statement:
+                continue
+            if period not in all_periods:
+                all_periods.append(period)
+            if account is None:
+                for configured in card_to_account.values():
+                    cover(configured, period)
 
         for account in card_to_account.values():
-            periods_by_account.setdefault(account, list(all_periods))
+            if account not in attributed:
+                for period in all_periods:
+                    cover(account, period)
 
         return periods_by_account or None
 

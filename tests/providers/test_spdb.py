@@ -390,16 +390,7 @@ def test_covered_ranges_keep_each_statement_period(spdb_xls_file: Path) -> None:
     """
     provider = SPDBCreditProvider()
     config = Config.from_dict(
-        {
-            "providers": {
-                "spdb_credit": {
-                    "accounts": {
-                        "8888": "Liabilities:CC:SPDB",
-                        "1234": "Liabilities:CC:SPDB",
-                    }
-                }
-            }
-        }
+        {"providers": {"spdb_credit": {"accounts": {"8888": "Liabilities:CC:SPDB"}}}}
     )
 
     assert provider.get_covered_ranges(provider.parse(spdb_xls_file), config) == {

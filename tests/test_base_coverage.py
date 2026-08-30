@@ -21,6 +21,7 @@ ACCOUNT_B = "Liabilities:CreditCard:Fake:B"
 
 PERIOD_JAN = (date(2030, 1, 1), date(2030, 1, 31))
 PERIOD_FEB = (date(2030, 2, 1), date(2030, 2, 28))
+PERIOD_MAR = (date(2030, 3, 1), date(2030, 3, 31))
 
 
 class FakeAccountBank(BaseProvider):
@@ -146,9 +147,9 @@ def test_unknown_card_period_reaches_every_configured_account() -> None:
     ]
 
 
-def test_untagged_row_period_skips_an_account_that_named_itself() -> None:
-    # An account the file names owns exactly what its own rows claim; only the
-    # accounts the file leaves silent inherit the untagged row's period.
+def test_untagged_row_period_reaches_an_account_that_named_itself() -> None:
+    # An untagged row belongs to the whole statement, so its period lands on
+    # every configured account, the ones the file names included.
     provider = FakeAccountBank()
     config = make_config({"1111": ACCOUNT_A, "2222": ACCOUNT_B})
     transactions = [
@@ -157,8 +158,25 @@ def test_untagged_row_period_skips_an_account_that_named_itself() -> None:
     ]
 
     assert provider.get_covered_ranges(transactions, config) == {
-        ACCOUNT_A: [PERIOD_JAN],
-        ACCOUNT_B: [PERIOD_JAN, PERIOD_FEB],
+        ACCOUNT_A: [PERIOD_JAN, PERIOD_FEB],
+        ACCOUNT_B: [PERIOD_FEB, PERIOD_JAN],
+    }
+
+
+def test_silent_account_takes_every_period_after_an_untagged_row() -> None:
+    # A period an untagged row already handed to the silent account must not
+    # stop the rest of the file's periods from reaching it.
+    provider = FakeAccountBank()
+    config = make_config({"1111": ACCOUNT_A, "2222": ACCOUNT_B})
+    transactions = [
+        make_txn(date(2030, 1, 5), "1111", PERIOD_JAN),
+        make_txn(date(2030, 2, 5), None, PERIOD_FEB),
+        make_txn(date(2030, 3, 5), "1111", PERIOD_MAR),
+    ]
+
+    assert provider.get_covered_ranges(transactions, config) == {
+        ACCOUNT_A: [PERIOD_JAN, PERIOD_FEB, PERIOD_MAR],
+        ACCOUNT_B: [PERIOD_FEB, PERIOD_JAN, PERIOD_MAR],
     }
 
 
