@@ -11,7 +11,6 @@ from pathlib import Path
 from beancount.parser import printer
 
 from .metadata_keys import (
-    IGNORED,
     MATCHED_RULE,
     ORIGINAL_PAYEE,
     OUTPUT_METADATA,
@@ -147,9 +146,13 @@ class BeancountWriter:
             meta.append(f'{MATCHED_RULE}: "{txn.metadata[MATCHED_RULE]}"')
 
         # Additional metadata from provider (only if allowed)
-        skip_keys = {IGNORED, MATCHED_RULE, REFERENCE, ORIGINAL_PAYEE}
+        # These already have a fixed slot above, except original_payee, which the
+        # rules engine records purely so the override is auditable in memory.
+        skip_keys = {MATCHED_RULE, REFERENCE, ORIGINAL_PAYEE}
         for key, value in txn.metadata.items():
-            if key in skip_keys:
+            # Beancount metadata keys must start with a lowercase letter, so an
+            # internal `_` key would make the generated ledger fail bean-check.
+            if key.startswith("_") or key in skip_keys:
                 continue
             if not should_include(key):
                 continue

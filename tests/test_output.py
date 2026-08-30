@@ -272,7 +272,7 @@ def _characterisation_txn() -> Transaction:
 
 
 def test_metadata_emission_characterisation():
-    """Pins every metadata line the writer emits, internal `_` keys included."""
+    """Pins every metadata line the writer emits; internal `_` keys stay out."""
     output = BeancountWriter().format_transaction(_characterisation_txn())
 
     assert output.split("\n") == [
@@ -283,8 +283,6 @@ def test_metadata_emission_characterisation():
         '    method: "m"',
         '    rebate: "1.00"',
         '    rebate_currency: "CNY"',
-        '    _rebate_account: "Income:Rebate:Test"',
-        '    _withdrawal_target: "bank-a"',
         '    matched_preset_rule: "pr-a"',
         '    original_description: "desc-b"',
         '    balance: "99.00"',

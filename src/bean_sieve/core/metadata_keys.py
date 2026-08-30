@@ -1,8 +1,8 @@
 """Names of the `Transaction.metadata` keys bean-sieve writes and reads itself.
 
-Keys prefixed with `_` are consumed inside bean-sieve. They are kept out of the
-generated ledger only by `BeancountWriter`'s explicit denylist, so a new one is
-emitted verbatim unless it is added there.
+Keys prefixed with `_` are consumed inside bean-sieve and never written to the
+ledger: `BeancountWriter` skips the whole prefix, since Beancount metadata keys
+must start with a lowercase letter.
 
 The remaining ~60 keys (`method`, `balance`, …) are the provider-facing
 vocabulary and stay as literals at their sites.

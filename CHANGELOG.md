@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 修复
 
+- **输出**：以 `_` 开头的元数据键（`_rebate_account`、`_withdrawal_target` 等）不再写入生成的 .bean。这些键仅供 bean-sieve 内部使用，而 Beancount 要求元数据键以小写字母开头，此前未设置 `defaults.output_metadata` 时它们会原样输出，使生成的账本无法通过 bean-check
 - **混合账单对账**：`post_output` 钩子改为对本次运行涉及的每个 Provider 各调用一次（按账单文件首次出现的顺序）。此前只有第一个账单文件所属的 Provider 会执行该钩子，因此同时导入多家银行账单时，其余 Provider 的结算/汇总分录（如农行的账单核对与返现分录）会丢失，且换一个文件顺序结果就不同；单 Provider 运行的输出保持不变
 
 ### 其他

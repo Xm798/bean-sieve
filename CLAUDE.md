@@ -133,6 +133,7 @@ providers:
 - **Matching**: `Transaction.match_key` uses `order_id` if available, else `(date, abs_amount, card_suffix)`
 - **Provider detection**: Checks extension first, then `filename_keywords`, then `content_keywords`
 - **Rules priority**: Rules earlier in the YAML have higher priority
+- **Internal metadata keys**: `Transaction.metadata` keys starting with `_` (named in `core/metadata_keys.py`) are bean-sieve internals and are never written to output
 - **`account_mappings` resolution**: All lookups live in `core/accounts.py` and take the first hit in YAML order. Four rules coexist and must be picked by name, never merged: `resolve_by_method` (config `pattern` is a case-sensitive substring of `metadata['method']`; used by `api.py`), `resolve_by_method_ci` (same, case-insensitive; used by `RulesEngine` for `method` and for `contra_account_metadata_key` values), `resolve_by_keyword_substring` (preset `account_keyword` is a case-insensitive substring of `pattern`; used by `RulesEngine`), and `resolve_by_keyword_regex` (preset `account_keyword` is regex-searched against `pattern`, IGNORECASE; used by `api.py`). Direction matters: a generic method must not resolve to a card-specific pattern.
 - **Formatting and linting**: MUST run `uv run ruff format`, `uv run ruff check`, and `uv run pyright src/` after modifying code, and fix all issues
 - **Config sync**: When modifying `bean-sieve.example.yaml`, check if user's `bean-sieve.yaml` needs corresponding update. Also update JSON schema `bean-sieve.schema.json` if config structure changes.
