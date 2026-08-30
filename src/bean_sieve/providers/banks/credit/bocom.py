@@ -73,6 +73,7 @@ class BOCOMCreditProvider(BaseProvider):
                 if txn:
                     transactions.append(txn)
 
+        self.assign_statement_periods(transactions, statement_period)
         return transactions
 
     def _detect_section(self, table) -> str | None:
@@ -141,7 +142,6 @@ class BOCOMCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx + 1,
-                statement_period=statement_period,
                 metadata={
                     "original_date": trans_date_str,
                     "section": section or "unknown",
