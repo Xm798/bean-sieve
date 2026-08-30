@@ -315,3 +315,42 @@ class TestCIBMultipleCards:
         assert transactions[0].amount == Decimal("100.00")
         assert transactions[1].card_last4 == "2222"
         assert transactions[1].amount == Decimal("200.00")
+
+
+class TestCIBStatementPeriod:
+    """Tests for statement period stamping."""
+
+    def test_statement_period(self, tmp_path):
+        """Test that the header billing cycle is stamped on every transaction."""
+        html = """<html>
+<body>
+<table><tr><td>账单周期 2030/01/08-2030/02/07</td></tr></table>
+<table id="detail_table_100">
+    <tbody>
+        <td name="masterMsg">**** 本卡明细(卡号末四位 4444) ****</td>
+        <tr id="detail_tr_100">
+            <td><span id="detail_tdate_100">2030-01-10</span></td>
+            <td><span id="detail_adate_100">2030-01-10</span></td>
+            <td><span id="detail_desc1_100">payee-a</span></td>
+            <td></td>
+            <td><span id="detail_tamt_100">10.00</span></td>
+        </tr>
+        <tr id="detail_tr_101">
+            <td><span id="detail_tdate_101">2030-01-20</span></td>
+            <td><span id="detail_adate_101">2030-01-20</span></td>
+            <td><span id="detail_desc1_101">payee-b</span></td>
+            <td></td>
+            <td><span id="detail_tamt_101">20.00</span></td>
+        </tr>
+    </tbody>
+</table>
+</body></html>"""
+        file_path = tmp_path / "兴业银行信用卡.eml"
+        file_path.write_text(create_cib_eml(html), encoding="utf-8")
+
+        provider = CIBCreditProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 2
+        for txn in transactions:
+            assert txn.statement_period == (date(2030, 1, 8), date(2030, 2, 7))
