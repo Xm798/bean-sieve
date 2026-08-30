@@ -25,7 +25,9 @@ Content-Transfer-Encoding: base64
 """
 
 
-def create_cmbc_html_with_transactions(transactions: list[dict]) -> str:
+def create_cmbc_html_with_transactions(
+    transactions: list[dict], statement_date: str = "2025/12/10"
+) -> str:
     """Create CMBC statement HTML with transaction rows.
 
     Each transaction dict should have:
@@ -50,8 +52,7 @@ def create_cmbc_html_with_transactions(transactions: list[dict]) -> str:
 <html>
 <head><meta charset="UTF-8"></head>
 <body>
-<div>2025年12月对账单</div>
-<div>Statement Date</div><div>2025/12/10</div>
+<div>Statement Date</div><div>{statement_date}</div>
 <span id='loopBand3'>
     <span id='loopBand1'>
         {"".join(rows)}
@@ -160,8 +161,10 @@ class TestCMBCCreditProvider:
 class TestCMBCDateParsing:
     """Tests for CMBC date parsing edge cases."""
 
-    def test_cross_year_january_in_december_statement(self, tmp_path):
-        """Test January transactions in December statement."""
+    def test_january_row_in_december_statement_is_the_january_already_past(
+        self, tmp_path
+    ):
+        """A statement lists nothing dated after the day it closes."""
         transactions = [
             {
                 "trans_date": "01/02",
@@ -179,8 +182,30 @@ class TestCMBCDateParsing:
         txns = provider.parse(file_path)
 
         assert len(txns) == 1
-        # January in December statement should be next year
-        assert txns[0].date == date(2026, 1, 2)
+        assert txns[0].date == date(2025, 1, 2)
+
+    def test_row_a_year_before_a_cross_year_period_takes_the_earlier_year(
+        self, tmp_path
+    ):
+        """A November row on a December-to-January statement is last November."""
+        transactions = [
+            {
+                "trans_date": "11/20",
+                "post_date": "11/20",
+                "description": "merchant-a",
+                "amount": "20.00",
+                "card_last4": "5515",
+            },
+        ]
+        html = create_cmbc_html_with_transactions(transactions, "2030/01/10")
+        file_path = tmp_path / "民生信用卡2030年01月电子对账单.eml"
+        file_path.write_text(create_cmbc_eml(html), encoding="utf-8")
+
+        provider = CMBCCreditProvider()
+        txns = provider.parse(file_path)
+
+        assert len(txns) == 1
+        assert txns[0].date == date(2029, 11, 20)
 
     def test_november_transactions_in_december_statement(self, tmp_path):
         """Test November transactions in December statement."""

@@ -177,6 +177,31 @@ class TestHXBCreditProvider:
             date(2026, 1, 26),
         )
 
+    def test_row_a_year_before_a_cross_year_period_takes_the_earlier_year(
+        self, tmp_path
+    ):
+        """A November row on a December-to-January statement is last November."""
+        html = """<html><body>
+<div>账单日 每月26日</div>
+<table><tr><td>交易日</td></tr></table>
+<table>
+<tr><td>11/20</td></tr>
+<tr><td>11/20</td></tr>
+<tr><td>merchant-a</td></tr>
+<tr><td>5678</td></tr>
+<tr><td>￥20.00</td></tr>
+</table>
+<div>美元账务信息</div>
+</body></html>"""
+        file_path = tmp_path / "华夏信用卡-电子账单2030年01月.eml"
+        file_path.write_text(create_hxb_eml(html), encoding="utf-8")
+
+        provider = HXBCreditProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 1
+        assert transactions[0].date == date(2029, 11, 20)
+
     def test_card_last4_extraction(self, hxb_eml_file):
         """Test that card_last4 is properly extracted."""
         provider = HXBCreditProvider()

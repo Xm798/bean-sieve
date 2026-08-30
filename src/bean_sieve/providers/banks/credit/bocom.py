@@ -155,20 +155,18 @@ class BOCOMCreditProvider(BaseProvider):
     ) -> date:
         """Resolve a MM/DD row to a full date using the statement period.
 
-        Rows carry no year, and a statement lists months on either side of a
-        year boundary: a December row on a January statement belongs to the
-        previous December.
+        Rows carry no year, and the statement closes on its period end, so a row
+        is the latest MM/DD falling on or before that day: a December row on a
+        January statement is the previous December, and a November row on that
+        same statement a settlement delayed from the November before it.
         """
         month, day = map(int, date_str.split("/"))
 
         if not statement_period:
             return date(date.today().year, month, day)
 
-        start, end = statement_period
-        if start.year != end.year:
-            year = start.year if month >= start.month else end.year
-        else:
-            year = start.year if month <= end.month else start.year - 1
+        end = statement_period[1]
+        year = end.year if (month, day) <= (end.month, end.day) else end.year - 1
         return date(year, month, day)
 
     def _parse_amount(self, amount_str: str) -> tuple[Decimal | None, str]:

@@ -43,7 +43,6 @@ class CMBCCreditProvider(BaseProvider):
         soup = self.parse_html(html)
 
         stmt_date = self._extract_statement_date(html, file_path)
-        statement_year, statement_month = stmt_date.year, stmt_date.month
         statement_period = self._compute_statement_period(stmt_date)
 
         transactions: list[Transaction] = []
@@ -55,8 +54,7 @@ class CMBCCreditProvider(BaseProvider):
         for fix_band1 in loop_band.find_all("span", id="fixBand1"):
             txn = self._parse_transaction_row(
                 fix_band1,
-                statement_year,
-                statement_month,
+                statement_period[1],
                 file_path,
                 len(transactions),
             )
@@ -71,8 +69,7 @@ class CMBCCreditProvider(BaseProvider):
             if loop_span:
                 txn = self._parse_refund_payment_row(
                     loop_span,
-                    statement_year,
-                    statement_month,
+                    statement_period[1],
                     file_path,
                     len(transactions),
                     desc_band=desc_band,
@@ -112,8 +109,7 @@ class CMBCCreditProvider(BaseProvider):
     def _parse_transaction_row(
         self,
         fix_band1,
-        statement_year: int,
-        statement_month: int,
+        period_end: date,
         file_path: Path,
         row_idx: int,
     ) -> Transaction | None:
@@ -135,12 +131,8 @@ class CMBCCreditProvider(BaseProvider):
             if not date_match:
                 return None
 
-            trans_date = self._parse_mm_dd_date(
-                date_match.group(1), statement_year, statement_month
-            )
-            post_date = self._parse_mm_dd_date(
-                date_match.group(2), statement_year, statement_month
-            )
+            trans_date = self._parse_mm_dd_date(date_match.group(1), period_end)
+            post_date = self._parse_mm_dd_date(date_match.group(2), period_end)
 
             description = self._extract_text(fix_band1, "fixBand82")
             if not description:
@@ -171,8 +163,7 @@ class CMBCCreditProvider(BaseProvider):
     def _parse_refund_payment_row(
         self,
         row_span,
-        statement_year: int,
-        statement_month: int,
+        period_end: date,
         file_path: Path,
         row_idx: int,
         *,
@@ -191,9 +182,7 @@ class CMBCCreditProvider(BaseProvider):
             if not date_match:
                 return None
 
-            trans_date = self._parse_mm_dd_date(
-                date_match.group(1), statement_year, statement_month
-            )
+            trans_date = self._parse_mm_dd_date(date_match.group(1), period_end)
 
             description = self._extract_text(row_span, desc_band)
             if not description:
@@ -239,11 +228,21 @@ class CMBCCreditProvider(BaseProvider):
             metadata=metadata,
         )
 
-    def _parse_mm_dd_date(
-        self, mm_dd: str, statement_year: int, statement_month: int
-    ) -> date:
+    @staticmethod
+    def _parse_mm_dd_date(mm_dd: str, period_end: date) -> date:
+        """Resolve a MM/DD row to a full date using the statement period.
+
+        Rows carry no year, and the statement closes on its period end, so a row
+        is the latest MM/DD falling on or before that day: a December row on a
+        January statement is the previous December, and a November row on that
+        same statement a settlement delayed from the November before it.
+        """
         month, day = map(int, mm_dd.split("/"))
-        year = self._determine_year(month, statement_year, statement_month)
+        year = (
+            period_end.year
+            if (month, day) <= (period_end.month, period_end.day)
+            else period_end.year - 1
+        )
         return date(year, month, day)
 
     @staticmethod
@@ -271,17 +270,3 @@ class CMBCCreditProvider(BaseProvider):
         if re.match(r"^\d{4}$", card_text):
             return card_text
         return None
-
-    def _determine_year(
-        self, trans_month: int, statement_year: int, statement_month: int
-    ) -> int:
-        """Determine the year for a transaction based on statement month.
-
-        For December statements, transactions in January belong to next year.
-        For January statements, transactions in December belong to previous year.
-        """
-        if statement_month == 12 and trans_month == 1:
-            return statement_year + 1
-        if statement_month == 1 and trans_month == 12:
-            return statement_year - 1
-        return statement_year
