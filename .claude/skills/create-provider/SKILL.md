@@ -286,18 +286,9 @@ When parsing XLS (BIFF8) files with `xlrd`, cell values come back as Python type
 
 **The core issue:** `sheet.cell_value()` returns `float` for numeric cells, even when the content looks like text (e.g., card number "8888" stored as a number returns `8888.0`). Calling `str(8888.0)` gives `"8888.0"`, not `"8888"` — breaking downstream matching, config lookups, and match_key comparison.
 
-**Required pattern — `_normalize_cell_str`:**
+**Required pattern — `normalize_cell_str`:**
 
-```python
-@staticmethod
-def _normalize_cell_str(value) -> str:
-    """Convert cell value to string, handling xlrd float-as-int values."""
-    if isinstance(value, float) and value == int(value):
-        return str(int(value))
-    return str(value).strip()
-```
-
-Apply to: `card_last4`, and any field that might be stored as a number in the XLS.
+Use `from ..._tabular import normalize_cell_str`. Apply it to `card_last4` and any numeric-looking text cell.
 
 **Date cells:** Excel can store dates as serial numbers (float). `_parse_date` must handle both string `"YYYY-MM-DD"` and float date values:
 

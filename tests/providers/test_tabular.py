@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from bean_sieve.providers._tabular import to_decimal
+from bean_sieve.providers._tabular import normalize_cell_str, to_decimal
 
 
 class TestToDecimal:
@@ -41,3 +41,30 @@ class TestToDecimal:
     )
     def test_parsed_values(self, value: object, expected: Decimal) -> None:
         assert to_decimal(value) == expected
+
+
+class TestNormalizeCellStr:
+    """Tests for normalize_cell_str()."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (8888.0, "8888"),
+            (8888.5, "8888.5"),
+            (8888, "8888"),
+            (" 8888 ", "8888"),
+            ("", ""),
+            (Decimal("8888"), "8888"),
+            (None, "None"),
+        ],
+    )
+    def test_rendered_text(self, value: object, expected: str) -> None:
+        assert normalize_cell_str(value) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "exc"),
+        [(float("nan"), ValueError), (float("inf"), OverflowError)],
+    )
+    def test_non_finite_floats_raise(self, value: float, exc: type[Exception]) -> None:
+        with pytest.raises(exc):
+            normalize_cell_str(value)

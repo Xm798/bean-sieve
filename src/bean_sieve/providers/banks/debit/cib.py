@@ -12,7 +12,7 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import to_decimal
+from ..._tabular import normalize_cell_str, to_decimal
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class CIBDebitProvider(BaseProvider):
     - Row 11+: data rows
     - Last row: disclaimer "说明..."
     - Columns: 交易时间, 记账日, 支出, 收入, 账户余额, 摘要, 对方户名, 对方银行, 对方账号, 用途, 交易渠道, 备注
-    - Cells are typically text type, but _normalize_cell_str handles xlrd float values defensively
+    - Cells are typically text type, but normalize_cell_str handles xlrd float values defensively
     """
 
     provider_id = "cib_debit"
@@ -112,17 +112,10 @@ class CIBDebitProvider(BaseProvider):
         for row_idx in range(min(10, sheet.nrows)):
             label = str(sheet.cell_value(row_idx, 0)).strip()
             if label == "账户账号":
-                account_no = self._normalize_cell_str(sheet.cell_value(row_idx, 1))
+                account_no = normalize_cell_str(sheet.cell_value(row_idx, 1))
                 if len(account_no) >= 4:
                     return account_no[-4:]
         return None
-
-    @staticmethod
-    def _normalize_cell_str(value) -> str:
-        """Convert cell value to string, handling xlrd float-as-int values."""
-        if isinstance(value, float) and value == int(value):
-            return str(int(value))
-        return str(value).strip()
 
     def _is_footer(self, row: list) -> bool:
         """Check if row is the footer disclaimer."""

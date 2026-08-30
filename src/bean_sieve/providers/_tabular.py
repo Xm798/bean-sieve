@@ -19,3 +19,15 @@ def to_decimal(value: object) -> Decimal | None:
         return d if d != 0 else None
     except InvalidOperation:
         return None
+
+
+def normalize_cell_str(value: object) -> str:
+    """Convert an xlrd cell value to text.
+
+    xlrd hands back a float for every numeric cell, so an integral float is
+    rendered without its ".0" tail to keep card suffixes and other digit strings
+    comparable.
+    """
+    if isinstance(value, float) and value == int(value):
+        return str(int(value))
+    return str(value).strip()

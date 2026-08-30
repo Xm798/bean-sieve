@@ -11,6 +11,7 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import normalize_cell_str
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -100,14 +101,14 @@ class CNCBCreditProvider(BaseProvider):
         try:
             raw_date = row[self.COL_TRANS_DATE]
             # Skip non-data rows
-            date_str = self._normalize_cell_str(raw_date)
+            date_str = normalize_cell_str(raw_date)
             if not date_str or not date_str[0].isdigit():
                 return None
 
             trans_date = self._parse_date(raw_date, datemode)
             post_date = self._parse_date(row[self.COL_POST_DATE], datemode)
             description = str(row[self.COL_DESCRIPTION]).strip()
-            card_last4 = self._normalize_cell_str(row[self.COL_CARD_LAST4])
+            card_last4 = normalize_cell_str(row[self.COL_CARD_LAST4])
             currency = self._map_currency(str(row[self.COL_SETTLE_CURRENCY]).strip())
 
             # Use settlement amount (结算金额)
@@ -130,13 +131,6 @@ class CNCBCreditProvider(BaseProvider):
         except (IndexError, ValueError) as e:
             logger.warning("Failed to parse row %d in %s: %s", row_idx, file_path, e)
             return None
-
-    @staticmethod
-    def _normalize_cell_str(value) -> str:
-        """Convert cell value to string, handling xlrd float-as-int values."""
-        if isinstance(value, float) and value == int(value):
-            return str(int(value))
-        return str(value).strip()
 
     @staticmethod
     def _parse_date(value: object, datemode: int = 0) -> date:

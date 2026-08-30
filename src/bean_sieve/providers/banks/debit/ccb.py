@@ -12,6 +12,7 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import normalize_cell_str
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -100,12 +101,6 @@ class CCBDebitProvider(BaseProvider):
         """Check if row is the footer disclaimer."""
         return isinstance(row[0], str) and self.FOOTER_MARKER in row[0]
 
-    def _normalize_cell_str(self, value) -> str:
-        """Convert cell value to string, handling xlrd float-as-int values."""
-        if isinstance(value, float) and value == int(value):
-            return str(int(value))
-        return str(value).strip()
-
     def _parse_row(
         self,
         row: list,
@@ -114,7 +109,7 @@ class CCBDebitProvider(BaseProvider):
         file_path: Path,
     ) -> Transaction | None:
         """Parse a single data row."""
-        date_str = self._normalize_cell_str(row[self.COL_TX_DATE])
+        date_str = normalize_cell_str(row[self.COL_TX_DATE])
         if not date_str or not date_str.isdigit() or len(date_str) != 8:
             return None
 
@@ -126,9 +121,9 @@ class CCBDebitProvider(BaseProvider):
         if amount is None:
             return None
 
-        summary = self._normalize_cell_str(row[self.COL_SUMMARY])
-        counterparty = self._normalize_cell_str(row[self.COL_COUNTERPARTY_NAME])
-        location = self._normalize_cell_str(row[self.COL_LOCATION])
+        summary = normalize_cell_str(row[self.COL_SUMMARY])
+        counterparty = normalize_cell_str(row[self.COL_COUNTERPARTY_NAME])
+        location = normalize_cell_str(row[self.COL_LOCATION])
         description = self._build_description(summary, location)
 
         return Transaction(
@@ -147,12 +142,10 @@ class CCBDebitProvider(BaseProvider):
 
     def _build_metadata(self, summary: str, location: str, row: list) -> dict[str, str]:
         metadata: dict[str, str] = {"summary": summary}
-        balance = self._normalize_cell_str(row[self.COL_BALANCE])
+        balance = normalize_cell_str(row[self.COL_BALANCE])
         if balance and balance != "0":
             metadata["balance"] = balance
-        counterparty_account = self._normalize_cell_str(
-            row[self.COL_COUNTERPARTY_ACCOUNT]
-        )
+        counterparty_account = normalize_cell_str(row[self.COL_COUNTERPARTY_ACCOUNT])
         if counterparty_account and counterparty_account != "0":
             metadata["counterparty_account"] = counterparty_account
         if location:
