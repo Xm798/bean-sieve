@@ -153,10 +153,11 @@ class BOCOMCreditProvider(BaseProvider):
     def _parse_date_with_period(
         self, date_str: str, statement_period: tuple[date, date] | None
     ) -> date:
-        """Parse MM/DD date string using statement period to determine year.
+        """Resolve a MM/DD row to a full date using the statement period.
 
-        For cross-year periods (e.g., 12/14-1/13), uses start year for months
-        >= start month, and end year for months <= end month.
+        Rows carry no year, and a statement lists months on either side of a
+        year boundary: a December row on a January statement belongs to the
+        previous December.
         """
         month, day = map(int, date_str.split("/"))
 
@@ -164,16 +165,11 @@ class BOCOMCreditProvider(BaseProvider):
             return date(date.today().year, month, day)
 
         start, end = statement_period
-        # For cross-year periods, determine which year this month belongs to
         if start.year != end.year:
-            # Cross-year: months >= start month use start year
-            if month >= start.month:
-                return date(start.year, month, day)
-            else:
-                return date(end.year, month, day)
+            year = start.year if month >= start.month else end.year
         else:
-            # Same year
-            return date(start.year, month, day)
+            year = start.year if month <= end.month else start.year - 1
+        return date(year, month, day)
 
     def _parse_amount(self, amount_str: str) -> tuple[Decimal | None, str]:
         """Parse amount string like 'CNY9974.12' or 'USD100.00'."""

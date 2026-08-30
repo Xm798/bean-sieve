@@ -211,6 +211,31 @@ class TestBOCOMCreditProvider:
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 1, 15)
 
+    def test_row_before_a_same_year_period_takes_the_previous_year(self, tmp_path):
+        """A December row on a February statement belongs to the previous year."""
+        html = """<html>
+<body>
+<table><tr><td>账单周期 2030/01/14-2030/02/13</td></tr></table>
+<table>
+    <tr><td>消费、取现、其他费用明细</td></tr>
+    <tr><td>
+        <table>
+            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td></tr>
+            <tr><td></td><td>12/28</td><td>01/16</td><td>0007</td><td>消费 商户甲</td><td>CNY60.00</td></tr>
+        </table>
+    </td></tr>
+</table>
+</body></html>"""
+        file_path = tmp_path / "交通银行信用卡2030年02月电子账单.eml"
+        file_path.write_text(create_bocom_eml(html), encoding="utf-8")
+
+        provider = BOCOMCreditProvider()
+        transactions = provider.parse(file_path)
+
+        assert len(transactions) == 1
+        assert transactions[0].date == date(2029, 12, 28)
+        assert transactions[0].post_date == date(2030, 1, 16)
+
     def test_empty_statement(self, tmp_path):
         """Test handling of statement with no transactions."""
         html = """<html>
