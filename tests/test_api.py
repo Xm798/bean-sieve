@@ -1,5 +1,8 @@
 """Tests for api.py."""
 
+import base64
+from datetime import date
+
 from bean_sieve.api import _build_check_scope
 from bean_sieve.config.schema import AccountMapping, Config, DiagnosticsConfig
 
@@ -280,3 +283,102 @@ def test_full_reconcile_post_output_precedes_balance_block(tmp_path, monkeypatch
 
     content = output.read_text(encoding="utf-8")
     assert content.index("; marker") < content.index(" balance ")
+
+
+def _abc_eml(html: str) -> str:
+    encoded = base64.b64encode(html.encode("utf-8")).decode("ascii")
+    return (
+        "From: creditcard@example.com\n"
+        "Subject: statement\n"
+        "To: test@example.com\n"
+        "MIME-Version: 1.0\n"
+        'Content-Type: text/html; charset="utf-8"\n'
+        "Content-Transfer-Encoding: base64\n"
+        "\n"
+        f"{encoded}\n"
+    )
+
+
+_ABC_HTML = """<html>
+<head><title>金穗信用卡电子对账单</title></head>
+<body>
+<table>
+    <tr><td><span>620000******1234</span></td></tr>
+    <tr><td><span>2030/01/01-2030/01/31</span></td></tr>
+    <tr><td><span>本期应还款额</span></td></tr>
+    <tr><td>-30.00</td></tr>
+</table>
+<table>
+    <tr><td><span>本期账单金额</span></td></tr>
+</table>
+<table>
+    <tr><td>30.00</td></tr>
+</table>
+<table>
+    <tr>
+        <td>300102</td>
+        <td>300102</td>
+        <td>1234</td>
+        <td>payee-a</td>
+        <td>-10.00/CNY</td>
+        <td>-10.00/CNY</td>
+    </tr>
+    <tr>
+        <td>300120</td>
+        <td>300120</td>
+        <td>1234</td>
+        <td>payee-b</td>
+        <td>-20.00/CNY</td>
+        <td>-20.00/CNY</td>
+    </tr>
+</table>
+</body>
+</html>"""
+
+
+def test_full_reconcile_post_output_reuses_parsed_snapshot(tmp_path, monkeypatch):
+    """post_output reports the whole statement off context.parsed, parsing once.
+
+    date_range keeps only the first row, yet 解析消费 must still cover both, and
+    the snapshot spares the provider a second parse of the same file.
+    """
+    from pathlib import Path
+
+    from bean_sieve.api import full_reconcile
+    from bean_sieve.providers.banks.credit.abc import ABCCreditProvider
+
+    statement = tmp_path / "农业银行金穗信用卡2030年1月.eml"
+    statement.write_text(_abc_eml(_ABC_HTML), encoding="utf-8")
+    ledger = tmp_path / "ledger.bean"
+    ledger.write_text(
+        "1900-01-01 open Liabilities:Credit:ABC:1234 CNY\n", encoding="utf-8"
+    )
+    config_file = tmp_path / "bean-sieve.yaml"
+    config_file.write_text(
+        'providers:\n  abc_credit:\n    accounts:\n      "1234": '
+        "Liabilities:Credit:ABC:1234\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "pending.bean"
+
+    parse_calls: list[Path] = []
+    original_parse = ABCCreditProvider.parse
+
+    def counting_parse(self, file_path: Path):
+        parse_calls.append(file_path)
+        return original_parse(self, file_path)
+
+    monkeypatch.setattr(ABCCreditProvider, "parse", counting_parse)
+
+    result = full_reconcile(
+        [statement],
+        ledger,
+        config_path=config_file,
+        output_path=output,
+        provider_id="abc_credit",
+        date_range=(date(2030, 1, 1), date(2030, 1, 5)),
+    )
+
+    assert [t.date for t in result.processed] == [date(2030, 1, 2)]
+    assert ";   解析消费:              30.00 CNY" in output.read_text(encoding="utf-8")
+    assert parse_calls == [statement]

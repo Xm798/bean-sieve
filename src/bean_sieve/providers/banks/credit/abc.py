@@ -326,7 +326,8 @@ class ABCCreditProvider(BaseProvider):
 
         for file_path in sorted(source_files):
             summary = self._extract_summary(file_path)
-            txns = context.parsed.get(file_path) or self.parse(file_path)
+            parsed = context.parsed.get(file_path)
+            txns = self.parse(file_path) if parsed is None else parsed
 
             # Get card info
             card_last4 = summary.card_number[-4:] if summary.card_number else "????"
