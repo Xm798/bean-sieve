@@ -25,7 +25,9 @@ Content-Transfer-Encoding: base64
 """
 
 
-def create_cmb_html_with_transactions(transactions: list[dict]) -> str:
+def create_cmb_html_with_transactions(
+    transactions: list[dict], statement_month: str = "2025年12月"
+) -> str:
     """Create CMB statement HTML with transaction rows.
 
     Each transaction dict should have:
@@ -34,6 +36,8 @@ def create_cmb_html_with_transactions(transactions: list[dict]) -> str:
     - description: str
     - card_last4: str
     - amount: str (e.g., "100.00" or "-100.00")
+
+    statement_month is the 账单 header CMB derives the billing cycle from.
     """
     rows = []
     for txn in transactions:
@@ -55,7 +59,7 @@ def create_cmb_html_with_transactions(transactions: list[dict]) -> str:
 <html>
 <head><meta charset="UTF-8"></head>
 <body>
-<div>您2025年12月信用卡账单已出</div>
+<div>您{statement_month}信用卡账单已出</div>
 <table class="bgTable">
     {"".join(rows)}
 </table>
@@ -353,3 +357,37 @@ class TestCMBEmptyStatement:
         transactions = provider.parse(file_path)
 
         assert transactions == []
+
+
+class TestCMBStatementPeriod:
+    """Tests for per-card statement period assignment."""
+
+    def test_cycle_widens_only_for_the_card_dated_outside_it(self, tmp_path):
+        """Test that an out-of-cycle row widens its own card's period."""
+        transactions = [
+            {
+                "trans_date": "0227",
+                "post_date": "0302",
+                "description": "merchant-a",
+                "card_last4": "8715",
+                "amount": "10.00",
+            },
+            {
+                "trans_date": "0310",
+                "post_date": "0310",
+                "description": "merchant-b",
+                "card_last4": "9774",
+                "amount": "20.00",
+            },
+        ]
+        html = create_cmb_html_with_transactions(
+            transactions, statement_month="2030年3月"
+        )
+        file_path = tmp_path / "招商银行信用卡电子账单.eml"
+        file_path.write_text(create_cmb_eml(html), encoding="utf-8")
+
+        txns = CMBCreditProvider().parse(file_path)
+
+        periods = {txn.card_last4: txn.statement_period for txn in txns}
+        assert periods["8715"] == (date(2030, 2, 27), date(2030, 3, 31))
+        assert periods["9774"] == (date(2030, 3, 1), date(2030, 3, 31))

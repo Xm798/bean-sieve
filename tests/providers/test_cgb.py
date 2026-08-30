@@ -231,3 +231,34 @@ class TestCGBCrossYearDates:
         assert len(transactions) == 2
         assert transactions[0].date == date(2025, 12, 28)
         assert transactions[1].date == date(2026, 1, 2)
+
+
+class TestCGBStatementPeriod:
+    """Tests for per-card statement period assignment."""
+
+    def test_cycle_widens_only_for_the_card_dated_outside_it(self, tmp_path):
+        """Test that an out-of-cycle row widens its own card's period."""
+        html = """<!DOCTYPE html>
+<html>
+<body>
+<table>
+    <tr><td>账单周期:2030/03/01-2030/03/31</td></tr>
+</table>
+<table>
+    卡号：6200********1234
+    <tr><td>2030/02/27 2030/03/02 (消费)merchant-a 10.00 人民币 10.00 人民币</td></tr>
+</table>
+<table>
+    卡号：6200********5678
+    <tr><td>2030/03/10 2030/03/10 (消费)merchant-b 20.00 人民币 20.00 人民币</td></tr>
+</table>
+</body>
+</html>"""
+        file_path = tmp_path / "广发信用卡电子账单.eml"
+        file_path.write_text(create_cgb_eml(html), encoding="utf-8")
+
+        transactions = CGBCreditProvider().parse(file_path)
+
+        periods = {txn.card_last4: txn.statement_period for txn in transactions}
+        assert periods["1234"] == (date(2030, 2, 27), date(2030, 3, 31))
+        assert periods["5678"] == (date(2030, 3, 1), date(2030, 3, 31))

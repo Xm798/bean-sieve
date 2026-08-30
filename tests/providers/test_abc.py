@@ -609,3 +609,44 @@ class TestABCPostOutput:
         output = ABCCreditProvider().post_output("; base\n", empty_result(), context)
 
         assert output == EXPECTED_REBATE_OUTPUT
+
+
+class TestABCStatementPeriod:
+    """Tests for per-card statement period assignment."""
+
+    def test_cycle_widens_around_a_row_dated_outside_it(self, tmp_path):
+        """Test that an out-of-cycle row widens the card's period."""
+        html = """<html>
+<body>
+<table>
+    <tr><td><span>620000******1234</span></td></tr>
+    <tr><td><span>2030/03/01-2030/03/31</span></td></tr>
+</table>
+<table>
+    <tr>
+        <td>300227</td>
+        <td>300302</td>
+        <td>1234</td>
+        <td>merchant-a</td>
+        <td>-10.00/CNY</td>
+        <td>-10.00/CNY</td>
+    </tr>
+    <tr>
+        <td>300310</td>
+        <td>300310</td>
+        <td>1234</td>
+        <td>merchant-b</td>
+        <td>-20.00/CNY</td>
+        <td>-20.00/CNY</td>
+    </tr>
+</table>
+</body>
+</html>"""
+        file_path = tmp_path / "农业银行金穗信用卡电子账单.eml"
+        file_path.write_text(create_abc_eml(html), encoding="utf-8")
+
+        transactions = ABCCreditProvider().parse(file_path)
+
+        assert len(transactions) == 2
+        for txn in transactions:
+            assert txn.statement_period == (date(2030, 2, 27), date(2030, 3, 31))

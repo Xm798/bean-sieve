@@ -313,3 +313,48 @@ class TestCCBCrossYearDates:
         # CCB provides full dates (YYYY-MM-DD), so parsing is straightforward
         assert transactions[0].date == date(2025, 12, 31)
         assert transactions[1].date == date(2026, 1, 1)
+
+
+class TestCCBStatementPeriod:
+    """Tests for per-card statement period assignment."""
+
+    def test_cycle_widens_around_a_row_dated_outside_it(self, tmp_path):
+        """Test that an out-of-cycle row widens the card's period."""
+        html = """<html>
+<body>
+<table>
+    <tr><td>账单周期Statement Cycle</td><td>2030/03/01-2030/03/31</td></tr>
+</table>
+<table>
+    <tr><td>【交易明细】</td></tr>
+    <tr>
+        <td>2030-02-27</td>
+        <td>2030-03-02</td>
+        <td>0800</td>
+        <td>merchant-a</td>
+        <td>CNY</td>
+        <td>10.00</td>
+        <td>CNY</td>
+        <td>10.00</td>
+    </tr>
+    <tr>
+        <td>2030-03-10</td>
+        <td>2030-03-10</td>
+        <td>0800</td>
+        <td>merchant-b</td>
+        <td>CNY</td>
+        <td>20.00</td>
+        <td>CNY</td>
+        <td>20.00</td>
+    </tr>
+</table>
+</body>
+</html>"""
+        file_path = tmp_path / "中国建设银行信用卡电子账单.eml"
+        file_path.write_text(create_ccb_eml(html), encoding="utf-8")
+
+        transactions = CCBCreditProvider().parse(file_path)
+
+        assert len(transactions) == 2
+        for txn in transactions:
+            assert txn.statement_period == (date(2030, 2, 27), date(2030, 3, 31))

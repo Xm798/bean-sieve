@@ -306,3 +306,38 @@ class TestBOSCAmountParsing:
 
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("-0.01")
+
+
+class TestBOSCStatementPeriod:
+    """Tests for per-card statement period assignment."""
+
+    def test_cycle_widens_only_for_the_card_dated_outside_it(self, tmp_path):
+        """Test that an out-of-cycle row widens its own card's period."""
+        html = """<html>
+<body>
+<table><tr><td>对账周期：2030年3月1日-2030年3月31日</td></tr></table>
+<table>
+    <tr loop2="1">
+        <td>2030年2月27日</td>
+        <td>2030年3月2日</td>
+        <td>merchant-a</td>
+        <td>10.00+</td>
+        <td>1234</td>
+    </tr>
+    <tr loop2="2">
+        <td>2030年3月10日</td>
+        <td>2030年3月10日</td>
+        <td>merchant-b</td>
+        <td>20.00+</td>
+        <td>5678</td>
+    </tr>
+</table>
+</body></html>"""
+        file_path = tmp_path / "上海银行信用卡.eml"
+        file_path.write_text(create_bosc_eml(html), encoding="utf-8")
+
+        transactions = BOSCCreditProvider().parse(file_path)
+
+        periods = {txn.card_last4: txn.statement_period for txn in transactions}
+        assert periods["1234"] == (date(2030, 2, 27), date(2030, 3, 31))
+        assert periods["5678"] == (date(2030, 3, 1), date(2030, 3, 31))

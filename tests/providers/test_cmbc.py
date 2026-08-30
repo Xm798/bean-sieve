@@ -25,7 +25,9 @@ Content-Transfer-Encoding: base64
 """
 
 
-def create_cmbc_html_with_transactions(transactions: list[dict]) -> str:
+def create_cmbc_html_with_transactions(
+    transactions: list[dict], statement_date: str = "2025/12/10"
+) -> str:
     """Create CMBC statement HTML with transaction rows.
 
     Each transaction dict should have:
@@ -34,7 +36,10 @@ def create_cmbc_html_with_transactions(transactions: list[dict]) -> str:
     - description: str
     - amount: str (e.g., "100.00" or "-100.00")
     - card_last4: str
+
+    statement_date (账单日, YYYY/MM/DD) is what CMBC derives the cycle from.
     """
+    year, month, _ = statement_date.split("/")
     rows = []
     for txn in transactions:
         full_text = f"{txn['trans_date']}{txn['post_date']}{txn['description']}{txn['amount'].replace(',', '').lstrip('-')}{txn['card_last4']}"
@@ -50,8 +55,8 @@ def create_cmbc_html_with_transactions(transactions: list[dict]) -> str:
 <html>
 <head><meta charset="UTF-8"></head>
 <body>
-<div>2025年12月对账单</div>
-<div>Statement Date</div><div>2025/12/10</div>
+<div>{year}年{int(month)}月对账单</div>
+<div>Statement Date</div><div>{statement_date}</div>
 <span id='loopBand3'>
     <span id='loopBand1'>
         {"".join(rows)}
@@ -289,3 +294,37 @@ class TestCMBCEmptyStatement:
         transactions = provider.parse(file_path)
 
         assert transactions == []
+
+
+class TestCMBCStatementPeriod:
+    """Tests for per-card statement period assignment."""
+
+    def test_cycle_widens_only_for_the_card_dated_outside_it(self, tmp_path):
+        """Test that an out-of-cycle row widens its own card's period."""
+        transactions = [
+            {
+                "trans_date": "02/27",
+                "post_date": "03/02",
+                "description": "merchant-a",
+                "amount": "10.00",
+                "card_last4": "5515",
+            },
+            {
+                "trans_date": "03/10",
+                "post_date": "03/10",
+                "description": "merchant-b",
+                "amount": "20.00",
+                "card_last4": "6626",
+            },
+        ]
+        html = create_cmbc_html_with_transactions(
+            transactions, statement_date="2030/03/28"
+        )
+        file_path = tmp_path / "民生信用卡电子对账单.eml"
+        file_path.write_text(create_cmbc_eml(html), encoding="utf-8")
+
+        txns = CMBCCreditProvider().parse(file_path)
+
+        periods = {txn.card_last4: txn.statement_period for txn in txns}
+        assert periods["5515"] == (date(2030, 2, 27), date(2030, 3, 28))
+        assert periods["6626"] == (date(2030, 3, 1), date(2030, 3, 28))
