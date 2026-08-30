@@ -234,33 +234,6 @@ class BaseProvider(ABC):
             account for card, account in all_accounts.items() if card in covered_cards
         ]
 
-    def get_covered_cards(
-        self,
-        transactions: list[Transaction],
-    ) -> list[str] | None:
-        """
-        Return list of card_last4 values covered by this statement.
-
-        Used to calculate Extra entries during reconciliation - only ledger
-        entries with matching card_last4 metadata are considered as potential
-        "extra" entries.
-
-        Default behavior depends on per_card_statement:
-        - False: Returns None (no card filtering, all cards in account are covered)
-        - True: Extracts unique card_last4 values from transactions
-
-        Args:
-            transactions: Parsed transactions from this provider
-
-        Returns:
-            List of card suffixes, or None if all cards are covered
-        """
-        if not self.per_card_statement:
-            return None
-
-        cards = {txn.card_last4 for txn in transactions if txn.card_last4}
-        return list(cards) if cards else None
-
     def get_covered_ranges(
         self,
         transactions: list[Transaction],
