@@ -86,9 +86,9 @@ class MyProvider(BaseProvider):
 - `pre_reconcile(transactions, context)` - transform before matching
 - `post_output(content, result, context)` - append to output (e.g., settlement entries)
 
-Both hooks run once per provider taking part in the run, in first-seen order of the statement files: `pre_reconcile` receives only that provider's own transactions, `post_output` receives the whole output and passes it on to the next provider. A `post_output` implementation that reads statement files must filter `context.statement_paths` by `self.can_handle`, since the paths span every provider in the run.
+Both hooks run in first-seen order of the statement files. `post_output` runs once per provider in the run, receiving the whole output and passing it on to the next provider; it is dispatched from the statement paths, so a provider whose rows were all date-filtered still gets it. `pre_reconcile` runs once per provider that still has transactions, receiving that batch — or, when a provider is named explicitly, all of them. A `post_output` implementation that reads statement files must filter `context.statement_paths` by `self.can_handle`, since the paths span every provider in the run.
 
-`context.parsed` maps each statement path to that file's parse output as it left the provider — before date filtering, hooks and rules — so a hook can compare against the whole statement instead of re-parsing it.
+`context.parsed` maps each statement path to that file's parse output, captured before date filtering, hooks and rules run, so a hook can compare against the whole statement instead of re-parsing it. Amounts stay at their parsed values (the pipeline only changes them via `model_copy`); other fields are shared objects and may show later in-place edits.
 
 `post_output` returns text by design: its only implementer emits a comment report, which no Beancount directive shape can carry. Directive formatting for hooks will be revisited when a second implementer needs real directives.
 

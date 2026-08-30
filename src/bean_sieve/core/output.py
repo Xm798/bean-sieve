@@ -252,7 +252,6 @@ class BeancountWriter:
         amount: Decimal,
         currency: str,
     ) -> str:
-        """Format a single Beancount balance directive line."""
         return f"{balance_date} balance {account}  {amount} {currency}"
 
     def format_result(

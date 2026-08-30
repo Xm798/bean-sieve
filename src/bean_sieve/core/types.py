@@ -268,6 +268,8 @@ class ReconcileContext:
     account_filter: str | None = None
     output_path: Path | None = None
     extra: dict[str, Any] = field(default_factory=dict)
-    # Per-path parse output as it left the provider: before date filtering,
-    # hooks and rules, so a hook can compare against the whole statement.
+    # Per-path parse output, captured before date filtering, hooks and rules
+    # run. Amounts stay at their parsed values (the pipeline only changes them
+    # via model_copy); other fields are shared objects and may show later
+    # in-place edits.
     parsed: dict[Path, list[Transaction]] = field(default_factory=dict)
