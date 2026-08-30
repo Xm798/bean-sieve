@@ -23,6 +23,11 @@ from .core import (
     SieveConfig,
     Transaction,
 )
+from .core.accounts import (
+    apply_rebate_account,
+    resolve_by_keyword_regex,
+    resolve_by_method,
+)
 from .core.types import MatchSource
 from .providers import auto_detect_provider, get_provider, list_providers
 from .providers.base import BaseProvider
@@ -515,8 +520,8 @@ def _set_target_accounts(
         # 1. Try preset rules first (account_keyword with highest priority)
         for preset in preset_rules:
             if preset.matches(txn) and preset.action.account_keyword:
-                account = _lookup_account_by_keyword(
-                    preset.action.account_keyword, config
+                account = resolve_by_keyword_regex(
+                    config.account_mappings, preset.action.account_keyword
                 )
                 if account:
                     txn = txn.model_copy(
@@ -553,36 +558,14 @@ def _set_target_accounts(
         if not txn.account:
             method = txn.metadata.get("method", "")
             if method:
-                for mapping in config.account_mappings:
-                    if mapping.pattern in method:
-                        update = {"account": mapping.account}
-                        txn = txn.model_copy(update=update)
-                        if mapping.rebate_account and txn.metadata.get("rebate"):
-                            txn.metadata["_rebate_account"] = mapping.rebate_account
-                        break
+                mapping = resolve_by_method(config.account_mappings, method)
+                if mapping:
+                    txn = txn.model_copy(update={"account": mapping.account})
+                    apply_rebate_account(txn, mapping)
 
         result.append(txn)
 
     return result
-
-
-def _lookup_account_by_keyword(keyword: str, config: Config) -> str | None:
-    """
-    Lookup account by keyword in account_mappings.
-
-    Args:
-        keyword: Keyword to search for in account_mappings patterns
-        config: Configuration with account_mappings
-
-    Returns:
-        Matched account name, or None if not found
-    """
-    import re
-
-    for mapping in config.account_mappings:
-        if re.search(keyword, mapping.pattern, re.IGNORECASE):
-            return mapping.account
-    return None
 
 
 def _deduplicate_cross_statements(
@@ -686,9 +669,9 @@ def _resolve_target_account(txn: Transaction, config: Config) -> str | None:
     # Try metadata['method'] in account_mappings (for payment platforms)
     method = txn.metadata.get("method", "")
     if method:
-        for mapping in config.account_mappings:
-            if mapping.pattern in method:
-                return mapping.account
+        mapping = resolve_by_method(config.account_mappings, method)
+        if mapping:
+            return mapping.account
 
     # Try card_last4 in all provider accounts
     if txn.card_last4:

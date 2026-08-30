@@ -7,6 +7,11 @@ import re
 from datetime import time
 
 from ..config.schema import Config, Rule
+from .accounts import (
+    apply_rebate_account,
+    resolve_by_keyword_substring,
+    resolve_by_method_ci,
+)
 from .preset_rules import PresetRule
 from .types import MatchSource, Transaction
 
@@ -96,37 +101,28 @@ class RulesEngine:
 
         # Keyword-based account lookup
         if action.account_keyword:
-            account = self._lookup_account_by_keyword(action.account_keyword)
+            account = resolve_by_keyword_substring(
+                self.config.account_mappings, action.account_keyword
+            )
             if account:
                 txn.account = account
                 txn.metadata["matched_preset_rule"] = preset.rule_id
 
-        # Dynamic contra_account from metadata value — uses substring containment
-        # matching (pattern in value) like _apply_account_mapping, since the
-        # metadata value is a full method string (e.g., "交通银行(8888)")
+        # The metadata value is a full method string (e.g. "交通银行(8888)"), so it
+        # resolves the same way as txn.metadata["method"] does.
         if action.contra_account_metadata_key and not txn.contra_account:
             value = txn.metadata.get(action.contra_account_metadata_key, "")
             if value:
-                value_lower = value.lower()
-                for mapping in self.config.account_mappings:
-                    if mapping.pattern.lower() in value_lower:
-                        txn.contra_account = mapping.account
-                        txn.match_source = MatchSource.RULE
-                        break
+                mapping = resolve_by_method_ci(self.config.account_mappings, value)
+                if mapping:
+                    txn.contra_account = mapping.account
+                    txn.match_source = MatchSource.RULE
 
         # Negate amount if specified (only if positive, to avoid double-negation)
         if action.negate and txn.amount > 0:
             txn.amount = -txn.amount
 
         return txn
-
-    def _lookup_account_by_keyword(self, keyword: str) -> str | None:
-        """Lookup account from account_mappings by keyword."""
-        keyword_lower = keyword.lower()
-        for mapping in self.config.account_mappings:
-            if keyword_lower in mapping.pattern.lower():
-                return mapping.account
-        return None
 
     def _apply_account_mapping(self, txn: Transaction) -> Transaction:
         """Apply account mapping based on payment method."""
@@ -137,13 +133,10 @@ class RulesEngine:
         if not method:
             return txn
 
-        for mapping in self.config.account_mappings:
-            if mapping.pattern.lower() in method.lower():
-                txn.account = mapping.account
-                # Set rebate account if configured and transaction has rebate
-                if mapping.rebate_account and txn.metadata.get("rebate"):
-                    txn.metadata["_rebate_account"] = mapping.rebate_account
-                return txn
+        mapping = resolve_by_method_ci(self.config.account_mappings, method)
+        if mapping:
+            txn.account = mapping.account
+            apply_rebate_account(txn, mapping)
 
         return txn
 
