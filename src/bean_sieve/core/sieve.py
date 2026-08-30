@@ -144,9 +144,9 @@ class Sieve:
             covered_accounts: Optional list of accounts to consider for Extra calculation.
                 If provided, only unmatched ledger entries in these accounts are reported
                 as Extra. If None, all unmatched entries are reported.
-            covered_ranges: Optional dict mapping card_last4 to list of (start, end) date
-                ranges. If provided, only ledger entries where (card, date) falls within
-                a covered range are reported as Extra. Used for per-card statements.
+            covered_ranges: Optional dict mapping account to list of (start, end) date
+                ranges. An account listed here yields Extra entries only within its
+                ranges; an account absent from it keeps every unmatched entry.
             meta_check: When True (default), card_last4 is a soft check producing
                 MetaDiagnostic entries. When False, card_last4 hard-filters matches.
             ambiguous_check: When True (default), matches with multiple viable

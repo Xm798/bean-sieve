@@ -11,8 +11,6 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
-
 from bean_sieve.config import Config
 from bean_sieve.config.schema import ProviderConfig
 from bean_sieve.core.types import Transaction
@@ -85,15 +83,37 @@ def test_each_card_period_lands_on_its_own_account() -> None:
     }
 
 
-def test_account_without_rows_is_not_covered() -> None:
+def test_account_without_rows_takes_the_file_periods() -> None:
+    # One statement speaks for the whole household, so the account it never
+    # names is still covered - by everything the file spans.
     provider = FakeAccountBank()
     config = make_config({"1111": ACCOUNT_A, "2222": ACCOUNT_B})
     transactions = [make_txn(date(2030, 1, 5), "1111", PERIOD_JAN)]
 
     assert provider.get_covered_ranges(transactions, config) == {
         ACCOUNT_A: [PERIOD_JAN],
+        ACCOUNT_B: [PERIOD_JAN],
     }
-    assert provider.get_covered_accounts(transactions, config) == [ACCOUNT_A]
+    assert provider.get_covered_accounts(transactions, config) == [
+        ACCOUNT_A,
+        ACCOUNT_B,
+    ]
+
+
+def test_multi_currency_statement_covers_the_silent_currency() -> None:
+    # Multi-currency providers key their config on the currency code; a file
+    # listing only one currency still reports on the account of the other.
+    provider = FakeAccountBank()
+    accounts = {"CNY": "Assets:Bank:Fake:CNY", "HKD": "Assets:Bank:Fake:HKD"}
+    config = make_config(accounts)
+    transactions = [make_txn(date(2030, 1, 5), "CNY", PERIOD_JAN)]
+
+    assert provider.get_covered_ranges(transactions, config) == {
+        account: [PERIOD_JAN] for account in accounts.values()
+    }
+    assert provider.get_covered_accounts(transactions, config) == list(
+        accounts.values()
+    )
 
 
 def test_untagged_row_period_reaches_every_configured_account() -> None:
@@ -124,6 +144,22 @@ def test_unknown_card_period_reaches_every_configured_account() -> None:
         ACCOUNT_A,
         ACCOUNT_B,
     ]
+
+
+def test_untagged_row_period_skips_an_account_that_named_itself() -> None:
+    # An account the file names owns exactly what its own rows claim; only the
+    # accounts the file leaves silent inherit the untagged row's period.
+    provider = FakeAccountBank()
+    config = make_config({"1111": ACCOUNT_A, "2222": ACCOUNT_B})
+    transactions = [
+        make_txn(date(2030, 1, 5), "1111", PERIOD_JAN),
+        make_txn(date(2030, 2, 5), None, PERIOD_FEB),
+    ]
+
+    assert provider.get_covered_ranges(transactions, config) == {
+        ACCOUNT_A: [PERIOD_JAN],
+        ACCOUNT_B: [PERIOD_JAN, PERIOD_FEB],
+    }
 
 
 def test_platform_statement_covers_every_wallet() -> None:
@@ -181,9 +217,6 @@ def test_no_statement_period_disables_range_filtering() -> None:
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="the last card of an account overwrites the earlier ones"
-)
 def test_cards_sharing_an_account_merge_their_periods() -> None:
     provider = FakePerCardBank()
     config = make_config(
@@ -208,6 +241,26 @@ def test_per_card_statement_claims_nothing_for_a_row_it_cannot_place() -> None:
     transactions = [
         make_txn(date(2030, 1, 5), None, PERIOD_JAN),
         make_txn(date(2030, 1, 6), "9999", PERIOD_JAN),
+    ]
+
+    assert provider.get_covered_ranges(transactions, config) is None
+    assert provider.get_covered_accounts(transactions, config) == []
+
+
+def test_per_card_statement_claims_nothing_without_a_period() -> None:
+    provider = FakePerCardBank()
+    config = make_config(
+        {"1111": ACCOUNT_A, "2222": ACCOUNT_B}, FakePerCardBank.provider_id
+    )
+    transactions = [
+        Transaction(
+            date=date(2030, 1, 5),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="row",
+            card_last4="1111",
+            provider=FakePerCardBank.provider_id,
+        )
     ]
 
     assert provider.get_covered_ranges(transactions, config) is None

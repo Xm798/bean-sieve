@@ -198,7 +198,8 @@ providers:
 
 def test_bosc_credit_two_accounts_extra_end_to_end(tmp_path: Path) -> None:
     # Both statement rows belong to card 1234; card 5678 is configured but
-    # silent, so nothing in its account may be claimed by this statement.
+    # silent, and one 按户 statement reports on the whole account set, so the
+    # silent card's account is covered by the header period all the same.
     html = """<html>
 <body>
 <table><tr><td>对账周期：2030年07月01日-2030年07月31日</td></tr></table>
@@ -255,7 +256,7 @@ providers:
   Liabilities:CreditCard:BOSC:A  -30.00 CNY
   Expenses:FIXME
 
-2030-07-15 * "payee-y" "not extra: silent card's account"
+2030-07-15 * "payee-y" "extra: silent card's account, inside header period"
   Liabilities:CreditCard:BOSC:B  -40.00 CNY
   Expenses:FIXME
 
@@ -276,5 +277,8 @@ providers:
     extra = {
         (entry.txn.date, entry.posting.account) for entry in result.match_result.extra
     }
-    assert extra == {(date(2030, 7, 15), "Liabilities:CreditCard:BOSC:A")}
+    assert extra == {
+        (date(2030, 7, 15), "Liabilities:CreditCard:BOSC:A"),
+        (date(2030, 7, 15), "Liabilities:CreditCard:BOSC:B"),
+    }
     assert len(result.match_result.missing) == 1
