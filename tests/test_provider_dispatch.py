@@ -172,3 +172,18 @@ def test_post_output_runs_once_for_a_single_provider_run(
     _, content = run(tmp_path, statements)
 
     assert content.count("; marker-a") == 1
+
+
+def test_post_output_runs_for_every_provider_in_a_mixed_run(
+    tmp_path: Path,
+    fake_providers: None,  # noqa: ARG001
+) -> None:
+    statements = write_statements(
+        tmp_path, "fake-dispatch-a-1.csv", "fake-dispatch-b.csv"
+    )
+
+    _, content = run(tmp_path, statements)
+
+    assert content.count("; marker-a") == 1
+    assert content.count("; marker-b") == 1
+    assert content.index("; marker-a") < content.index("; marker-b")

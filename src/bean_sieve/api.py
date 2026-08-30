@@ -342,9 +342,9 @@ def full_reconcile(
         source_info = ", ".join(p.name for p in statement_paths)
         content = generate_output(result, source_info=source_info, config=config)
 
-        # Post-output hook
-        if pset.providers:
-            content = pset.providers[0].post_output(content, result, context)
+        # Post-output hook, once per provider taking part in the run
+        for provider in pset.providers:
+            content = provider.post_output(content, result, context)
 
         # Balance directives (from provider config balance=True)
         content += _generate_balance_directives(transactions, config)
