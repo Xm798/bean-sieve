@@ -35,7 +35,9 @@ class HXBCreditProvider(BaseProvider):
         statement_period = self._extract_statement_period(html, file_path)
         year = self._extract_year_from_path(file_path)
 
-        return self._parse_transactions(text, year, file_path, statement_period)
+        transactions = self._parse_transactions(text, year, file_path)
+        self.assign_statement_periods(transactions, statement_period)
+        return transactions
 
     def _html_to_text(self, html: str) -> str:
         """Strip HTML tags and return plain text."""
@@ -140,7 +142,6 @@ class HXBCreditProvider(BaseProvider):
         text: str,
         year: str,
         file_path: Path,
-        statement_period: tuple[date, date] | None = None,
     ) -> list[Transaction]:
         """Parse transactions from statement text."""
         lines = [line.strip() for line in text.split("\n") if line.strip()]
@@ -158,9 +159,7 @@ class HXBCreditProvider(BaseProvider):
                 break
 
             if in_trans and re.match(r"^\d{2}/\d{2}$", lines[i]):
-                txn = self._parse_single_transaction(
-                    lines, i, year, file_path, statement_period
-                )
+                txn = self._parse_single_transaction(lines, i, year, file_path)
                 if txn:
                     transactions.append(txn[0])
                     i = txn[1]
@@ -177,7 +176,6 @@ class HXBCreditProvider(BaseProvider):
         start_idx: int,
         year: str,
         file_path: Path,
-        statement_period: tuple[date, date] | None = None,
     ) -> tuple[Transaction, int] | None:
         """Parse a single transaction starting at start_idx."""
         i = start_idx
@@ -233,7 +231,6 @@ class HXBCreditProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=start_idx + 1,
-            statement_period=statement_period,
             metadata={
                 "original_date": date1,
             },

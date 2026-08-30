@@ -354,8 +354,8 @@ class TestHXBStatementPeriod:
         html = """<html><body>
 <table><tr><td>交易日</td></tr></table>
 <table>
-<tr><td>11/15</td></tr>
-<tr><td>11/15</td></tr>
+<tr><td>12/15</td></tr>
+<tr><td>12/15</td></tr>
 <tr><td>Test</td></tr>
 <tr><td>1234</td></tr>
 <tr><td>￥100.00</td></tr>
