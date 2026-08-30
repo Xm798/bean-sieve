@@ -160,7 +160,8 @@ class <Name>Provider(BaseProvider):
 
         lines = read_text_lines(file_path)
         header = find_header_line(lines, ("交易日期", "摘要"))
-        # Parse logic here
+        for line in lines[header + 1 :]:
+            pass  # Parse logic here
 
         return transactions
 ```
@@ -348,7 +349,7 @@ for row_idx in range(min(10, sheet.nrows)):
 | `masked_card_last4(text)` / `first_masked_card_last4(lines)` | Card suffix behind a `6222****1234` mask |
 | `normalize_cell_str(value)` | xlrd cell to text, without the float `.0` tail |
 | `to_decimal(value)` | Split 支出/收入 cell to Decimal, `None` when empty or zero |
-| `join_description(*parts)` | `" | "`-joined non-empty fragments, else `"Unknown"` |
+| `join_description(*parts)` | `" \| "`-joined non-empty fragments, else `"Unknown"` |
 | `load_openpyxl_workbook(path)` | openpyxl workbook, tolerating an xlsx export named `.xls` |
 
 ## Optional Hooks

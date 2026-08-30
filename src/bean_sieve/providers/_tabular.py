@@ -1,4 +1,10 @@
-"""Shared parsing helpers for tabular (CSV/XLS) bank statement providers."""
+"""Shared parsing helpers for tabular (CSV/XLS) bank statement providers.
+
+Plain functions, not a class hierarchy: each helper is a stateless adapter
+over one parsing seam (encoding detection, header search, cell decoding, …),
+so there is no shared state to hang a base class off of, and a hierarchy
+would add an interface layer without adding depth.
+"""
 
 from __future__ import annotations
 

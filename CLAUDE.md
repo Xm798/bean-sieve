@@ -81,6 +81,8 @@ class MyProvider(BaseProvider):
         ...
 ```
 
+CSV/XLS providers share their tabular parsing steps (encoding detection, header search, cell decoding, …) via `providers/_tabular.py` — import from it rather than re-adding a private copy.
+
 **Lifecycle Hooks** (optional, override in provider):
 
 - `pre_reconcile(transactions, context)` - transform before matching
