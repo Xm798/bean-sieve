@@ -15,6 +15,7 @@ from openpyxl import load_workbook
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import masked_card_last4
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -118,9 +119,7 @@ class ABCDebitProvider(BaseProvider):
         """Extract card last 4 digits from row 2 account info."""
         if len(rows) < 2 or not rows[1][0]:
             return None
-        info = str(rows[1][0])
-        match = re.search(r"\d{4}\*+(\d{4})", info)
-        return match.group(1) if match else None
+        return masked_card_last4(str(rows[1][0]))
 
     def _find_header_row(self, rows: list) -> int:
         """Find header row by scanning for column header keywords."""

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import csv
-from collections.abc import Sequence
+import re
+from collections.abc import Iterable, Sequence
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -86,3 +87,21 @@ def read_csv_rows(
         except (UnicodeDecodeError, UnicodeError):
             continue
     raise ValueError(f"Cannot decode {path}")
+
+
+MASKED_CARD_LAST4: re.Pattern[str] = re.compile(r"\d{4}\*+(\d{4})")
+
+
+def masked_card_last4(text: str) -> str | None:
+    """Extract the trailing 4 digits of a masked card number such as 6222****1234."""
+    match = MASKED_CARD_LAST4.search(text)
+    return match.group(1) if match else None
+
+
+def first_masked_card_last4(lines: Iterable[str]) -> str | None:
+    """Return the card suffix from the first line that carries a masked card number."""
+    for line in lines:
+        last4 = masked_card_last4(line)
+        if last4:
+            return last4
+    return None

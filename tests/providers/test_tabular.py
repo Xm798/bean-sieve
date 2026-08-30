@@ -9,6 +9,8 @@ import pytest
 
 from bean_sieve.providers._tabular import (
     find_header_line,
+    first_masked_card_last4,
+    masked_card_last4,
     normalize_cell_str,
     read_csv_rows,
     read_text_lines,
@@ -170,3 +172,35 @@ class TestReadCsvRows:
 
         with pytest.raises(ValueError):
             read_csv_rows(path)
+
+
+class TestMaskedCardLast4:
+    """Tests for masked_card_last4() and first_masked_card_last4()."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("6222****1234", "1234"),
+            ("6222*1234", "1234"),
+            ("卡号 6222****1234 户名", "1234"),
+            ("62221234", None),
+            ("6222****123", None),
+            ("", None),
+        ],
+    )
+    def test_single_text(self, text: str, expected: str | None) -> None:
+        assert masked_card_last4(text) == expected
+
+    def test_first_matching_line_wins(self) -> None:
+        lines = ["header\n", "6222****1234\n", "6333****5678\n"]
+
+        assert first_masked_card_last4(lines) == "1234"
+
+    def test_no_match_is_none(self) -> None:
+        assert first_masked_card_last4(["header\n", "no card\n"]) is None
+
+    def test_caller_bounds_the_scan(self) -> None:
+        lines = ["filler\n"] * 6 + ["6222****1234\n"]
+
+        assert first_masked_card_last4(lines[:6]) is None
+        assert first_masked_card_last4(lines) == "1234"

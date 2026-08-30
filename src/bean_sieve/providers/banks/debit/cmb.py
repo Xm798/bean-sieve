@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import csv
-import re
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import find_header_line, read_text_lines, to_decimal
+from ..._tabular import (
+    find_header_line,
+    first_masked_card_last4,
+    read_text_lines,
+    to_decimal,
+)
 from ...base import BaseProvider
 
 
@@ -44,7 +48,7 @@ class CMBDebitProvider(BaseProvider):
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse CMB debit card CSV statement."""
         lines = read_text_lines(file_path)
-        card_last4 = self._extract_card_last4(lines)
+        card_last4 = first_masked_card_last4(lines[:6])
         header_idx = find_header_line(lines, ("交易日期", "交易时间"))
         if header_idx is None:
             raise ValueError(f"Cannot find header row in {file_path}")
@@ -61,14 +65,6 @@ class CMBDebitProvider(BaseProvider):
                 transactions.append(txn)
 
         return transactions
-
-    def _extract_card_last4(self, lines: list[str]) -> str | None:
-        """Extract card last 4 digits from metadata lines."""
-        for line in lines[:6]:
-            match = re.search(r"\d{4}\*+(\d{4})", line)
-            if match:
-                return match.group(1)
-        return None
 
     def _parse_row(
         self,

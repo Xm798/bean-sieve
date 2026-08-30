@@ -12,7 +12,7 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import normalize_cell_str
+from ..._tabular import masked_card_last4, normalize_cell_str
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -86,9 +86,9 @@ class CCBDebitProvider(BaseProvider):
         """Extract card last 4 digits from account row or filename."""
         for row_idx in range(min(5, sheet.nrows)):
             cell = str(sheet.cell_value(row_idx, 1) if sheet.ncols > 1 else "")
-            match = re.search(r"\d{4}\*+(\d{4})", cell)
-            if match:
-                return match.group(1)
+            last4 = masked_card_last4(cell)
+            if last4:
+                return last4
 
         # Fallback: extract from filename like "交易明细_6789_..."
         match = re.search(r"交易明细_(\d{4})", file_path.name)
