@@ -67,6 +67,29 @@ def test_explicit_posting_metadata_does_not_duplicate():
     assert output.count('card_last4: "1234"') == 1
 
 
+def test_posting_metadata_skips_underscore_prefixed_keys():
+    """An internal `_` key in _posting_metadata is dropped; other keys still emit."""
+    writer = BeancountWriter(output_metadata=["source"], check_scope=lambda _a: False)
+    txn = Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("10.00"),
+        currency="CNY",
+        description="desc-a",
+        payee="payee-a",
+        account="Assets:Bank:Test",
+        contra_account="Expenses:Test",
+        provider="prov-a",
+        metadata={
+            "method": "m",
+            "_withdrawal_target": "bank-a",
+            "_posting_metadata": ["_withdrawal_target", "method"],
+        },
+    )
+    output = writer.format_transaction(txn)
+    assert 'method: "m"' in output
+    assert "_withdrawal_target" not in output
+
+
 def test_format_result_renders_meta_diagnostics_section():
     from bean_sieve.core.types import MatchResult, MetaDiagnostic, ReconcileResult
 

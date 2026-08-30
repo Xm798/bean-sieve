@@ -196,6 +196,10 @@ class BeancountWriter:
             posting_meta_keys.append("card_last4")
 
         for key in posting_meta_keys:
+            # Beancount metadata keys must start with a lowercase letter, so an
+            # internal `_` key would make the generated ledger fail bean-check.
+            if key.startswith("_"):
+                continue
             value = getattr(txn, key, None) or txn.metadata.get(key)
             if value:
                 postings.append(f'    {key}: "{value}"')
