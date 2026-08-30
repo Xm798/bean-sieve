@@ -83,10 +83,6 @@ class ProviderSet:
     explicit_provider: BaseProvider | None = None
 
     @property
-    def explicit(self) -> bool:
-        return self.explicit_provider is not None
-
-    @property
     def providers(self) -> list[BaseProvider]:
         """Distinct providers, in first-appearance order of the statement paths."""
         unique: dict[str, BaseProvider] = {}

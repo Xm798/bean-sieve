@@ -76,7 +76,7 @@ def test_keeps_input_order_and_dedups_providers(
         "fake_set_a",
     ]
     assert [p.provider_id for p in pset.providers] == ["fake_set_a", "fake_set_b"]
-    assert pset.explicit is False
+    assert pset.explicit_provider is None
 
 
 def test_named_provider_overrides_detection(
@@ -88,7 +88,7 @@ def test_named_provider_overrides_detection(
     pset = resolve_providers(paths, "fake_set_a")
 
     assert [p.provider_id for _, p in pset.files] == ["fake_set_a"]
-    assert pset.explicit is True
+    assert pset.explicit_provider is not None
 
 
 def test_raises_on_the_first_undetectable_path(
