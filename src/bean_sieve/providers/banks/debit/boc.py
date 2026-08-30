@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ....core.types import ReconcileContext, Transaction
 from ... import register_provider
-from ..._tabular import find_header_line, read_text_lines, to_decimal
+from ..._tabular import find_header_line, join_description, read_text_lines, to_decimal
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -212,5 +212,4 @@ class BOCDebitProvider(BaseProvider):
         """Build description from summary and remarks."""
         if remarks.startswith("--"):
             remarks = remarks[2:]
-        parts = [p for p in [summary, remarks] if p]
-        return " | ".join(parts) if parts else "Unknown"
+        return join_description(summary, remarks)

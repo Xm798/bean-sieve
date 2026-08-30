@@ -15,7 +15,7 @@ from openpyxl import load_workbook
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import masked_card_last4
+from ..._tabular import join_description, masked_card_last4
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -154,7 +154,7 @@ class ABCDebitProvider(BaseProvider):
         counterparty = str(row[self.COL_COUNTERPARTY_NAME] or "").strip()
         purpose = str(row[self.COL_PURPOSE] or "").strip()
         summary = str(row[self.COL_SUMMARY] or "").strip()
-        description = self._build_description(purpose, summary)
+        description = join_description(purpose, summary)
 
         balance = str(row[self.COL_BALANCE] or "").strip()
         counterparty_account = str(row[self.COL_COUNTERPARTY_ACCOUNT] or "").strip()
@@ -221,9 +221,3 @@ class ABCDebitProvider(BaseProvider):
             return -d  # negate: source uses opposite sign convention
         except (ValueError, InvalidOperation):
             return None
-
-    @staticmethod
-    def _build_description(purpose: str, summary: str) -> str:
-        """Build description from purpose and summary fields."""
-        parts = [p for p in [purpose, summary] if p]
-        return " | ".join(parts) if parts else "Unknown"

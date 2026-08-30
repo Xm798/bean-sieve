@@ -105,3 +105,9 @@ def first_masked_card_last4(lines: Iterable[str]) -> str | None:
         if last4:
             return last4
     return None
+
+
+def join_description(*parts: str) -> str:
+    """Join the non-empty description fragments; "Unknown" when none is present."""
+    present = [p for p in parts if p]
+    return " | ".join(present) if present else "Unknown"

@@ -12,7 +12,7 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import masked_card_last4, normalize_cell_str
+from ..._tabular import join_description, masked_card_last4, normalize_cell_str
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,7 @@ class CCBDebitProvider(BaseProvider):
         summary = normalize_cell_str(row[self.COL_SUMMARY])
         counterparty = normalize_cell_str(row[self.COL_COUNTERPARTY_NAME])
         location = normalize_cell_str(row[self.COL_LOCATION])
-        description = self._build_description(summary, location)
+        description = join_description(summary, location)
 
         return Transaction(
             date=tx_date,
@@ -188,8 +188,3 @@ class CCBDebitProvider(BaseProvider):
             return d if d != 0 else None
         except (ValueError, InvalidOperation):
             return None
-
-    def _build_description(self, summary: str, location: str) -> str:
-        """Build description from summary and location."""
-        parts = [p for p in [summary, location] if p]
-        return " | ".join(parts) if parts else "Unknown"

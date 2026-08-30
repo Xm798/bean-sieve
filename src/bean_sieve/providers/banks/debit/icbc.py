@@ -12,6 +12,7 @@ from ... import register_provider
 from ..._tabular import (
     find_header_line,
     first_masked_card_last4,
+    join_description,
     read_text_lines,
     to_decimal,
 )
@@ -119,7 +120,7 @@ class ICBCDebitProvider(BaseProvider):
             if len(row) > self.COL_BALANCE
             else ""
         )
-        description = self._build_description(summary, detail, location)
+        description = join_description(summary, detail, location)
 
         return Transaction(
             date=tx_date,
@@ -155,8 +156,3 @@ class ICBCDebitProvider(BaseProvider):
         if income is not None:
             return -income
         return None
-
-    def _build_description(self, summary: str, detail: str, location: str) -> str:
-        """Build description from summary, detail, and location."""
-        parts = [p for p in [summary, detail, location] if p]
-        return " | ".join(parts) if parts else "Unknown"

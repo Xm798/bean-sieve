@@ -10,6 +10,7 @@ import pytest
 from bean_sieve.providers._tabular import (
     find_header_line,
     first_masked_card_last4,
+    join_description,
     masked_card_last4,
     normalize_cell_str,
     read_csv_rows,
@@ -204,3 +205,22 @@ class TestMaskedCardLast4:
 
         assert first_masked_card_last4(lines[:6]) is None
         assert first_masked_card_last4(lines) == "1234"
+
+
+class TestJoinDescription:
+    """Tests for join_description()."""
+
+    def test_order_is_kept(self) -> None:
+        assert join_description("one", "two", "three") == "one | two | three"
+
+    def test_empty_fragments_are_dropped(self) -> None:
+        assert join_description("", "two", "") == "two"
+
+    def test_all_empty_is_unknown(self) -> None:
+        assert join_description("", "", "") == "Unknown"
+
+    def test_no_fragments_is_unknown(self) -> None:
+        assert join_description() == "Unknown"
+
+    def test_whitespace_fragment_is_kept(self) -> None:
+        assert join_description(" ", "two") == "  | two"

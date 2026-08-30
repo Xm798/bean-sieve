@@ -12,6 +12,7 @@ from ... import register_provider
 from ..._tabular import (
     find_header_line,
     first_masked_card_last4,
+    join_description,
     read_text_lines,
     to_decimal,
 )
@@ -104,7 +105,7 @@ class CMBDebitProvider(BaseProvider):
 
         tx_type = row[self.COL_TYPE]
         remark = row[self.COL_REMARK]
-        description = self._build_description(tx_type, remark)
+        description = join_description(tx_type, remark)
 
         return Transaction(
             date=tx_date,
@@ -131,8 +132,3 @@ class CMBDebitProvider(BaseProvider):
         if income is not None:
             return -income
         return None
-
-    def _build_description(self, tx_type: str, remark: str) -> str:
-        """Build description from transaction type and remark."""
-        parts = [p for p in [tx_type, remark] if p]
-        return " | ".join(parts) if parts else "Unknown"

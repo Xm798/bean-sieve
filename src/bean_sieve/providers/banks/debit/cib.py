@@ -12,7 +12,7 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import normalize_cell_str, to_decimal
+from ..._tabular import join_description, normalize_cell_str, to_decimal
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -149,7 +149,7 @@ class CIBDebitProvider(BaseProvider):
         purpose = str(row[self.COL_PURPOSE]).strip()
         channel = str(row[self.COL_CHANNEL]).strip()
         remark = str(row[self.COL_REMARK]).strip() if len(row) > self.COL_REMARK else ""
-        description = self._build_description(summary, purpose)
+        description = join_description(summary, purpose)
 
         metadata: dict[str, str] = {"summary": summary}
         balance = str(row[self.COL_BALANCE]).strip()
@@ -216,9 +216,3 @@ class CIBDebitProvider(BaseProvider):
         if income is not None:
             return -income
         return None
-
-    @staticmethod
-    def _build_description(summary: str, purpose: str) -> str:
-        """Build description from summary and purpose."""
-        parts = [p for p in [summary, purpose] if p]
-        return " | ".join(parts) if parts else "Unknown"
