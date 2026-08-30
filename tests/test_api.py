@@ -171,3 +171,112 @@ def test_account_mapping_pattern_contained_in_method_still_matches():
     assert _resolve_target_account(txn, cfg) == "Liabilities:Credit:BOCOM:5871"
     [result] = _set_target_accounts([txn], cfg)
     assert result.account == "Liabilities:Credit:BOCOM:5871"
+
+
+def test_generate_balance_directives_golden():
+    """Pins ordering, the +1-day rule, decimal scale and the unparsable skip."""
+    from datetime import date
+    from decimal import Decimal
+
+    from bean_sieve.api import _generate_balance_directives
+    from bean_sieve.config.schema import Config, ProviderConfig
+    from bean_sieve.core.types import Transaction
+
+    cfg = Config(providers={"fake_debit": ProviderConfig(balance=True)})
+    transactions = [
+        Transaction(
+            date=date(2030, 1, 20),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="desc-a",
+            provider="fake_debit",
+            account="Assets:Bank:A",
+            statement_period=(date(2030, 1, 1), date(2030, 1, 31)),
+            metadata={"balance": "1,000.00"},
+        ),
+        Transaction(
+            date=date(2030, 1, 2),
+            amount=Decimal("20.00"),
+            currency="CNY",
+            description="desc-b",
+            provider="fake_debit",
+            account="Assets:Bank:B",
+            metadata={"balance": "20"},
+        ),
+        Transaction(
+            date=date(2030, 1, 3),
+            amount=Decimal("30.00"),
+            currency="CNY",
+            description="desc-c",
+            provider="fake_debit",
+            account="Assets:Bank:C",
+            metadata={"balance": "not-a-number"},
+        ),
+    ]
+
+    assert _generate_balance_directives(transactions, cfg) == (
+        "\n"
+        "2030-02-01 balance Assets:Bank:A  1000.00 CNY\n"
+        "2030-01-03 balance Assets:Bank:B  20 CNY\n"
+    )
+
+
+def test_full_reconcile_post_output_precedes_balance_block(tmp_path, monkeypatch):
+    """Balance directives follow the post_output text, never precede it."""
+    from datetime import date
+    from decimal import Decimal
+    from pathlib import Path
+
+    from bean_sieve.api import full_reconcile
+    from bean_sieve.core.types import ReconcileContext, ReconcileResult, Transaction
+    from bean_sieve.providers import PROVIDERS
+    from bean_sieve.providers.base import BaseProvider
+
+    class MarkerProvider(BaseProvider):
+        provider_id = "fake_debit"
+        provider_name = "Fake Debit"
+        supported_formats = [".csv"]
+
+        def parse(self, _file_path: Path) -> list[Transaction]:
+            return [
+                Transaction(
+                    date=date(2030, 1, 2),
+                    amount=Decimal("10.00"),
+                    currency="CNY",
+                    description="desc-a",
+                    provider="fake_debit",
+                    account="Assets:Bank:A",
+                    metadata={"balance": "10.00"},
+                )
+            ]
+
+        def post_output(
+            self,
+            content: str,
+            _result: ReconcileResult,
+            _context: ReconcileContext,
+        ) -> str:
+            return content + "\n; marker\n"
+
+    monkeypatch.setitem(PROVIDERS, "fake_debit", MarkerProvider)
+
+    statement = tmp_path / "statement.csv"
+    statement.write_text("", encoding="utf-8")
+    ledger = tmp_path / "ledger.bean"
+    ledger.write_text("1900-01-01 open Assets:Bank:A\n", encoding="utf-8")
+    config_file = tmp_path / "bean-sieve.yaml"
+    config_file.write_text(
+        "providers:\n  fake_debit:\n    balance: true\n", encoding="utf-8"
+    )
+    output = tmp_path / "pending.bean"
+
+    full_reconcile(
+        [statement],
+        ledger,
+        config_path=config_file,
+        output_path=output,
+        provider_id="fake_debit",
+    )
+
+    content = output.read_text(encoding="utf-8")
+    assert content.index("; marker") < content.index(" balance ")

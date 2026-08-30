@@ -8,6 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from bean_sieve.config.schema import Config, ProviderConfig
+from bean_sieve.core.types import (
+    MatchResult,
+    ReconcileContext,
+    ReconcileResult,
+)
 from bean_sieve.providers import get_provider
 from bean_sieve.providers.banks.credit.abc import ABCCreditProvider
 
@@ -36,6 +42,13 @@ def abc_html_content():
     <tr><td><span>620000******1234</span></td></tr>
     <tr><td><span>2025/10/24-2025/11/23</span></td></tr>
     <tr><td><span>本期应还款额</span></td></tr>
+    <tr><td>-2324.00</td></tr>
+</table>
+<table>
+    <tr><td><span>本期账单金额</span></td></tr>
+</table>
+<table>
+    <tr><td>2324.00</td></tr>
 </table>
 <table>
     <tr>
@@ -458,3 +471,122 @@ class TestABCAmountParsing:
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("-299.00")
         assert transactions[0].is_income
+
+
+REBATE_HTML = """<html>
+<head><title>金穗信用卡电子对账单</title></head>
+<body>
+<table>
+    <tr><td><span>620000******1234</span></td></tr>
+    <tr><td><span>2030/01/01-2030/01/31</span></td></tr>
+    <tr><td><span>本期应还款额</span></td></tr>
+    <tr><td>-25.00</td></tr>
+    <tr><td><span>本期使用刷卡金</span></td><td>5.00</td></tr>
+</table>
+<table>
+    <tr><td><span>本期账单金额</span></td></tr>
+</table>
+<table>
+    <tr><td>30.00</td></tr>
+</table>
+<table>
+    <tr>
+        <td>300102</td>
+        <td>300102</td>
+        <td>1234</td>
+        <td>payee-a</td>
+        <td>-10.00/CNY</td>
+        <td>-10.00/CNY</td>
+    </tr>
+    <tr>
+        <td>300103</td>
+        <td>300103</td>
+        <td>1234</td>
+        <td>payee-b</td>
+        <td>-20.00/CNY</td>
+        <td>-20.00/CNY</td>
+    </tr>
+</table>
+</body>
+</html>"""
+
+
+EXPECTED_BALANCED_REPORT = """
+; ============================================================
+; 农业银行信用卡 账单核对
+; ============================================================
+;
+; 卡号: 620000******1234 (尾号 1234)
+; 账单周期: 2025/10/24-2025/11/23
+;
+;   解析消费:            2324.00 CNY
+;   账单消费:            2324.00 CNY
+;   账单应还:            2324.00 CNY
+;
+;   状态: ✅ 平账
+; ============================================================
+"""
+
+
+EXPECTED_REBATE_OUTPUT = """; base
+
+; --- 刷卡金抵扣 ---
+2030-01-31 * "农业银行" "刷卡金抵扣 (尾号1234)"
+  Liabilities:Credit:ABC:1234  5.00 CNY
+  Income:Rebate:ABC
+; ============================================================
+; 农业银行信用卡 账单核对
+; ============================================================
+;
+; 卡号: 620000******1234 (尾号 1234)
+; 账单周期: 2030/01/01-2030/01/31
+;
+;   解析消费:              30.00 CNY
+;   账单消费:              30.00 CNY
+;   账单应还:              25.00 CNY
+;   刷卡金抵扣:             5.00 CNY
+;
+;   状态: ✅ 平账 (刷卡金 5.00)
+; ============================================================
+"""
+
+
+def empty_result() -> ReconcileResult:
+    return ReconcileResult(
+        match_result=MatchResult(matched=[], missing=[], extra=[]),
+        processed=[],
+    )
+
+
+class TestABCPostOutput:
+    """Byte-level golden tests for the settlement report appended by post_output."""
+
+    def test_post_output_golden_balanced(self, abc_eml_file):
+        provider = ABCCreditProvider()
+
+        output = provider.post_output(
+            "",
+            empty_result(),
+            ReconcileContext(statement_paths=[abc_eml_file]),
+        )
+
+        assert output == EXPECTED_BALANCED_REPORT
+
+    def test_post_output_golden_rebate_entry(self, tmp_path):
+        file_path = tmp_path / "农业银行金穗信用卡刷卡金.eml"
+        file_path.write_text(create_abc_eml(REBATE_HTML), encoding="utf-8")
+        context = ReconcileContext(
+            statement_paths=[file_path],
+            config=Config(
+                providers={
+                    "abc_credit": ProviderConfig(
+                        accounts={"1234": "Liabilities:Credit:ABC:1234"},
+                        rebate_income_account="Income:Rebate:ABC",
+                    )
+                }
+            ),
+        )
+
+        output = ABCCreditProvider().post_output("; base\n", empty_result(), context)
+
+        assert output == EXPECTED_REBATE_OUTPUT
