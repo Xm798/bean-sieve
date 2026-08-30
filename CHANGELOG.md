@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 其他
 
+- **Provider 钩子**：`ReconcileContext` 新增 `parsed` 字段，按账单文件保存 Provider 的原始解析结果（早于日期过滤、钩子与规则）。农行信用卡的账单核对据此复用解析结果，不再为每个 .eml 重复解析一次；核对口径仍是整份账单，输出不变
+- **Provider 钩子**：补充 `post_output` 与 balance 指令的字节级 golden 测试；balance 指令的单行格式移入 `BeancountWriter.format_balance`，排序与空行框架仍在 `api.py`
 - **账户映射**：`account_mappings` 的解析逻辑集中到 `core/accounts.py`。此前 `api.py` 与 `rules.py` 中有六处内联循环，各自实现四种不同的匹配语义（pattern 子串匹配区分/不区分大小写、preset keyword 子串匹配、preset keyword 正则匹配），改动一处无法看见其余几处。现在四种语义各为一个具名函数，调用方按名选择；行为不变
 
 ## [0.6.0] - 2026-07-29
