@@ -3,7 +3,7 @@
 Pins which accounts a statement period is attributed to when one provider
 config maps several keys to different accounts, and the preserving rule that
 keeps platform statements (alipay/wechat/zabank) covering every configured
-account.
+account. Also pins how ``assign_statement_periods`` derives those periods.
 """
 
 from datetime import date
@@ -163,3 +163,37 @@ def test_no_statement_period_disables_range_filtering() -> None:
         ACCOUNT_A,
         ACCOUNT_B,
     ]
+
+
+def make_bare_txn(day: date, card_last4: str) -> Transaction:
+    return Transaction(
+        date=day,
+        amount=Decimal("10.00"),
+        currency="CNY",
+        description="row",
+        card_last4=card_last4,
+        provider=FakeAccountBank.provider_id,
+    )
+
+
+def test_cycle_widens_only_the_card_holding_the_outside_row() -> None:
+    outside = make_bare_txn(date(2030, 2, 3), "1111")
+    inside = make_bare_txn(date(2030, 1, 10), "2222")
+
+    BaseProvider.assign_statement_periods([outside, inside], PERIOD_JAN)
+
+    assert outside.statement_period == (PERIOD_JAN[0], date(2030, 2, 3))
+    assert inside.statement_period == PERIOD_JAN
+
+
+def test_missing_cycle_falls_back_to_each_card_row_span() -> None:
+    first = make_bare_txn(date(2030, 1, 5), "1111")
+    last = make_bare_txn(date(2030, 1, 20), "1111")
+    other = make_bare_txn(date(2030, 2, 14), "2222")
+
+    BaseProvider.assign_statement_periods([first, last, other])
+
+    span = (date(2030, 1, 5), date(2030, 1, 20))
+    assert first.statement_period == span
+    assert last.statement_period == span
+    assert other.statement_period == (date(2030, 2, 14), date(2030, 2, 14))
