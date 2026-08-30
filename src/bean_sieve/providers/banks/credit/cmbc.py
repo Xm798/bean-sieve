@@ -59,7 +59,6 @@ class CMBCCreditProvider(BaseProvider):
                 statement_month,
                 file_path,
                 len(transactions),
-                statement_period,
             )
             if txn:
                 transactions.append(txn)
@@ -76,7 +75,6 @@ class CMBCCreditProvider(BaseProvider):
                     statement_month,
                     file_path,
                     len(transactions),
-                    statement_period,
                     desc_band=desc_band,
                     amt_band=amt_band,
                     card_band=card_band,
@@ -85,6 +83,7 @@ class CMBCCreditProvider(BaseProvider):
                 if txn:
                     transactions.append(txn)
 
+        self.assign_statement_periods(transactions, statement_period)
         return transactions
 
     def _extract_statement_date(self, html: str, file_path: Path) -> date:
@@ -117,7 +116,6 @@ class CMBCCreditProvider(BaseProvider):
         statement_month: int,
         file_path: Path,
         row_idx: int,
-        statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
         """Parse a single purchase transaction row (fixBand1).
 
@@ -165,7 +163,6 @@ class CMBCCreditProvider(BaseProvider):
                 card_last4,
                 file_path,
                 row_idx,
-                statement_period,
                 metadata,
             )
         except (ValueError, IndexError, AttributeError, InvalidOperation):
@@ -178,7 +175,6 @@ class CMBCCreditProvider(BaseProvider):
         statement_month: int,
         file_path: Path,
         row_idx: int,
-        statement_period: tuple[date, date] | None,
         *,
         desc_band: str,
         amt_band: str,
@@ -216,7 +212,6 @@ class CMBCCreditProvider(BaseProvider):
                 card_last4,
                 file_path,
                 row_idx,
-                statement_period,
                 {},
             )
         except (ValueError, IndexError, AttributeError, InvalidOperation):
@@ -230,7 +225,6 @@ class CMBCCreditProvider(BaseProvider):
         card_last4: str | None,
         file_path: Path,
         row_idx: int,
-        statement_period: tuple[date, date] | None,
         metadata: dict,
     ) -> Transaction:
         return Transaction(
@@ -242,7 +236,6 @@ class CMBCCreditProvider(BaseProvider):
             provider=self.provider_id,
             source_file=file_path,
             source_line=row_idx + 1,
-            statement_period=statement_period,
             metadata=metadata,
         )
 
