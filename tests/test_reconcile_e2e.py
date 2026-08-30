@@ -10,6 +10,8 @@ import quopri
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from bean_sieve.api import full_reconcile
 
 HSBCHK_HEADER = (
@@ -194,3 +196,92 @@ providers:
     }
     assert extra == {(date(2030, 5, 3), "Liabilities:CreditCard:BOSC")}
     assert len(result.match_result.matched) == 1
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="statement periods reach every configured account, "
+    "so a silent card's account is reported as Extra",
+)
+def test_bosc_credit_two_accounts_extra_end_to_end(tmp_path: Path) -> None:
+    # Both statement rows belong to card 1234; card 5678 is configured but
+    # silent, so nothing in its account may be claimed by this statement.
+    html = """<html>
+<body>
+<table><tr><td>对账周期：2030年07月01日-2030年07月31日</td></tr></table>
+<table>
+    <tr loop2="1">
+        <td>2030年07月10日</td>
+        <td>2030年07月10日</td>
+        <td>payee-a</td>
+        <td>10.00+</td>
+        <td>1234</td>
+    </tr>
+    <tr loop2="2">
+        <td>2030年07月20日</td>
+        <td>2030年07月20日</td>
+        <td>payee-b</td>
+        <td>20.00+</td>
+        <td>1234</td>
+    </tr>
+</table>
+</body>
+</html>"""
+    statement = write_bosc_eml(
+        tmp_path, html, filename="上海银行信用卡2030年07月电子对账单.eml"
+    )
+
+    config_path = tmp_path / "bean-sieve.yaml"
+    config_path.write_text(
+        """
+defaults:
+  currency: CNY
+  date_tolerance: 2
+
+providers:
+  bosc_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:BOSC:A
+      "5678": Liabilities:CreditCard:BOSC:B
+""",
+        encoding="utf-8",
+    )
+
+    ledger_path = tmp_path / "main.bean"
+    ledger_path.write_text(
+        """
+2020-01-01 open Liabilities:CreditCard:BOSC:A CNY
+2020-01-01 open Liabilities:CreditCard:BOSC:B CNY
+2020-01-01 open Expenses:FIXME
+
+2030-07-10 * "payee-a" "matches statement row"
+  Liabilities:CreditCard:BOSC:A  -10.00 CNY
+  Expenses:FIXME
+
+2030-07-15 * "payee-x" "extra: statement card, inside header period"
+  Liabilities:CreditCard:BOSC:A  -30.00 CNY
+  Expenses:FIXME
+
+2030-07-15 * "payee-y" "not extra: silent card's account"
+  Liabilities:CreditCard:BOSC:B  -40.00 CNY
+  Expenses:FIXME
+
+2030-08-01 * "payee-z" "not extra: inside hull, outside header period"
+  Liabilities:CreditCard:BOSC:A  -50.00 CNY
+  Expenses:FIXME
+""",
+        encoding="utf-8",
+    )
+
+    result = full_reconcile(
+        [statement],
+        ledger_path,
+        config_path=config_path,
+        provider_id="bosc_credit",
+    )
+
+    extra = {
+        (entry.txn.date, entry.posting.account) for entry in result.match_result.extra
+    }
+    assert extra == {(date(2030, 7, 15), "Liabilities:CreditCard:BOSC:A")}
+    assert len(result.match_result.missing) == 1
