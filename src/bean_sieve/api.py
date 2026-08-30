@@ -29,8 +29,13 @@ from .core.accounts import (
     resolve_by_method,
 )
 from .core.types import MatchSource
-from .providers import auto_detect_provider, get_provider, list_providers
-from .providers.base import BaseProvider
+from .providers import (
+    ProviderSet,
+    auto_detect_provider,
+    get_provider,
+    list_providers,
+    resolve_providers,
+)
 
 
 def parse_statement(
@@ -50,14 +55,7 @@ def parse_statement(
     Raises:
         ValueError: If no suitable provider found
     """
-    if provider_id:
-        provider = get_provider(provider_id)
-    else:
-        provider = auto_detect_provider(file_path)
-        if not provider:
-            raise ValueError(f"Cannot auto-detect provider for: {file_path}")
-
-    return provider.parse(file_path)
+    return _parse(resolve_providers([file_path], provider_id))
 
 
 def parse_statements(
@@ -74,11 +72,11 @@ def parse_statements(
     Returns:
         Combined list of transactions from all files
     """
-    all_transactions = []
-    for path in file_paths:
-        transactions = parse_statement(path, provider_id)
-        all_transactions.extend(transactions)
-    return all_transactions
+    return _parse(resolve_providers(file_paths, provider_id))
+
+
+def _parse(pset: ProviderSet) -> list[Transaction]:
+    return [txn for path, provider in pset.files for txn in provider.parse(path)]
 
 
 def load_ledger(
@@ -249,8 +247,7 @@ def full_reconcile(
     # Load config
     config = load_config(config_path) if config_path else Config()
 
-    # Get provider instance for hooks
-    provider = _get_provider_for_hooks(statement_paths, provider_id)
+    pset = resolve_providers(statement_paths, provider_id)
 
     # Create reconcile context for hooks
     context = ReconcileContext(
@@ -263,7 +260,7 @@ def full_reconcile(
     )
 
     # Parse statements
-    transactions = parse_statements(statement_paths, provider_id)
+    transactions = _parse(pset)
 
     # Infer date range from transactions if not explicitly provided
     # This ensures Extra calculation only considers ledger entries within statement scope
@@ -298,13 +295,13 @@ def full_reconcile(
         ]
 
     # Pre-reconcile hook: call for each provider's transactions
-    transactions = _apply_pre_reconcile_hooks(transactions, context, provider_id)
+    transactions = _apply_pre_reconcile_hooks(transactions, context, pset)
 
     # Apply provider output metadata config (posting_metadata, output_metadata)
     transactions = _apply_provider_output_config(transactions, config)
 
     # Get preset rules from all providers involved
-    preset_rules = _collect_preset_rules(transactions, provider_id)
+    preset_rules = _collect_preset_rules(transactions, pset)
 
     # Apply negate rules BEFORE matching (sign affects matching logic)
     transactions = _apply_negate_rules(transactions, preset_rules)
@@ -319,8 +316,8 @@ def full_reconcile(
     transactions = _set_target_accounts(transactions, config, preset_rules)
 
     # Collect covered accounts and ranges from providers
-    covered_accounts = _collect_covered_accounts(transactions, provider_id, config)
-    covered_ranges = _collect_covered_ranges(transactions, provider_id, config)
+    covered_accounts = _collect_covered_accounts(transactions, pset, config)
+    covered_ranges = _collect_covered_ranges(transactions, pset, config)
 
     # Load ledger
     sieve = load_ledger(
@@ -346,8 +343,8 @@ def full_reconcile(
         content = generate_output(result, source_info=source_info, config=config)
 
         # Post-output hook
-        if provider:
-            content = provider.post_output(content, result, context)
+        if pset.providers:
+            content = pset.providers[0].post_output(content, result, context)
 
         # Balance directives (from provider config balance=True)
         content += _generate_balance_directives(transactions, config)
@@ -371,36 +368,19 @@ def full_reconcile(
 def _apply_pre_reconcile_hooks(
     transactions: list[Transaction],
     context: ReconcileContext,
-    provider_id: str | None,
+    pset: ProviderSet,
 ) -> list[Transaction]:
     """
-    Apply pre_reconcile hooks for each provider's transactions.
+    Apply each provider's pre_reconcile hook to its own transactions.
 
-    Groups transactions by provider and calls each provider's pre_reconcile hook.
+    The hooked batches are concatenated, so in auto-detect mode the result is
+    ordered by provider rather than by statement file.
     """
-    if provider_id:
-        # Single provider specified, use it for all
-        provider = get_provider(provider_id)
-        if provider:
-            return provider.pre_reconcile(transactions, context)
-        return transactions
-
-    # Group by provider
-    from collections import defaultdict
-
-    by_provider: dict[str, list[Transaction]] = defaultdict(list)
-    for txn in transactions:
-        by_provider[txn.provider].append(txn)
-
-    # Apply each provider's hook
-    result = []
-    for pid, txns in by_provider.items():
-        provider = get_provider(pid)
-        if provider:
-            txns = provider.pre_reconcile(txns, context)
-        result.extend(txns)
-
-    return result
+    return [
+        txn
+        for provider, batch in pset.group(transactions)
+        for txn in provider.pre_reconcile(batch, context)
+    ]
 
 
 def _apply_provider_output_config(
@@ -436,27 +416,14 @@ def _apply_provider_output_config(
 
 def _collect_preset_rules(
     transactions: list[Transaction],
-    provider_id: str | None,
-) -> list:
+    pset: ProviderSet,
+) -> list[PresetRule]:
     """Collect preset rules from all providers involved."""
-    from .core.preset_rules import PresetRule
-
-    if provider_id:
-        provider = get_provider(provider_id)
-        return provider.get_preset_rules() if provider else []
-
-    # Collect from all unique providers
-    providers_seen: set[str] = set()
-    rules: list[PresetRule] = []
-
-    for txn in transactions:
-        if txn.provider and txn.provider not in providers_seen:
-            providers_seen.add(txn.provider)
-            provider = get_provider(txn.provider)
-            if provider:
-                rules.extend(provider.get_preset_rules())
-
-    return rules
+    return [
+        rule
+        for provider, _batch in pset.group(transactions)
+        for rule in provider.get_preset_rules()
+    ]
 
 
 def _apply_negate_rules(
@@ -707,7 +674,7 @@ def _get_dedup_priority(txn: Transaction, config: Config) -> int:
 
 def _collect_covered_accounts(
     transactions: list[Transaction],
-    provider_id: str | None,
+    pset: ProviderSet,
     config: Config,
 ) -> list[str]:
     """
@@ -715,31 +682,18 @@ def _collect_covered_accounts(
 
     Returns the union of accounts from each provider's get_covered_accounts().
     """
-    covered: set[str] = set()
-
-    if provider_id:
-        provider = get_provider(provider_id)
-        if provider:
-            covered.update(provider.get_covered_accounts(transactions, config))
-    else:
-        # Collect from all unique providers
-        from collections import defaultdict
-
-        by_provider: dict[str, list[Transaction]] = defaultdict(list)
-        for txn in transactions:
-            by_provider[txn.provider].append(txn)
-
-        for pid, txns in by_provider.items():
-            provider = get_provider(pid)
-            if provider:
-                covered.update(provider.get_covered_accounts(txns, config))
-
-    return list(covered)
+    return list(
+        {
+            account
+            for provider, batch in pset.group(transactions)
+            for account in provider.get_covered_accounts(batch, config)
+        }
+    )
 
 
 def _collect_covered_ranges(
     transactions: list[Transaction],
-    provider_id: str | None,
+    pset: ProviderSet,
     config: Config,
 ) -> dict[str, list[tuple[date, date]]] | None:
     """
@@ -748,54 +702,17 @@ def _collect_covered_ranges(
     Returns a dict mapping account name to list of (start, end) date ranges.
     Returns None if no provider provides range information.
     """
-    from collections import defaultdict
-
     all_ranges: dict[str, list[tuple[date, date]]] = defaultdict(list)
     has_ranges = False
 
-    if provider_id:
-        provider = get_provider(provider_id)
-        if provider:
-            ranges = provider.get_covered_ranges(transactions, config)
-            if ranges is not None:
-                has_ranges = True
-                for account, periods in ranges.items():
-                    all_ranges[account].extend(periods)
-    else:
-        by_provider: dict[str, list[Transaction]] = defaultdict(list)
-        for txn in transactions:
-            by_provider[txn.provider].append(txn)
-
-        for pid, txns in by_provider.items():
-            provider = get_provider(pid)
-            if provider:
-                ranges = provider.get_covered_ranges(txns, config)
-                if ranges is not None:
-                    has_ranges = True
-                    for account, periods in ranges.items():
-                        all_ranges[account].extend(periods)
+    for provider, batch in pset.group(transactions):
+        ranges = provider.get_covered_ranges(batch, config)
+        if ranges is not None:
+            has_ranges = True
+            for account, periods in ranges.items():
+                all_ranges[account].extend(periods)
 
     return dict(all_ranges) if has_ranges else None
-
-
-def _get_provider_for_hooks(
-    statement_paths: list[Path],
-    provider_id: str | None,
-) -> BaseProvider | None:
-    """
-    Get a provider instance for lifecycle hooks.
-
-    If provider_id is specified, returns that provider.
-    Otherwise, auto-detects from the first file (assumes all files use same provider).
-    """
-    if not statement_paths:
-        return None
-
-    if provider_id:
-        return get_provider(provider_id)
-
-    # Auto-detect from first file
-    return auto_detect_provider(statement_paths[0])
 
 
 logger = logging.getLogger(__name__)
