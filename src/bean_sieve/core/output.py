@@ -233,6 +233,16 @@ class BeancountWriter:
 
         return output.getvalue()
 
+    @staticmethod
+    def format_balance(
+        balance_date: dt.date,
+        account: str,
+        amount: Decimal,
+        currency: str,
+    ) -> str:
+        """Format a single Beancount balance directive line."""
+        return f"{balance_date} balance {account}  {amount} {currency}"
+
     def format_result(
         self, result: ReconcileResult, source_info: str | None = None
     ) -> str:

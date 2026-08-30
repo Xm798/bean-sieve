@@ -770,7 +770,9 @@ def _generate_balance_directives(
             balance_date = last_txn.date + timedelta(days=1)
 
         lines.append(
-            f"{balance_date} balance {account}  {balance_amount} {last_txn.currency}"
+            BeancountWriter.format_balance(
+                balance_date, account, balance_amount, last_txn.currency
+            )
         )
 
     if not lines:
