@@ -67,11 +67,12 @@ class CGBCreditProvider(BaseProvider):
 
             # Parse transactions in this card section
             card_transactions = self._parse_card_section(
-                section, current_card, file_path, row_counter, statement_period
+                section, current_card, file_path, row_counter
             )
             transactions.extend(card_transactions)
             row_counter += len(card_transactions)
 
+        self.assign_statement_periods(transactions, statement_period)
         return transactions
 
     def _extract_statement_period(self, text: str) -> tuple[date, date] | None:
@@ -91,7 +92,6 @@ class CGBCreditProvider(BaseProvider):
         card_last4: str,
         file_path: Path,
         start_row: int,
-        statement_period: tuple[date, date] | None,
     ) -> list[Transaction]:
         """Parse all transactions in a card section."""
         transactions: list[Transaction] = []
@@ -110,7 +110,7 @@ class CGBCreditProvider(BaseProvider):
 
         for i, match in enumerate(re.finditer(pattern, section)):
             txn = self._parse_transaction(
-                match, card_last4, file_path, start_row + i + 1, statement_period
+                match, card_last4, file_path, start_row + i + 1
             )
             if txn:
                 transactions.append(txn)
@@ -123,7 +123,6 @@ class CGBCreditProvider(BaseProvider):
         card_last4: str,
         file_path: Path,
         row_idx: int,
-        statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
         """Parse a single transaction from regex match."""
         try:
@@ -159,7 +158,6 @@ class CGBCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx,
-                statement_period=statement_period,
                 metadata={
                     "original_date": trans_date_str,
                     "trans_type": trans_type,
