@@ -160,6 +160,9 @@ class <Name>Provider(BaseProvider):
 
         lines = read_text_lines(file_path)
         header = find_header_line(lines, ("交易日期", "摘要"))
+        if header is None:
+            raise ValueError(f"Cannot find header row in {file_path}")
+
         for line in lines[header + 1 :]:
             pass  # Parse logic here
 
@@ -502,7 +505,7 @@ Beyond basic parsing, cover these edge cases:
 | Negative amounts (payments/refunds) | Verify sign convention |
 | Foreign currency (if supported) | Test currency mapping end-to-end through `parse()` |
 | Different post_date vs trans_date | Verify both are captured |
-| **XLS: numeric cell values** | Write `card_last4` and amounts as numbers in xlwt to verify `_normalize_cell_str` works |
+| **XLS: numeric cell values** | Write `card_last4` and amounts as numbers in xlwt to verify `normalize_cell_str` works |
 | **XLS: fewer columns than expected** | Should return `[]` with warning |
 | **statement_period** | Verify `statement_period` is set on all transactions |
 
@@ -619,7 +622,7 @@ This phase ensures the review produces **verified, actionable findings** rather 
 
 Fix all confirmed findings before committing. Typical issues caught in past reviews:
 
-- `card_last4` returning `"8888.0"` from xlrd float cells (missing `_normalize_cell_str`)
+- `card_last4` returning `"8888.0"` from xlrd float cells (missing `normalize_cell_str`)
 - `_parse_date` crashing on Excel serial date numbers (missing float handling)
 - `per_card_statement=True` without `statement_period` silently dropping the statement's whole coverage
 - Generic `filename_keywords` risking false-positive provider detection
@@ -634,6 +637,6 @@ Read these for implementation patterns:
 - `src/bean_sieve/providers/banks/credit/hxb.py` - EML parsing example
 - `src/bean_sieve/providers/banks/credit/bocom.py` - Per-card statement example (EML)
 - `src/bean_sieve/providers/banks/credit/cncb.py` - XLS parsing example (xlrd with float handling)
-- `src/bean_sieve/providers/banks/debit/ccb.py` - XLS parsing example (xlrd with _normalize_cell_str)
+- `src/bean_sieve/providers/banks/debit/ccb.py` - XLS parsing example (xlrd with `normalize_cell_str` from `providers/_tabular.py`)
 - `src/bean_sieve/providers/payment/alipay.py` - CSV parsing example
 - `src/bean_sieve/providers/banks/debit/pab.py` - XLSX parsing example
