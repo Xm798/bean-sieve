@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 
 def to_decimal(value: object) -> Decimal | None:
@@ -31,3 +33,28 @@ def normalize_cell_str(value: object) -> str:
     if isinstance(value, float) and value == int(value):
         return str(int(value))
     return str(value).strip()
+
+
+# Ordered widest-first: the BOM variant must win before plain utf-8 swallows it.
+CJK_ENCODINGS: tuple[str, ...] = ("utf-8-sig", "utf-8", "gbk")
+
+
+def read_text_lines(path: Path, encodings: Sequence[str] = CJK_ENCODINGS) -> list[str]:
+    """Read a text statement, trying each encoding in turn."""
+    for encoding in encodings:
+        try:
+            with open(path, encoding=encoding) as f:
+                return f.readlines()
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    raise ValueError(f"Cannot decode {path}")
+
+
+def find_header_line(
+    lines: Sequence[str], keywords: Sequence[str], limit: int | None = None
+) -> int | None:
+    """Return the index of the first line containing every keyword."""
+    for i, line in enumerate(lines[:limit]):
+        if all(kw in line for kw in keywords):
+            return i
+    return None

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ....core.types import ReconcileContext, Transaction
 from ... import register_provider
-from ..._tabular import to_decimal
+from ..._tabular import find_header_line, read_text_lines, to_decimal
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -92,8 +92,8 @@ class BOCDebitProvider(BaseProvider):
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse BOC debit card CSV statement."""
-        lines = self._read_lines(file_path)
-        header_idx = self._find_header(lines)
+        lines = read_text_lines(file_path)
+        header_idx = find_header_line(lines, self.HEADER_KEYWORDS, 10)
         if header_idx is None:
             logger.warning("Cannot find header row in %s", file_path)
             return []
@@ -110,23 +110,6 @@ class BOCDebitProvider(BaseProvider):
                 transactions.append(txn)
 
         return transactions
-
-    def _read_lines(self, file_path: Path) -> list[str]:
-        """Read file with encoding detection."""
-        for encoding in ["utf-8-sig", "utf-8", "gbk"]:
-            try:
-                with open(file_path, encoding=encoding) as f:
-                    return f.readlines()
-            except (UnicodeDecodeError, UnicodeError):
-                continue
-        raise ValueError(f"Cannot decode {file_path}")
-
-    def _find_header(self, lines: list[str]) -> int | None:
-        """Find the header row index."""
-        for i, line in enumerate(lines[:10]):
-            if all(kw in line for kw in self.HEADER_KEYWORDS):
-                return i
-        return None
 
     def _parse_row(
         self,

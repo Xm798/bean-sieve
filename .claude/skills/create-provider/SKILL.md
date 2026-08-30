@@ -126,6 +126,7 @@ from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import find_header_line, read_text_lines
 from ...base import BaseProvider
 
 
@@ -157,9 +158,9 @@ class <Name>Provider(BaseProvider):
         """Parse statement file."""
         transactions = []
 
-        with open(file_path, encoding="utf-8") as f:
-            # Parse logic here
-            pass
+        lines = read_text_lines(file_path)
+        header = find_header_line(lines, ("交易日期", "摘要"))
+        # Parse logic here
 
         return transactions
 ```
@@ -192,7 +193,7 @@ Transaction(
 
 3. **Error handling**: Skip malformed rows with warning, don't crash.
 
-4. **Encoding**: Try UTF-8 first, then GBK/GB2312 for Chinese statements.
+4. **Encoding**: Use `read_text_lines` / `read_csv_rows` from `providers/_tabular.py`; they try `utf-8-sig, utf-8, gbk` (+`big5`) in order.
 
 5. **match_key**: Prefer order_id if available, else use `(date, abs_amount, card_suffix)`.
 
@@ -327,7 +328,7 @@ if sheet.ncols < 8:  # adjust to your expected column count
     return []
 ```
 
-**Header search resilience:** When scanning for the header row, search up to 10 rows (not 5) — banks sometimes add extra metadata rows:
+**Header search resilience:** When scanning for the header row, search up to 10 rows (not 5) — banks sometimes add extra metadata rows. CSV providers get this from `find_header_line(lines, keywords, limit=10)`; XLS providers scan the sheet:
 
 ```python
 for row_idx in range(min(10, sheet.nrows)):

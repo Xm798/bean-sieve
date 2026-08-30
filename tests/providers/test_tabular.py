@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
-from bean_sieve.providers._tabular import normalize_cell_str, to_decimal
+from bean_sieve.providers._tabular import (
+    find_header_line,
+    normalize_cell_str,
+    read_text_lines,
+    to_decimal,
+)
 
 
 class TestToDecimal:
@@ -68,3 +74,57 @@ class TestNormalizeCellStr:
     def test_non_finite_floats_raise(self, value: float, exc: type[Exception]) -> None:
         with pytest.raises(exc):
             normalize_cell_str(value)
+
+
+class TestReadTextLines:
+    """Tests for read_text_lines()."""
+
+    def test_bom_is_stripped(self, tmp_path: Path) -> None:
+        path = tmp_path / "bom.csv"
+        path.write_bytes("日期,金额\n2030-01-02,10.00\n".encode("utf-8-sig"))
+
+        assert read_text_lines(path) == ["日期,金额\n", "2030-01-02,10.00\n"]
+
+    def test_gbk_falls_back_after_utf8(self, tmp_path: Path) -> None:
+        path = tmp_path / "gbk.csv"
+        path.write_bytes("摘要,金额\n".encode("gbk"))
+
+        assert read_text_lines(path) == ["摘要,金额\n"]
+
+    def test_undecodable_bytes_raise(self, tmp_path: Path) -> None:
+        path = tmp_path / "bad.csv"
+        path.write_bytes(b"\xff\xfe\x00\x00\x81\x40\xff")
+
+        with pytest.raises(ValueError):
+            read_text_lines(path)
+
+    def test_encodings_are_tried_in_the_given_order(self, tmp_path: Path) -> None:
+        path = tmp_path / "order.csv"
+        path.write_bytes("摘要\n".encode("gbk"))
+
+        assert read_text_lines(path, ("latin-1",)) == ["ÕªÒª\n"]
+
+
+class TestFindHeaderLine:
+    """Tests for find_header_line()."""
+
+    LINES = ["preamble\n", "交易日期,摘要\n", "交易日期,摘要\n"]
+
+    def test_every_keyword_must_be_present(self) -> None:
+        assert find_header_line(["交易日期,金额\n"], ("交易日期", "摘要")) is None
+
+    def test_first_match_wins(self) -> None:
+        assert find_header_line(self.LINES, ("交易日期", "摘要")) == 1
+
+    def test_missing_header_is_none(self) -> None:
+        assert find_header_line(["preamble\n"], ("交易日期", "摘要")) is None
+
+    def test_unlimited_scan_reaches_late_headers(self) -> None:
+        lines = ["preamble\n"] * 10 + ["交易日期,摘要\n"]
+
+        assert find_header_line(lines, ("交易日期", "摘要")) == 10
+
+    def test_limit_stops_the_scan(self) -> None:
+        lines = ["preamble\n"] * 10 + ["交易日期,摘要\n"]
+
+        assert find_header_line(lines, ("交易日期", "摘要"), 10) is None
