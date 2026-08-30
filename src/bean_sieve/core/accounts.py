@@ -50,7 +50,7 @@ def resolve_by_keyword_substring(
 def resolve_by_keyword_regex(
     mappings: Sequence[AccountMapping], keyword: str
 ) -> str | None:
-    """Account of the first mapping whose pattern `keyword` matches as a regex."""
+    """Account of the first mapping whose pattern the regex `keyword` finds a match in."""
     for mapping in mappings:
         if re.search(keyword, mapping.pattern, re.IGNORECASE):
             return mapping.account

@@ -273,10 +273,10 @@ class TestRulesCallSites:
     def test_preset_keyword_lookup_is_a_substring(self):
         cfg = Config(
             account_mappings=[
-                AccountMapping(pattern="wallet-main", account="Assets:Wallet")
+                AccountMapping(pattern="wallet(0001)", account="Assets:Wallet")
             ]
         )
-        engine = RulesEngine(cfg, preset_rules=[_keyword_preset("WALLET")])
+        engine = RulesEngine(cfg, preset_rules=[_keyword_preset("WALLET(0001)")])
 
         result = engine.apply(_txn())
         assert result.account == "Assets:Wallet"
