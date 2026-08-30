@@ -50,11 +50,10 @@ class CMBCreditProvider(BaseProvider):
 
         for table in soup.find_all("table", class_="bgTable"):
             transactions.extend(
-                self._parse_table(
-                    table, statement_year, statement_month, file_path, statement_period
-                )
+                self._parse_table(table, statement_year, statement_month, file_path)
             )
 
+        self.assign_statement_periods(transactions, statement_period)
         return transactions
 
     def _extract_statement_month(self, html: str, file_path: Path) -> tuple[int, int]:
@@ -101,7 +100,6 @@ class CMBCreditProvider(BaseProvider):
         statement_year: int,
         statement_month: int,
         file_path: Path,
-        statement_period: tuple[date, date] | None,
     ) -> list[Transaction]:
         """Parse a transaction table."""
         transactions: list[Transaction] = []
@@ -119,7 +117,6 @@ class CMBCreditProvider(BaseProvider):
                 statement_month,
                 file_path,
                 row_idx,
-                statement_period,
             )
             if txn:
                 transactions.append(txn)
@@ -133,7 +130,6 @@ class CMBCreditProvider(BaseProvider):
         statement_month: int,
         file_path: Path,
         row_idx: int,
-        statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
         """Parse a single transaction row (9 cells).
 
@@ -202,7 +198,6 @@ class CMBCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx + 1,
-                statement_period=statement_period,
                 metadata=metadata,
             )
         except (ValueError, IndexError, AttributeError, InvalidOperation):
