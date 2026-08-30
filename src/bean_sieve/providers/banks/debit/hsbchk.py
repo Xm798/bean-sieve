@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import logging
 import re
 from datetime import date
@@ -11,6 +10,7 @@ from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import read_csv_rows
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class HSBCHKDebitProvider(BaseProvider):
     )
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        rows = self._read_rows(file_path)
+        rows = read_csv_rows(file_path)
         if not rows:
             return []
 
@@ -66,20 +66,6 @@ class HSBCHKDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
         return transactions
-
-    @staticmethod
-    def _read_rows(file_path: Path) -> list[list[str]]:
-        for encoding in ["utf-8-sig", "utf-8", "gbk", "big5"]:
-            try:
-                with open(file_path, encoding=encoding, newline="") as f:
-                    return [
-                        [c.strip() for c in row]
-                        for row in csv.reader(f)
-                        if any(c.strip() for c in row)
-                    ]
-            except (UnicodeDecodeError, UnicodeError):
-                continue
-        raise ValueError(f"Cannot decode {file_path}")
 
     @classmethod
     def _find_columns(cls, header_row: list[str]) -> dict[str, int] | None:

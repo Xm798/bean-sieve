@@ -10,6 +10,7 @@ import pytest
 from bean_sieve.providers._tabular import (
     find_header_line,
     normalize_cell_str,
+    read_csv_rows,
     read_text_lines,
     to_decimal,
 )
@@ -128,3 +129,44 @@ class TestFindHeaderLine:
         lines = ["preamble\n"] * 10 + ["交易日期,摘要\n"]
 
         assert find_header_line(lines, ("交易日期", "摘要"), 10) is None
+
+
+class TestReadCsvRows:
+    """Tests for read_csv_rows()."""
+
+    def test_cells_are_stripped_by_default(self, tmp_path: Path) -> None:
+        path = tmp_path / "padded.csv"
+        path.write_text("a ,\tb\n", encoding="utf-8")
+
+        assert read_csv_rows(path) == [["a", "b"]]
+
+    def test_raw_cells_are_kept_when_asked(self, tmp_path: Path) -> None:
+        path = tmp_path / "padded.csv"
+        path.write_text("a ,\tb\n", encoding="utf-8")
+
+        assert read_csv_rows(path, strip_cells=False) == [["a ", "\tb"]]
+
+    def test_blank_rows_are_dropped(self, tmp_path: Path) -> None:
+        path = tmp_path / "blanks.csv"
+        path.write_text("a,b\n \n,\nc,d\n", encoding="utf-8")
+
+        assert read_csv_rows(path) == [["a", "b"], ["c", "d"]]
+
+    def test_quoted_newlines_stay_in_one_cell(self, tmp_path: Path) -> None:
+        path = tmp_path / "quoted.csv"
+        path.write_text('a,"one\ntwo"\n', encoding="utf-8", newline="")
+
+        assert read_csv_rows(path, strip_cells=False) == [["a", "one\ntwo"]]
+
+    def test_big5_is_tried_after_gbk(self, tmp_path: Path) -> None:
+        path = tmp_path / "big5.csv"
+        path.write_bytes("賬項資料,金額\n".encode("big5"))
+
+        assert read_csv_rows(path) == [["賬項資料", "金額"]]
+
+    def test_undecodable_bytes_raise(self, tmp_path: Path) -> None:
+        path = tmp_path / "bad.csv"
+        path.write_bytes(b"\xff\xfe\x00\x00\xff\xff\xfe")
+
+        with pytest.raises(ValueError):
+            read_csv_rows(path)

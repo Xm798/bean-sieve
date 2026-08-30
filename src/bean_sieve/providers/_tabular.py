@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -58,3 +59,30 @@ def find_header_line(
         if all(kw in line for kw in keywords):
             return i
     return None
+
+
+CJK_HK_ENCODINGS: tuple[str, ...] = CJK_ENCODINGS + ("big5",)
+
+
+def read_csv_rows(
+    path: Path,
+    *,
+    encodings: Sequence[str] = CJK_HK_ENCODINGS,
+    strip_cells: bool = True,
+) -> list[list[str]]:
+    """Read CSV rows, dropping rows whose every cell is blank.
+
+    ``strip_cells`` also trims each cell, which banks that pad exports with tabs
+    need before the header row can be matched.
+    """
+    for encoding in encodings:
+        try:
+            with open(path, encoding=encoding, newline="") as f:
+                return [
+                    [c.strip() for c in row] if strip_cells else row
+                    for row in csv.reader(f)
+                    if any(c.strip() for c in row)
+                ]
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    raise ValueError(f"Cannot decode {path}")

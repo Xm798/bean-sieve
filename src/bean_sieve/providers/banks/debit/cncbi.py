@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import re
 from datetime import date
 from decimal import Decimal
@@ -10,7 +9,7 @@ from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import to_decimal
+from ..._tabular import read_csv_rows, to_decimal
 from ...base import BaseProvider
 
 # Header variants accepted: Simplified Chinese, Traditional Chinese, English.
@@ -72,7 +71,7 @@ class CNCBIDebitProvider(BaseProvider):
     ]
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        rows = self._read_rows(file_path)
+        rows = read_csv_rows(file_path, strip_cells=False)
         if not rows:
             return []
 
@@ -86,17 +85,6 @@ class CNCBIDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
         return transactions
-
-    @staticmethod
-    def _read_rows(file_path: Path) -> list[list[str]]:
-        """Read CSV rows, trying common encodings."""
-        for encoding in ["utf-8-sig", "utf-8", "gbk", "big5"]:
-            try:
-                with open(file_path, encoding=encoding, newline="") as f:
-                    return [row for row in csv.reader(f) if any(c.strip() for c in row)]
-            except (UnicodeDecodeError, UnicodeError):
-                continue
-        raise ValueError(f"Cannot decode {file_path}")
 
     @staticmethod
     def _find_columns(header_row: list[str]) -> dict[str, int] | None:
