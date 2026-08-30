@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### 修复
+
+- **混合账单对账**：`post_output` 钩子改为对本次运行涉及的每个 Provider 各调用一次（按账单文件首次出现的顺序）。此前只有第一个账单文件所属的 Provider 会执行该钩子，因此同时导入多家银行账单时，其余 Provider 的结算/汇总分录（如农行的账单核对与返现分录）会丢失，且换一个文件顺序结果就不同；单 Provider 运行的输出保持不变
+
 ### 其他
 
 - **账户映射**：`account_mappings` 的解析逻辑集中到 `core/accounts.py`。此前 `api.py` 与 `rules.py` 中有六处内联循环，各自实现四种不同的匹配语义（pattern 子串匹配区分/不区分大小写、preset keyword 子串匹配、preset keyword 正则匹配），改动一处无法看见其余几处。现在四种语义各为一个具名函数，调用方按名选择；行为不变

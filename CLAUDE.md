@@ -86,6 +86,8 @@ class MyProvider(BaseProvider):
 - `pre_reconcile(transactions, context)` - transform before matching
 - `post_output(content, result, context)` - append to output (e.g., settlement entries)
 
+Both hooks run once per provider taking part in the run, in first-seen order of the statement files: `pre_reconcile` receives only that provider's own transactions, `post_output` receives the whole output and passes it on to the next provider. A `post_output` implementation that reads statement files must filter `context.statement_paths` by `self.can_handle`, since the paths span every provider in the run.
+
 ### Configuration (bean-sieve.yaml)
 
 ```yaml
