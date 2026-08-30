@@ -278,3 +278,16 @@ class TestBOCOMAmountParsing:
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("100.50")
         assert transactions[0].currency == "USD"
+
+
+class TestBOCOMStatementPeriod:
+    """Tests for statement period stamping."""
+
+    def test_statement_period(self, bocom_eml_file):
+        """Test that the header billing cycle is stamped on every transaction."""
+        provider = BOCOMCreditProvider()
+        transactions = provider.parse(bocom_eml_file)
+
+        assert transactions
+        for txn in transactions:
+            assert txn.statement_period == (date(2025, 10, 14), date(2025, 11, 13))
