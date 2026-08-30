@@ -1,14 +1,17 @@
-"""Coverage scope of 按户 (non per-card) providers in ``BaseProvider``.
+"""Coverage scope of ``BaseProvider``, read as a table of ``per_card_statement``.
 
 Pins which accounts a statement period is attributed to when one provider
-config maps several keys to different accounts, and the preserving rule that
-keeps platform statements (alipay/wechat/zabank) covering every configured
-account. Also pins how ``assign_statement_periods`` derives those periods.
+config maps several keys to different accounts, the preserving rule that keeps
+platform statements (alipay/wechat/zabank) covering every configured account,
+and what a per-card statement refuses to claim. Also pins how
+``assign_statement_periods`` derives those periods.
 """
 
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+
+import pytest
 
 from bean_sieve.config import Config
 from bean_sieve.config.schema import ProviderConfig
@@ -33,10 +36,23 @@ class FakeAccountBank(BaseProvider):
         return []
 
 
-def make_config(accounts: dict[str, str]) -> Config:
-    return Config(
-        providers={FakeAccountBank.provider_id: ProviderConfig(accounts=accounts)}
-    )
+class FakePerCardBank(BaseProvider):
+    """Per-card provider; not registered, so it never affects auto-detection."""
+
+    provider_id = "fake_per_card_bank"
+    provider_name = "Fake Per Card Bank"
+    supported_formats = [".csv"]
+    per_card_statement = True
+
+    def parse(self, file_path: Path) -> list[Transaction]:  # noqa: ARG002
+        return []
+
+
+def make_config(
+    accounts: dict[str, str],
+    provider_id: str = FakeAccountBank.provider_id,
+) -> Config:
+    return Config(providers={provider_id: ProviderConfig(accounts=accounts)})
 
 
 def make_txn(
@@ -163,6 +179,39 @@ def test_no_statement_period_disables_range_filtering() -> None:
         ACCOUNT_A,
         ACCOUNT_B,
     ]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="the last card of an account overwrites the earlier ones"
+)
+def test_cards_sharing_an_account_merge_their_periods() -> None:
+    provider = FakePerCardBank()
+    config = make_config(
+        {"1111": ACCOUNT_A, "2222": ACCOUNT_A}, FakePerCardBank.provider_id
+    )
+    transactions = [
+        make_txn(date(2030, 1, 5), "1111", PERIOD_JAN),
+        make_txn(date(2030, 2, 5), "2222", PERIOD_FEB),
+    ]
+
+    assert provider.get_covered_ranges(transactions, config) == {
+        ACCOUNT_A: [PERIOD_JAN, PERIOD_FEB],
+    }
+    assert provider.get_covered_accounts(transactions, config) == [ACCOUNT_A]
+
+
+def test_per_card_statement_claims_nothing_for_a_row_it_cannot_place() -> None:
+    provider = FakePerCardBank()
+    config = make_config(
+        {"1111": ACCOUNT_A, "2222": ACCOUNT_B}, FakePerCardBank.provider_id
+    )
+    transactions = [
+        make_txn(date(2030, 1, 5), None, PERIOD_JAN),
+        make_txn(date(2030, 1, 6), "9999", PERIOD_JAN),
+    ]
+
+    assert provider.get_covered_ranges(transactions, config) is None
+    assert provider.get_covered_accounts(transactions, config) == []
 
 
 def make_bare_txn(day: date, card_last4: str) -> Transaction:
