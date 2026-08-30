@@ -240,3 +240,90 @@ def test_non_shared_account_keeps_txn_level_card_last4():
     card_lines = [ln for ln in lines if "card_last4" in ln]
     assert len(card_lines) == 1
     assert card_lines[0].startswith("    ") and not card_lines[0].startswith("        ")
+
+
+def _characterisation_txn() -> Transaction:
+    """Transaction carrying one of every metadata key the writer can see."""
+    return Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("10.00"),
+        currency="CNY",
+        description="desc-a",
+        payee="payee-a",
+        account="Assets:Bank:Test",
+        contra_account="Expenses:Test",
+        provider="prov-a",
+        metadata={
+            "method": "m",
+            "rebate": "1.00",
+            "rebate_currency": "CNY",
+            "_rebate_account": "Income:Rebate:Test",
+            "_withdrawal_target": "bank-a",
+            "matched_preset_rule": "pr-a",
+            "matched_rule": "mr-a",
+            "original_payee": "payee-b",
+            "original_description": "desc-b",
+            "reference": "ref-a",
+            "_ignored": False,
+            "_posting_metadata": ["method"],
+            "balance": "99.00",
+        },
+    )
+
+
+def test_metadata_emission_characterisation():
+    """Pins every metadata line the writer emits, internal `_` keys included."""
+    output = BeancountWriter().format_transaction(_characterisation_txn())
+
+    assert output.split("\n") == [
+        '2030-01-02 ! "payee-a" "desc-a"',
+        '    reference: "ref-a"',
+        '    source: "prov-a"',
+        '    matched_rule: "mr-a"',
+        '    method: "m"',
+        '    rebate: "1.00"',
+        '    rebate_currency: "CNY"',
+        '    _rebate_account: "Income:Rebate:Test"',
+        '    _withdrawal_target: "bank-a"',
+        '    matched_preset_rule: "pr-a"',
+        '    original_description: "desc-b"',
+        '    balance: "99.00"',
+        "    Assets:Bank:Test  -10.00 CNY",
+        '        method: "m"',
+        "    Income:Rebate:Test  -1.00 CNY",
+        "    Expenses:Test  11.00 CNY",
+    ]
+
+
+def test_metadata_emission_honours_output_metadata_allowlist():
+    writer = BeancountWriter(output_metadata=["method", "rebate"])
+    output = writer.format_transaction(_characterisation_txn())
+
+    meta_lines = [
+        ln
+        for ln in output.split("\n")[1:]
+        if ln.startswith("    ") and not ln.startswith("        ") and ": " in ln
+    ]
+    assert meta_lines == ['    method: "m"', '    rebate: "1.00"']
+
+
+def test_ignored_transactions_never_reach_the_writer():
+    from bean_sieve.config.schema import Config, Rule, RuleAction, RuleCondition
+    from bean_sieve.core.rules import apply_rules
+
+    config = Config(
+        rules=[
+            Rule(
+                condition=RuleCondition(description="drop-me"),
+                action=RuleAction(ignore=True),
+            )
+        ]
+    )
+    txn = Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("10.00"),
+        currency="CNY",
+        description="drop-me",
+        provider="prov-a",
+    )
+    assert apply_rules([txn], config) == []
