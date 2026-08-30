@@ -32,7 +32,9 @@ class BOSCCreditProvider(BaseProvider):
         soup = self.parse_html(html)
 
         statement_period = self._extract_statement_period(soup)
-        return self._parse_transactions(soup, statement_period, file_path)
+        transactions = self._parse_transactions(soup, file_path)
+        self.assign_statement_periods(transactions, statement_period)
+        return transactions
 
     def _extract_statement_period(self, soup) -> tuple[date, date] | None:
         """从账单中提取对账日期范围"""
@@ -50,9 +52,7 @@ class BOSCCreditProvider(BaseProvider):
             return (start_date, end_date)
         return None
 
-    def _parse_transactions(
-        self, soup, statement_period: tuple[date, date] | None, file_path: Path
-    ) -> list[Transaction]:
+    def _parse_transactions(self, soup, file_path: Path) -> list[Transaction]:
         """从HTML中解析交易记录"""
         transactions = []
 
@@ -60,18 +60,13 @@ class BOSCCreditProvider(BaseProvider):
         rows = soup.find_all("tr", attrs={"loop2": True})
 
         for row in rows:
-            txn = self._parse_transaction_row(row, statement_period, file_path)
+            txn = self._parse_transaction_row(row, file_path)
             if txn:
                 transactions.append(txn)
 
         return transactions
 
-    def _parse_transaction_row(
-        self,
-        row,
-        statement_period: tuple[date, date] | None,
-        file_path: Path,
-    ) -> Transaction | None:
+    def _parse_transaction_row(self, row, file_path: Path) -> Transaction | None:
         """解析单行交易记录"""
         cells = row.find_all("td")
         if len(cells) < 5:
@@ -110,7 +105,6 @@ class BOSCCreditProvider(BaseProvider):
             card_last4=card_last4 if card_last4 else None,
             provider=self.provider_id,
             source_file=file_path,
-            statement_period=statement_period,
         )
 
     def _parse_date(self, date_str: str) -> date | None:
