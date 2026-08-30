@@ -10,8 +10,6 @@ import quopri
 from datetime import date
 from pathlib import Path
 
-import pytest
-
 from bean_sieve.api import full_reconcile
 
 HSBCHK_HEADER = (
@@ -198,11 +196,6 @@ providers:
     assert len(result.match_result.matched) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="statement periods reach every configured account, "
-    "so a silent card's account is reported as Extra",
-)
 def test_bosc_credit_two_accounts_extra_end_to_end(tmp_path: Path) -> None:
     # Both statement rows belong to card 1234; card 5678 is configured but
     # silent, so nothing in its account may be claimed by this statement.

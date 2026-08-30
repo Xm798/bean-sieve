@@ -210,7 +210,8 @@ class BaseProvider(ABC):
         entries in these accounts are considered as potential "extra" entries.
 
         Default behavior depends on per_card_statement:
-        - False: Returns all accounts from config.providers[provider_id].accounts
+        - False: Returns the accounts get_covered_ranges attributes a period to,
+          falling back to all configured accounts when no period is available
         - True: Returns only accounts matching card_last4 values in transactions
 
         Override in subclasses for custom logic.
@@ -226,6 +227,11 @@ class BaseProvider(ABC):
         all_accounts = provider_config.accounts
 
         if not self.per_card_statement:
+            # Sieve leaves a covered account without a range unfiltered by date,
+            # so the two answers have to agree on which accounts are covered.
+            covered_ranges = self.get_covered_ranges(transactions, config)
+            if covered_ranges is not None:
+                return list(covered_ranges)
             return list(all_accounts.values())
 
         # Filter accounts by card_last4 values in transactions
@@ -246,7 +252,9 @@ class BaseProvider(ABC):
         (account, date) falls within a covered range are reported as Extra.
 
         Default behavior depends on per_card_statement:
-        - False: Uses each distinct statement_period for all covered accounts
+        - False: Attributes each statement period to the account of the row's
+          card, or to every configured account when the row carries no card or
+          a card that is not a config key
         - True: Maps accounts to date ranges via card_last4 in transactions
 
         Args:
@@ -264,21 +272,23 @@ class BaseProvider(ABC):
             # Every statement period stays a range of its own: merging them into
             # one span would cover the gap between two statements, where the
             # ledger has entries no statement accounts for.
-            periods: list[tuple[date, date]] = []
-            seen_periods: set[tuple[date, date]] = set()
+            periods_by_account: dict[str, list[tuple[date, date]]] = {}
             for txn in transactions:
-                if txn.statement_period and txn.statement_period not in seen_periods:
-                    seen_periods.add(txn.statement_period)
-                    periods.append(txn.statement_period)
-            if not periods:
-                return None
+                period = txn.statement_period
+                if not period:
+                    continue
+                account = card_to_account.get(txn.card_last4 or "")
+                # A row whose card is not a config key says nothing about which
+                # account it belongs to - payment platforms key their config on
+                # the wallet while card_last4 holds a bank card suffix - so its
+                # period covers the whole statement.
+                targets = [account] if account else card_to_account.values()
+                for target in targets:
+                    ranges = periods_by_account.setdefault(target, [])
+                    if period not in ranges:
+                        ranges.append(period)
 
-            # Statements of these banks cover the whole account, cards included
-            covered_accounts = list(card_to_account.values())
-            if not covered_accounts:
-                return None
-
-            return {account: list(periods) for account in covered_accounts}
+            return periods_by_account or None
 
         # Per-card statement: collect date ranges per card
         card_ranges: dict[str, list[tuple[date, date]]] = defaultdict(list)

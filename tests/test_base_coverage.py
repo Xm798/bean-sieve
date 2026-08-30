@@ -55,6 +55,31 @@ def make_txn(
     )
 
 
+def test_each_card_period_lands_on_its_own_account() -> None:
+    provider = FakeAccountBank()
+    config = make_config({"1111": ACCOUNT_A, "2222": ACCOUNT_B})
+    transactions = [
+        make_txn(date(2030, 1, 5), "1111", PERIOD_JAN),
+        make_txn(date(2030, 2, 5), "2222", PERIOD_FEB),
+    ]
+
+    assert provider.get_covered_ranges(transactions, config) == {
+        ACCOUNT_A: [PERIOD_JAN],
+        ACCOUNT_B: [PERIOD_FEB],
+    }
+
+
+def test_account_without_rows_is_not_covered() -> None:
+    provider = FakeAccountBank()
+    config = make_config({"1111": ACCOUNT_A, "2222": ACCOUNT_B})
+    transactions = [make_txn(date(2030, 1, 5), "1111", PERIOD_JAN)]
+
+    assert provider.get_covered_ranges(transactions, config) == {
+        ACCOUNT_A: [PERIOD_JAN],
+    }
+    assert provider.get_covered_accounts(transactions, config) == [ACCOUNT_A]
+
+
 def test_untagged_row_period_reaches_every_configured_account() -> None:
     provider = FakeAccountBank()
     config = make_config({"1111": ACCOUNT_A, "2222": ACCOUNT_B})
