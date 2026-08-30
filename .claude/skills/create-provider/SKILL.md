@@ -147,7 +147,10 @@ class <Name>Provider(BaseProvider):
     content_keywords = ["<content_keyword>"]
 
     # Set to True if bank sends separate statements per card
-    # When True, Extra calculation filters by (account, date_range)
+    # It decides how far coverage reaches past the rows the config can place:
+    # a row whose card is not a config key is dropped (True) or covers the whole
+    # statement (False), and a configured account the file never names is off
+    # this statement (True) or on it, covered by the file's periods (False)
     per_card_statement = False
 
     def parse(self, file_path: Path) -> list[Transaction]:
@@ -359,8 +362,9 @@ def get_covered_accounts(self, transactions, config) -> list[str]:
 def get_covered_ranges(self, transactions, config) -> dict[str, list[tuple[date, date]]] | None:
     """Return covered date ranges per account for Extra calculation.
 
-    Only needed if per_card_statement=True.
-    Default implementation uses card_last4 + statement_period from transactions.
+    Default implementation uses card_last4 + statement_period from transactions,
+    whatever per_card_statement says, so every statement provider should stamp
+    periods through assign_statement_periods().
     """
     pass
 ```
@@ -374,20 +378,16 @@ For banks that send **separate statements per card** (e.g., BOCOM, CNCB), set `p
    per_card_statement = True  # <Bank> sends separate statements per card
    ```
 
-2. **Always set `statement_period`** on each Transaction — `get_covered_ranges()` depends on it for Extra date-range filtering. Without it, all ledger entries for that card are treated as potential "Extra" regardless of date, leading to noisy reconciliation output.
+2. **Always set `statement_period`** on each Transaction, through `assign_statement_periods()` — `get_covered_ranges()` depends on it for Extra date-range filtering. Without it a per-card provider covers nothing at all (`get_covered_accounts()` returns `[]`), so ledger entries the statement contradicts are never reported.
 
 3. **Extract statement period** from the statement file if available (e.g., `2025/12/14-2026/01/13` in email subject/body)
 
-4. **If the file has no explicit period**, infer from the transaction date range after parsing:
+4. **Stamp the period with `assign_statement_periods()`**, passing the cycle when the file prints one and omitting it otherwise, which leaves each card its own transaction-date span:
    ```python
-   if transactions:
-       dates = [t.date for t in transactions]
-       statement_period = (min(dates), max(dates))
-       for t in transactions:
-           t.statement_period = statement_period
+   self.assign_statement_periods(transactions, statement_period)
    ```
 
-5. **Handle cross-year dates**: For periods like 12/14-1/13, December dates use start year, January uses end year
+5. **Handle cross-year dates**: A statement lists nothing dated after the day it closes, so a MM/DD row is the latest such day on or before the period end
 
 Example from BOCOM provider:
 
@@ -409,12 +409,11 @@ def parse(self, file_path: Path) -> list[Transaction]:
 def _parse_date_with_period(self, date_str: str, period: tuple[date, date] | None) -> date:
     """Handle cross-year date parsing."""
     month, day = map(int, date_str.split("/"))
-    if period and period[0].year != period[1].year:
-        # Cross-year: use start year for months >= start month
-        if month >= period[0].month:
-            return date(period[0].year, month, day)
-        return date(period[1].year, month, day)
-    return date(period[0].year if period else date.today().year, month, day)
+    if not period:
+        return date(date.today().year, month, day)
+    end = period[1]
+    year = end.year if (month, day) <= (end.month, end.day) else end.year - 1
+    return date(year, month, day)
 ```
 
 ## Validation Steps
@@ -495,7 +494,7 @@ Beyond basic parsing, cover these edge cases:
 | Different post_date vs trans_date | Verify both are captured |
 | **XLS: numeric cell values** | Write `card_last4` and amounts as numbers in xlwt to verify `_normalize_cell_str` works |
 | **XLS: fewer columns than expected** | Should return `[]` with warning |
-| **per_card_statement: statement_period** | Verify `statement_period` is set on all transactions |
+| **statement_period** | Verify `statement_period` is set on all transactions |
 
 ### XLS Test Helper
 
@@ -612,7 +611,7 @@ Fix all confirmed findings before committing. Typical issues caught in past revi
 
 - `card_last4` returning `"8888.0"` from xlrd float cells (missing `_normalize_cell_str`)
 - `_parse_date` crashing on Excel serial date numbers (missing float handling)
-- `per_card_statement=True` without `statement_period` silently breaking Extra date-range filtering
+- `per_card_statement=True` without `statement_period` silently dropping the statement's whole coverage
 - Generic `filename_keywords` risking false-positive provider detection
 - Missing test coverage for numeric cells, foreign currency, truncated files
 

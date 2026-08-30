@@ -196,7 +196,7 @@ class Sieve:
                 and entry.posting.account not in covered_accounts
             ):
                 continue
-            # Filter by covered ranges (for per-card statements)
+            # Filter by covered ranges
             if covered_ranges is not None:
                 account = entry.posting.account
                 entry_date = entry.txn.date
