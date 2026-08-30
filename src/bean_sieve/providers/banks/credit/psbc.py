@@ -110,12 +110,6 @@ class PSBCCreditProvider(BaseProvider):
         statement_period = self._extract_statement_period(
             soup.get_text(" ", strip=True)
         )
-        if statement_period is not None and not all(
-            statement_period[0] <= transaction.date <= statement_period[1]
-            for transaction in transactions
-        ):
-            statement_period = None
-
         self.assign_statement_periods(transactions, statement_period)
         return transactions
 

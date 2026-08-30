@@ -360,7 +360,6 @@ def test_skips_truncated_row_and_preserves_physical_row_number(
         None,
         "2030/02/30-2030/03/31",
         "2030/09/30-2030/09/01",
-        "2030/10/01-2030/10/31",
     ],
 )
 def test_uses_transaction_range_when_period_is_unusable(
@@ -389,6 +388,32 @@ def test_uses_transaction_range_when_period_is_unusable(
     assert transactions[0].statement_period == (
         date(2030, 9, 12),
         date(2030, 9, 12),
+    )
+
+
+def test_header_period_widens_around_a_row_outside_it(tmp_path: Path) -> None:
+    path = create_psbc_eml(
+        tmp_path / "synthetic-period-widening.eml",
+        period="2030/10/01-2030/10/31",
+        rows=[
+            {
+                "交易日": "20300912",
+                "记账日": "20300913",
+                "交易摘要": "测试周期外行",
+                "人民币金额": "￥314.15",
+                "卡号末四位": "0007",
+                "交易国别": "",
+                "境内外交易标识": "",
+            }
+        ],
+    )
+
+    transactions = get_provider("psbc_credit").parse(path)
+
+    assert len(transactions) == 1
+    assert transactions[0].statement_period == (
+        date(2030, 9, 12),
+        date(2030, 10, 31),
     )
 
 
