@@ -53,12 +53,11 @@ class CIBCreditProvider(BaseProvider):
             # Parse transaction rows
             rows = table.find_all("tr", id=re.compile(r"detail_tr_\d+"))
             for idx, row in enumerate(rows):
-                txn = self._parse_row(
-                    row, card_last4, file_path, idx + 1, statement_period
-                )
+                txn = self._parse_row(row, card_last4, file_path, idx + 1)
                 if txn:
                     transactions.append(txn)
 
+        self.assign_statement_periods(transactions, statement_period)
         return transactions
 
     def _extract_statement_period(self, soup) -> tuple[date, date] | None:
@@ -99,7 +98,6 @@ class CIBCreditProvider(BaseProvider):
         card_last4: str | None,
         file_path: Path,
         row_idx: int,
-        statement_period: tuple[date, date] | None = None,
     ) -> Transaction | None:
         """Parse a single transaction row."""
         try:
@@ -144,7 +142,6 @@ class CIBCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx,
-                statement_period=statement_period,
                 metadata={
                     "original_date": trans_date_str,
                 },
