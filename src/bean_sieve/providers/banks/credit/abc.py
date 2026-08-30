@@ -61,9 +61,9 @@ class ABCCreditProvider(BaseProvider):
         statement_period = self._extract_statement_period(soup)
         statement_card = self._extract_statement_card_last4(soup)
 
-        return self._parse_transactions(
-            soup, file_path, statement_period, statement_card
-        )
+        transactions = self._parse_transactions(soup, file_path, statement_card)
+        self.assign_statement_periods(transactions, statement_period)
+        return transactions
 
     def _extract_statement_period(self, soup) -> tuple[date, date] | None:
         """Extract statement period (e.g., '2025/10/24-2025/11/23')."""
@@ -92,7 +92,6 @@ class ABCCreditProvider(BaseProvider):
         self,
         soup,
         file_path: Path,
-        statement_period: tuple[date, date] | None,
         statement_card: str | None,
     ) -> list[Transaction]:
         """Parse transactions from HTML tables."""
@@ -125,7 +124,7 @@ class ABCCreditProvider(BaseProvider):
 
                 line_num += 1
                 txn = self._parse_transaction_row(
-                    cells, file_path, line_num, statement_period, statement_card
+                    cells, file_path, line_num, statement_card
                 )
                 if txn:
                     transactions.append(txn)
@@ -137,7 +136,6 @@ class ABCCreditProvider(BaseProvider):
         cells,
         file_path: Path,
         row_idx: int,
-        statement_period: tuple[date, date] | None,
         statement_card: str | None,
     ) -> Transaction | None:
         """Parse a single transaction row."""
@@ -194,7 +192,6 @@ class ABCCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx + 1,
-                statement_period=statement_period,
             )
 
         except Exception as exc:
