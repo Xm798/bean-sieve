@@ -150,13 +150,14 @@ class TestHXBCreditProvider:
         txn = transactions[0]
         assert txn.statement_period == (date(2025, 11, 1), date(2025, 11, 30))
 
-    def test_year_extraction_from_filename(self, tmp_path):
-        """Test year extraction from filename."""
+    def test_year_inferred_from_statement_period(self, tmp_path):
+        """A December row on a January statement belongs to the prior year."""
         html = """<html><body>
+<div>账单日 每月26日</div>
 <table><tr><td>交易日</td></tr></table>
 <table>
-<tr><td>12/25</td></tr>
-<tr><td>12/25</td></tr>
+<tr><td>12/28</td></tr>
+<tr><td>12/28</td></tr>
 <tr><td>Google Cloud</td></tr>
 <tr><td>5678</td></tr>
 <tr><td>￥100.00</td></tr>
@@ -170,8 +171,11 @@ class TestHXBCreditProvider:
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 1
-        # Year should be extracted from filename (2026)
-        assert transactions[0].date == date(2026, 12, 25)
+        assert transactions[0].date == date(2025, 12, 28)
+        assert transactions[0].statement_period == (
+            date(2025, 12, 27),
+            date(2026, 1, 26),
+        )
 
     def test_card_last4_extraction(self, hxb_eml_file):
         """Test that card_last4 is properly extracted."""

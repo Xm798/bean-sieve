@@ -33,9 +33,11 @@ class HXBCreditProvider(BaseProvider):
 
         # Extract statement period from HTML content or filename
         statement_period = self._extract_statement_period(html, file_path)
-        year = self._extract_year_from_path(file_path)
+        fallback_year = self._extract_year_from_path(file_path)
 
-        transactions = self._parse_transactions(text, year, file_path)
+        transactions = self._parse_transactions(
+            text, statement_period, fallback_year, file_path
+        )
         self.assign_statement_periods(transactions, statement_period)
         return transactions
 
@@ -43,12 +45,12 @@ class HXBCreditProvider(BaseProvider):
         """Strip HTML tags and return plain text."""
         return re.sub(r"<[^>]+>", "\n", html)
 
-    def _extract_year_from_path(self, file_path: Path) -> str:
+    def _extract_year_from_path(self, file_path: Path) -> int:
         """Extract year from filename (e.g., '华夏信用卡-电子账单2025年11月.eml')."""
         match = re.search(r"(\d{4})年", file_path.name)
         if match:
-            return match.group(1)
-        return str(date.today().year)
+            return int(match.group(1))
+        return date.today().year
 
     def _extract_statement_period(
         self, html: str, file_path: Path
@@ -137,10 +139,35 @@ class HXBCreditProvider(BaseProvider):
 
         return (start, end)
 
+    def _parse_date_with_period(
+        self,
+        date_str: str,
+        statement_period: tuple[date, date] | None,
+        fallback_year: int,
+    ) -> date:
+        """Resolve a MM/DD row to a full date using the statement period.
+
+        Rows carry no year, and a statement lists months on either side of a
+        year boundary: a December row on a January statement belongs to the
+        previous December.
+        """
+        month, day = map(int, date_str.split("/"))
+
+        if not statement_period:
+            return date(fallback_year, month, day)
+
+        start, end = statement_period
+        if start.year != end.year:
+            year = start.year if month >= start.month else end.year
+        else:
+            year = start.year if month <= end.month else start.year - 1
+        return date(year, month, day)
+
     def _parse_transactions(
         self,
         text: str,
-        year: str,
+        statement_period: tuple[date, date] | None,
+        fallback_year: int,
         file_path: Path,
     ) -> list[Transaction]:
         """Parse transactions from statement text."""
@@ -159,7 +186,9 @@ class HXBCreditProvider(BaseProvider):
                 break
 
             if in_trans and re.match(r"^\d{2}/\d{2}$", lines[i]):
-                txn = self._parse_single_transaction(lines, i, year, file_path)
+                txn = self._parse_single_transaction(
+                    lines, i, statement_period, fallback_year, file_path
+                )
                 if txn:
                     transactions.append(txn[0])
                     i = txn[1]
@@ -174,7 +203,8 @@ class HXBCreditProvider(BaseProvider):
         self,
         lines: list[str],
         start_idx: int,
-        year: str,
+        statement_period: tuple[date, date] | None,
+        fallback_year: int,
         file_path: Path,
     ) -> tuple[Transaction, int] | None:
         """Parse a single transaction starting at start_idx."""
@@ -213,9 +243,9 @@ class HXBCreditProvider(BaseProvider):
         except Exception:
             return None
 
-        # Parse date
-        month, day = date1.split("/")
-        iso_date = f"{year}-{month}-{day}"
+        trans_date = self._parse_date_with_period(
+            date1, statement_period, fallback_year
+        )
 
         # Determine currency (CNY by default, USD if $ symbol)
         currency = "CNY"
@@ -223,7 +253,7 @@ class HXBCreditProvider(BaseProvider):
             currency = "USD"
 
         txn = Transaction(
-            date=date.fromisoformat(iso_date),
+            date=trans_date,
             amount=amount,
             currency=currency,
             description=description,
