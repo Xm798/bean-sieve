@@ -257,10 +257,10 @@ def full_reconcile(
         date_range=date_range,
         account_filter=account_filter,
         output_path=output_path,
+        parsed={path: provider.parse(path) for path, provider in pset.files},
     )
 
-    # Parse statements
-    transactions = _parse(pset)
+    transactions = [txn for path, _ in pset.files for txn in context.parsed[path]]
 
     # Infer date range from transactions if not explicitly provided
     # This ensures Extra calculation only considers ledger entries within statement scope

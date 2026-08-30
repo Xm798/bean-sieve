@@ -572,6 +572,25 @@ class TestABCPostOutput:
 
         assert output == EXPECTED_BALANCED_REPORT
 
+    def test_post_output_ignores_date_range(self, abc_eml_file):
+        """The report counts the whole statement, not the reconciled slice.
+
+        解析消费 is compared against the statement's own 本期账单金额, so it must
+        stay the raw parse even when the run only reconciles part of the cycle.
+        """
+        provider = ABCCreditProvider()
+
+        output = provider.post_output(
+            "",
+            empty_result(),
+            ReconcileContext(
+                statement_paths=[abc_eml_file],
+                date_range=(date(2030, 1, 1), date(2030, 1, 1)),
+            ),
+        )
+
+        assert output == EXPECTED_BALANCED_REPORT
+
     def test_post_output_golden_rebate_entry(self, tmp_path):
         file_path = tmp_path / "农业银行金穗信用卡刷卡金.eml"
         file_path.write_text(create_abc_eml(REBATE_HTML), encoding="utf-8")

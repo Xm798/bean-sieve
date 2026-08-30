@@ -268,3 +268,6 @@ class ReconcileContext:
     account_filter: str | None = None
     output_path: Path | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    # Per-path parse output as it left the provider: before date filtering,
+    # hooks and rules, so a hook can compare against the whole statement.
+    parsed: dict[Path, list[Transaction]] = field(default_factory=dict)
