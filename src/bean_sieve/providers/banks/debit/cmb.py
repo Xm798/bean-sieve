@@ -5,11 +5,12 @@ from __future__ import annotations
 import csv
 import re
 from datetime import date, time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import to_decimal
 from ...base import BaseProvider
 
 
@@ -143,25 +144,14 @@ class CMBDebitProvider(BaseProvider):
 
     def _parse_amount(self, row: list[str]) -> Decimal | None:
         """Parse amount from income/expense columns. Expense=positive, income=negative."""
-        expense = self._to_decimal(row[self.COL_EXPENSE])
-        income = self._to_decimal(row[self.COL_INCOME])
+        expense = to_decimal(row[self.COL_EXPENSE])
+        income = to_decimal(row[self.COL_INCOME])
 
         if expense is not None:
             return expense
         if income is not None:
             return -income
         return None
-
-    def _to_decimal(self, value: str) -> Decimal | None:
-        """Convert string to Decimal."""
-        cleaned = value.replace(",", "").strip()
-        if not cleaned or cleaned == "-":
-            return None
-        try:
-            d = Decimal(cleaned)
-            return d if d != 0 else None
-        except InvalidOperation:
-            return None
 
     def _build_description(self, tx_type: str, remark: str) -> str:
         """Build description from transaction type and remark."""

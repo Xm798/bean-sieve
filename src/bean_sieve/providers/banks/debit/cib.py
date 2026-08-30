@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 
 import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import to_decimal
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -207,8 +208,8 @@ class CIBDebitProvider(BaseProvider):
 
     def _parse_amount(self, row: list) -> Decimal | None:
         """Parse amount. Expense=positive, income=negative."""
-        expense = self._to_decimal(row[self.COL_EXPENSE])
-        income = self._to_decimal(row[self.COL_INCOME])
+        expense = to_decimal(row[self.COL_EXPENSE])
+        income = to_decimal(row[self.COL_INCOME])
 
         if expense is not None and income is not None:
             logger.warning(
@@ -222,18 +223,6 @@ class CIBDebitProvider(BaseProvider):
         if income is not None:
             return -income
         return None
-
-    @staticmethod
-    def _to_decimal(value) -> Decimal | None:
-        """Convert value to Decimal, returning None for empty."""
-        try:
-            cleaned = str(value).replace(",", "").strip()
-            if not cleaned:
-                return None
-            d = Decimal(cleaned)
-            return d if d != 0 else None
-        except (ValueError, InvalidOperation):
-            return None
 
     @staticmethod
     def _build_description(summary: str, purpose: str) -> str:

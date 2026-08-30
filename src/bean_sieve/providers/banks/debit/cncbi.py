@@ -5,11 +5,12 @@ from __future__ import annotations
 import csv
 import re
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import to_decimal
 from ...base import BaseProvider
 
 # Header variants accepted: Simplified Chinese, Traditional Chinese, English.
@@ -181,21 +182,10 @@ class CNCBIDebitProvider(BaseProvider):
     @staticmethod
     def _parse_amount(debit_str: str, credit_str: str) -> Decimal | None:
         """Debit -> positive expense, Credit -> negative income."""
-
-        def to_dec(s: str) -> Decimal | None:
-            cleaned = s.replace(",", "").strip()
-            if not cleaned:
-                return None
-            try:
-                d = Decimal(cleaned)
-                return d if d != 0 else None
-            except InvalidOperation:
-                return None
-
-        debit = to_dec(debit_str)
+        debit = to_decimal(debit_str)
         if debit is not None:
             return debit
-        credit = to_dec(credit_str)
+        credit = to_decimal(credit_str)
         if credit is not None:
             return -credit
         return None

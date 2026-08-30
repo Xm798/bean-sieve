@@ -5,11 +5,12 @@ from __future__ import annotations
 import csv
 import re
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import to_decimal
 from ...base import BaseProvider
 
 
@@ -167,25 +168,14 @@ class ICBCDebitProvider(BaseProvider):
         expense_str = row[self.COL_EXPENSE] if len(row) > self.COL_EXPENSE else ""
         income_str = row[self.COL_INCOME] if len(row) > self.COL_INCOME else ""
 
-        expense = self._to_decimal(expense_str)
-        income = self._to_decimal(income_str)
+        expense = to_decimal(expense_str)
+        income = to_decimal(income_str)
 
         if expense is not None:
             return expense
         if income is not None:
             return -income
         return None
-
-    def _to_decimal(self, value: str) -> Decimal | None:
-        """Convert string with thousand separators to Decimal."""
-        cleaned = value.replace(",", "").strip()
-        if not cleaned or cleaned == "-":
-            return None
-        try:
-            d = Decimal(cleaned)
-            return d if d != 0 else None
-        except InvalidOperation:
-            return None
 
     def _build_description(self, summary: str, detail: str, location: str) -> str:
         """Build description from summary, detail, and location."""

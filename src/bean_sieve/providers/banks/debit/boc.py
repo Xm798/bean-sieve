@@ -5,11 +5,12 @@ from __future__ import annotations
 import csv
 import logging
 from datetime import date, time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 
 from ....core.types import ReconcileContext, Transaction
 from ... import register_provider
+from ..._tabular import to_decimal
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -207,8 +208,8 @@ class BOCDebitProvider(BaseProvider):
 
     def _parse_amount(self, row: list[str]) -> Decimal | None:
         """Parse amount. Expense=positive, income=negative."""
-        expense = self._to_decimal(row[self.COL_EXPENSE])
-        income = self._to_decimal(row[self.COL_INCOME])
+        expense = to_decimal(row[self.COL_EXPENSE])
+        income = to_decimal(row[self.COL_INCOME])
 
         if expense is not None and income is not None:
             logger.warning(
@@ -222,18 +223,6 @@ class BOCDebitProvider(BaseProvider):
         if income is not None:
             return -income
         return None
-
-    @staticmethod
-    def _to_decimal(value: str) -> Decimal | None:
-        """Convert string with thousand separators to Decimal."""
-        cleaned = value.replace(",", "").strip()
-        if not cleaned or cleaned == "-":
-            return None
-        try:
-            d = Decimal(cleaned)
-            return d if d != 0 else None
-        except InvalidOperation:
-            return None
 
     @staticmethod
     def _build_description(summary: str, remarks: str) -> str:
