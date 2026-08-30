@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import tempfile
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from openpyxl import Workbook
 
 from bean_sieve.providers._tabular import (
     find_header_line,
     first_masked_card_last4,
     join_description,
+    load_openpyxl_workbook,
     masked_card_last4,
     normalize_cell_str,
     read_csv_rows,
@@ -224,3 +227,33 @@ class TestJoinDescription:
 
     def test_whitespace_fragment_is_kept(self) -> None:
         assert join_description(" ", "two") == "  | two"
+
+
+class TestLoadOpenpyxlWorkbook:
+    """Tests for load_openpyxl_workbook()."""
+
+    @staticmethod
+    def _write(path: Path) -> Path:
+        wb = Workbook()
+        wb.active["A1"] = "payee-a"  # type: ignore[index]
+        wb.save(path)
+        return path
+
+    def test_xlsx_is_loaded(self, tmp_path: Path) -> None:
+        path = self._write(tmp_path / "book.xlsx")
+
+        assert load_openpyxl_workbook(path).worksheets[0]["A1"].value == "payee-a"
+
+    @pytest.mark.parametrize("name", ["book.xls", "book.XLS"])
+    def test_xlsx_disguised_as_xls_is_loaded(self, tmp_path: Path, name: str) -> None:
+        path = self._write(tmp_path / name)
+
+        assert load_openpyxl_workbook(path).worksheets[0]["A1"].value == "payee-a"
+
+    def test_temporary_copy_is_removed(self, tmp_path: Path) -> None:
+        path = self._write(tmp_path / "book.xls")
+        before = set(Path(tempfile.gettempdir()).glob("*.xlsx"))
+
+        load_openpyxl_workbook(path)
+
+        assert set(Path(tempfile.gettempdir()).glob("*.xlsx")) == before

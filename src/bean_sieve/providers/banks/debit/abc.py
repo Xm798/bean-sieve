@@ -4,18 +4,13 @@ from __future__ import annotations
 
 import logging
 import re
-import shutil
-import tempfile
-import warnings
 from datetime import date, time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from openpyxl import load_workbook
-
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import join_description, masked_card_last4
+from ..._tabular import join_description, load_openpyxl_workbook, masked_card_last4
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -63,7 +58,7 @@ class ABCDebitProvider(BaseProvider):
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse ABC debit card XLSX statement."""
-        wb = self._load_workbook(file_path)
+        wb = load_openpyxl_workbook(file_path)
         sheet = wb.active
         if sheet is None:
             raise ValueError(f"No active sheet in {file_path}")
@@ -91,28 +86,6 @@ class ABCDebitProvider(BaseProvider):
                 transactions.append(txn)
 
         return transactions
-
-    def _load_workbook(self, file_path: Path):
-        """Load workbook, handling .xls files that are actually xlsx format."""
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="Workbook contains no default style",
-                category=UserWarning,
-            )
-            if file_path.suffix.lower() == ".xls":
-                tmp_path = None
-                try:
-                    with tempfile.NamedTemporaryFile(
-                        suffix=".xlsx", delete=False
-                    ) as tmp:
-                        tmp_path = tmp.name
-                        shutil.copy(file_path, tmp_path)
-                    return load_workbook(tmp_path)
-                finally:
-                    if tmp_path:
-                        Path(tmp_path).unlink(missing_ok=True)
-            return load_workbook(file_path)
 
     @staticmethod
     def _extract_card_last4(rows: list) -> str | None:

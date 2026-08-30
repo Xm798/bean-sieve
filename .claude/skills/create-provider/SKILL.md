@@ -320,6 +320,8 @@ def _parse_amount(self, value) -> Decimal | None:
         return None
 ```
 
+For split 支出/收入 columns, where an empty or zero cell means "not this column", use `to_decimal` instead.
+
 **Column count validation:** Add an early guard before iterating rows — if the sheet has fewer columns than expected, return empty with a warning rather than silently failing on every row:
 
 ```python
@@ -333,6 +335,21 @@ if sheet.ncols < 8:  # adjust to your expected column count
 ```python
 for row_idx in range(min(10, sheet.nrows)):
 ```
+
+## Shared Tabular Helpers
+
+`src/bean_sieve/providers/_tabular.py` holds the parsing steps that CSV and XLS providers share. Import from it rather than re-adding a private copy.
+
+| Function | Use |
+|---|---|
+| `read_text_lines(path, encodings=CJK_ENCODINGS)` | Read a text statement line by line, trying `utf-8-sig, utf-8, gbk` |
+| `read_csv_rows(path, *, encodings=CJK_HK_ENCODINGS, strip_cells=True)` | Read CSV rows (adds `big5`), dropping all-blank rows |
+| `find_header_line(lines, keywords, limit=None)` | Index of the first line containing every keyword |
+| `masked_card_last4(text)` / `first_masked_card_last4(lines)` | Card suffix behind a `6222****1234` mask |
+| `normalize_cell_str(value)` | xlrd cell to text, without the float `.0` tail |
+| `to_decimal(value)` | Split 支出/收入 cell to Decimal, `None` when empty or zero |
+| `join_description(*parts)` | `" | "`-joined non-empty fragments, else `"Unknown"` |
+| `load_openpyxl_workbook(path)` | openpyxl workbook, tolerating an xlsx export named `.xls` |
 
 ## Optional Hooks
 

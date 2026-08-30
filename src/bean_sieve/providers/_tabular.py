@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import csv
 import re
+import shutil
+import tempfile
+import warnings
 from collections.abc import Iterable, Sequence
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+
+from openpyxl import load_workbook
 
 
 def to_decimal(value: object) -> Decimal | None:
@@ -111,3 +116,28 @@ def join_description(*parts: str) -> str:
     """Join the non-empty description fragments; "Unknown" when none is present."""
     present = [p for p in parts if p]
     return " | ".join(present) if present else "Unknown"
+
+
+def load_openpyxl_workbook(path: Path):
+    """Load a workbook, tolerating banks that name an xlsx export ".xls".
+
+    openpyxl refuses the .xls suffix outright, so such a file is copied to a
+    temporary .xlsx before loading.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Workbook contains no default style",
+            category=UserWarning,
+        )
+        if path.suffix.lower() == ".xls":
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+                    tmp_path = tmp.name
+                    shutil.copy(path, tmp_path)
+                return load_workbook(tmp_path)
+            finally:
+                if tmp_path:
+                    Path(tmp_path).unlink(missing_ok=True)
+        return load_workbook(path)
