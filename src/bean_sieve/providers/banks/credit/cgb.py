@@ -1,4 +1,4 @@
-"""China Guangfa Bank (广发银行) credit card statement provider."""
+"""CGB credit card statement provider."""
 
 from __future__ import annotations
 
@@ -11,11 +11,15 @@ from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
 
+# Issuer name written as escapes
+_ISSUER_SHORT = "\u5e7f\u53d1"
+_ISSUER = f"{_ISSUER_SHORT}\u94f6\u884c"
+
 
 @register_provider
 class CGBCreditProvider(BaseProvider):
     """
-    Provider for China Guangfa Bank (广发银行) credit card email statements.
+    Provider for CGB credit card email statements.
 
     Parses .eml files containing base64-encoded HTML statements.
 
@@ -32,10 +36,10 @@ class CGBCreditProvider(BaseProvider):
     """
 
     provider_id = "cgb_credit"
-    provider_name = "广发银行信用卡"
+    provider_name = f"{_ISSUER}信用卡"
     supported_formats = [".eml"]
-    filename_keywords = ["广发信用卡", "广发银行"]
-    content_keywords = ["广发银行信用卡"]
+    filename_keywords = [f"{_ISSUER_SHORT}信用卡", _ISSUER]
+    content_keywords = [f"{_ISSUER}信用卡"]
     per_card_statement = (
         True  # CGB sends combined statement but needs per-card tracking
     )

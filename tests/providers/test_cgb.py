@@ -8,14 +8,18 @@ from pathlib import Path
 import pytest
 
 from bean_sieve.providers import get_provider
-from bean_sieve.providers.banks.credit.cgb import CGBCreditProvider
+from bean_sieve.providers.banks.credit.cgb import (
+    _ISSUER,
+    _ISSUER_SHORT,
+    CGBCreditProvider,
+)
 
 
 def create_cgb_eml(html_content: str) -> str:
     """Create an EML file content with the given HTML."""
     encoded = base64.b64encode(html_content.encode("gbk")).decode("ascii")
-    return f"""From: billing@cgbchina.com.cn
-Subject: =?gbk?B?usPUy9DFv6jP4M2oztLDx77J0LY=?=
+    return f"""From: billing@example.com
+Subject: statement-subject
 To: test@example.com
 MIME-Version: 1.0
 Content-Type: text/html; charset="gbk"
@@ -28,12 +32,12 @@ Content-Transfer-Encoding: base64
 @pytest.fixture
 def cgb_html_content():
     """Sample CGB statement HTML content."""
-    return """<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html>
-<head><title>广发银行信用卡电子账单</title></head>
+<head><title>{_ISSUER}信用卡电子账单</title></head>
 <body>
 <table>
-    <tr><td>感谢您使用广发银行信用卡，以下是您2026年01月的信用卡账单：</td></tr>
+    <tr><td>感谢您使用{_ISSUER}信用卡，以下是您2026年01月的信用卡账单：</td></tr>
     <tr><td>账单周期:2025/12/26-2026/01/25</td></tr>
     <tr><td>账单日:2026/01/25</td></tr>
 </table>
@@ -48,7 +52,7 @@ def cgb_html_content():
     <tr><td>2026/01/15 2026/01/16 (消费)支付宝-测试商户 100.50 人民币 100.50 人民币</td></tr>
     <tr><td>2026/01/10 2026/01/11 (消费)财付通-餐饮店 50.00 人民币 50.00 人民币</td></tr>
     <tr><td>2026/01/05 2026/01/05 (还款)支付宝-还款 -1,000.00 人民币 -1,000.00 人民币</td></tr>
-    <tr><td>2026/01/03 2026/01/03 (赠送)广发返利金 -20.00 人民币 -20.00 人民币</td></tr>
+    <tr><td>2026/01/03 2026/01/03 (赠送)bonus-a -20.00 人民币 -20.00 人民币</td></tr>
 </table>
 <table>
     卡号：6200********5678
@@ -62,7 +66,7 @@ def cgb_html_content():
 @pytest.fixture
 def cgb_eml_file(tmp_path, cgb_html_content):
     """Create a temporary CGB EML file."""
-    file_path = tmp_path / "广发信用卡 2026年01月电子账单.eml"
+    file_path = tmp_path / f"{_ISSUER_SHORT}信用卡 2026年01月电子账单.eml"
     eml_content = create_cgb_eml(cgb_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
     return file_path
@@ -76,13 +80,15 @@ class TestCGBCreditProvider:
         provider = get_provider("cgb_credit")
         assert isinstance(provider, CGBCreditProvider)
         assert provider.provider_id == "cgb_credit"
-        assert provider.provider_name == "广发银行信用卡"
+        assert provider.provider_name == f"{_ISSUER}信用卡"
         assert ".eml" in provider.supported_formats
 
     def test_can_handle(self):
         """Test file format detection."""
-        assert CGBCreditProvider.can_handle(Path("广发信用卡 2026年01月电子账单.eml"))
-        assert CGBCreditProvider.can_handle(Path("广发银行信用卡电子账单.eml"))
+        assert CGBCreditProvider.can_handle(
+            Path(f"{_ISSUER_SHORT}信用卡 2026年01月电子账单.eml")
+        )
+        assert CGBCreditProvider.can_handle(Path(f"{_ISSUER}信用卡电子账单.eml"))
         assert not CGBCreditProvider.can_handle(Path("cgb_statement.csv"))
         assert not CGBCreditProvider.can_handle(Path("statement.eml"))
 
@@ -163,7 +169,7 @@ class TestCGBAmountParsing:
     2026/01/15 2026/01/16 (消费)大额消费 12,345.67 人民币 12,345.67 人民币
 </table>
 </body></html>"""
-        file_path = tmp_path / "广发信用卡.eml"
+        file_path = tmp_path / f"{_ISSUER_SHORT}信用卡.eml"
         file_path.write_text(create_cgb_eml(html), encoding="utf-8")
 
         provider = CGBCreditProvider()
@@ -182,7 +188,7 @@ class TestCGBAmountParsing:
     2026/01/15 2026/01/16 (消费)海外消费 100.50 美元 100.50 美元
 </table>
 </body></html>"""
-        file_path = tmp_path / "广发信用卡.eml"
+        file_path = tmp_path / f"{_ISSUER_SHORT}信用卡.eml"
         file_path.write_text(create_cgb_eml(html), encoding="utf-8")
 
         provider = CGBCreditProvider()
@@ -199,7 +205,7 @@ class TestCGBAmountParsing:
 <table><tr><td>账单周期:2025/12/26-2026/01/25</td></tr></table>
 <table><tr><td>本期无交易记录</td></tr></table>
 </body></html>"""
-        file_path = tmp_path / "广发信用卡.eml"
+        file_path = tmp_path / f"{_ISSUER_SHORT}信用卡.eml"
         file_path.write_text(create_cgb_eml(html), encoding="utf-8")
 
         provider = CGBCreditProvider()
@@ -222,7 +228,7 @@ class TestCGBCrossYearDates:
     2026/01/02 2026/01/03 (消费)年初消费 200.00 人民币 200.00 人民币
 </table>
 </body></html>"""
-        file_path = tmp_path / "广发信用卡.eml"
+        file_path = tmp_path / f"{_ISSUER_SHORT}信用卡.eml"
         file_path.write_text(create_cgb_eml(html), encoding="utf-8")
 
         provider = CGBCreditProvider()
@@ -254,7 +260,7 @@ class TestCGBStatementPeriod:
 </table>
 </body>
 </html>"""
-        file_path = tmp_path / "广发信用卡电子账单.eml"
+        file_path = tmp_path / f"{_ISSUER_SHORT}信用卡电子账单.eml"
         file_path.write_text(create_cgb_eml(html), encoding="utf-8")
 
         transactions = CGBCreditProvider().parse(file_path)

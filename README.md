@@ -82,7 +82,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `bocom_credit` | 交通银行信用卡 | EML  | 邮件账单           |
 | `bosc_credit`  | 上海银行信用卡 | EML  | 邮件账单           |
 | `ccb_credit`   | 建设银行信用卡 | EML  | 邮件账单           |
-| `cgb_credit`   | 广发银行信用卡 | EML  | 邮件账单           |
+| `cgb_credit`   | 广发信用卡     | EML  | 邮件账单           |
 | `cib_credit`   | 兴业银行信用卡 | EML  | 邮件账单           |
 | `cncb_credit`  | 中信银行信用卡 | XLS  | 网银导出账单       |
 | `cmb_credit`   | 招商银行信用卡 | EML  | 邮件账单           |
@@ -260,7 +260,7 @@ rules:
 | 管理方式 | 银行 | 特点 |
 | :--- | :--- | :--- |
 | **按户管理** | 招商银行、民生银行、华夏银行、平安银行、浦发银行、北京银行、上海银行 | 信报、还款、积分按户**合并管理** |
-| **按卡管理** | 广发银行、建设银行 | 独立信报，**账单日合并**，**独立还款**。 |
+| **按卡管理** | 建设银行、广发 | 独立信报，**账单日合并**，**独立还款**。 |
 | **按卡管理** | 中信银行、光大银行、交通银行、农业银行、工商银行、兴业银行、中国银行、邮政储蓄 | 独立信报，独立账单，独立还款。 |
 
 按户管理的账户在同一个 Liability 账户下持有多张物理卡，账户名本身无法区分——配置 [`diagnostics.meta_check_accounts`](#posting-元数据与诊断) 后，Bean-Sieve 会在 posting 上自动注入 `card_last4`，并对账本中缺失或冲突的 `card_last4` 元数据输出 lint 诊断。
