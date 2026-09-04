@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### 新增
+
+- **规则**：`target_payee: ""` 现在会清除交易的 payee（原值记入 `original_payee`）。此前空串被视为未设置，无法通过规则去掉 Provider 解析出的 payee
+
 ### 修复
+
+- **输出**：没有 payee 的交易头改写为 `日期 标志 "narration"`，不再输出占位的 `""`，与 Beancount 惯例一致。生成的 .bean 文本会因此变化，语义不变
 
 - **输出**：以 `_` 开头的元数据键（`_rebate_account`、`_withdrawal_target` 等）在 transaction- 与 posting-level 均不再写入生成的 .bean。这些键仅供 bean-sieve 内部使用，而 Beancount 要求元数据键以小写字母开头，此前未设置 `defaults.output_metadata` 或 `providers.<id>.posting_metadata` 时它们会原样输出，使生成的账本无法通过 bean-check
 - **混合账单对账**：`post_output` 钩子改为对本次运行涉及的每个 Provider 各调用一次（按账单文件首次出现的顺序）。此前只有第一个账单文件所属的 Provider 会执行该钩子，因此同时导入多家银行账单时，其余 Provider 的结算/汇总分录（如农行的账单核对与返现分录）会丢失，且换一个文件顺序结果就不同；单 Provider 运行的输出保持不变

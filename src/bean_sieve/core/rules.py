@@ -236,11 +236,12 @@ class RulesEngine:
             if rule.condition.description:
                 txn.metadata[MATCHED_RULE] = rule.condition.description
 
-        if action.payee:
-            # Store original payee before overriding
-            if txn.payee and txn.payee != action.payee:
+        if action.payee is not None:
+            # An empty target_payee clears the payee; the header then omits it.
+            new_payee = action.payee or None
+            if txn.payee and txn.payee != new_payee:
                 txn.metadata[ORIGINAL_PAYEE] = txn.payee
-            txn.payee = action.payee
+            txn.payee = new_payee
 
         if action.description:
             # Store original description before overriding

@@ -215,6 +215,11 @@ rules:
     target_payee: 美团外卖
     contra_account: Expenses:Food:Delivery
 
+  # target_payee 留空则清除 payee，输出的交易头只保留 narration
+  # - description: ".*红包.*"
+  #   target_payee: ""
+  #   contra_account: Expenses:Gift
+
   # 多关键词匹配（OR 逻辑）
   - description: "(滴滴|高德|T3出行)"
     target_payee: 打车

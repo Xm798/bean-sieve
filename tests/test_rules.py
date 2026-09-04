@@ -103,6 +103,50 @@ class TestRulesEngine:
         assert result.contra_account == "Income:Salary"
         assert result.match_source == MatchSource.RULE
 
+    def test_empty_target_payee_clears_payee(self):
+        """`target_payee: ""` removes the payee and records the original."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(description="desc-a"),
+                    action=RuleAction(contra_account="Expenses:Test", payee=""),
+                ),
+            ]
+        )
+        txn = Transaction(
+            date=date(2030, 1, 2),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="desc-a",
+            payee="payee-a",
+            provider="prov-a",
+        )
+        result = RulesEngine(config).apply(txn)
+        assert result.payee is None
+        assert result.metadata["original_payee"] == "payee-a"
+
+    def test_unset_target_payee_keeps_payee(self):
+        """A rule without target_payee leaves the payee untouched."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(description="desc-a"),
+                    action=RuleAction(contra_account="Expenses:Test"),
+                ),
+            ]
+        )
+        txn = Transaction(
+            date=date(2030, 1, 2),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="desc-a",
+            payee="payee-a",
+            provider="prov-a",
+        )
+        result = RulesEngine(config).apply(txn)
+        assert result.payee == "payee-a"
+        assert "original_payee" not in result.metadata
+
     def test_rule_priority(self):
         """Test that higher priority rules are applied first."""
         config = Config(

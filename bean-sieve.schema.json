@@ -245,7 +245,7 @@
           },
           "target_payee": {
             "type": "string",
-            "description": "Payee name to set (action)"
+            "description": "Payee name to set (action). An empty string clears the payee so the transaction header carries only the narration"
           },
           "target_description": {
             "type": "string",

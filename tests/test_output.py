@@ -294,6 +294,21 @@ def _characterisation_txn() -> Transaction:
     )
 
 
+def test_header_omits_payee_slot_when_payee_missing():
+    """A payee-less transaction writes `date flag "narration"`, never `""`."""
+    txn = Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("10.00"),
+        currency="CNY",
+        description="desc-a",
+        account="Assets:Bank:Test",
+        contra_account="Expenses:Test",
+        provider="prov-a",
+    )
+    header = BeancountWriter().format_transaction(txn).split("\n")[0]
+    assert header == '2030-01-02 ! "desc-a"'
+
+
 def test_metadata_emission_characterisation():
     """Pins every metadata line the writer emits; internal `_` keys stay out."""
     output = BeancountWriter().format_transaction(_characterisation_txn())
