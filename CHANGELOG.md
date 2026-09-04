@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### 其他
+
+- Release workflow 升级到 `softprops/action-gh-release@v3`（runtime 由 Node 20 换为 Node 24，输入参数不变）
+
 ## [0.7.0] - 2026-09-04
 
 ### 新增
