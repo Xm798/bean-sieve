@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-04
+
 ### 新增
 
 - **规则**：`target_payee: ""` 现在会清除交易的 payee（原值记入 `original_payee`）。此前空串被视为未设置，无法通过规则去掉 Provider 解析出的 payee
@@ -147,6 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 可配置的元数据字段，4 空格缩进
 - Provider 生命周期钩子（`pre_reconcile`、`post_output`）
 
+[0.7.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Xm798/bean-sieve/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Xm798/bean-sieve/releases/tag/v0.4.1
