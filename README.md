@@ -1,3 +1,5 @@
+
+
 # Bean-Sieve
 
 Bean-Sieve 是一个基于规则的 [Beancount](https://github.com/beancount/beancount) 账单导入与对账工具。
@@ -12,6 +14,8 @@ Bean-Sieve 是一个基于规则的 [Beancount](https://github.com/beancount/bea
 - **导出** 可作为纯账单解析器，将账单统一导出为 CSV/XLSX
 
 ## 安装
+
+需要 Python 3.11 或更高版本。
 
 ### 作为 CLI 工具安装（推荐）
 
