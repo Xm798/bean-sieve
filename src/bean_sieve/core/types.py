@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from beancount.core.data import TxnPosting
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from .metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
+
 if TYPE_CHECKING:
     from ..config import Config
 
@@ -98,6 +100,17 @@ class Transaction(BaseModel):
     def is_income(self) -> bool:
         """True if this is income (negative amount)."""
         return self.amount < 0
+
+    @property
+    def original_amount(self) -> Decimal | None:
+        """Unsigned amount in the original currency of a foreign transaction."""
+        # Metadata restored by from_dict holds the JSON string, not a Decimal.
+        value = self.metadata.get(ORIGINAL_AMOUNT)
+        return None if value is None else abs(Decimal(value))
+
+    @property
+    def original_currency(self) -> str | None:
+        return self.metadata.get(ORIGINAL_CURRENCY) or None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dict for JSON serialization / GUI communication."""

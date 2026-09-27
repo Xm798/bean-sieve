@@ -393,3 +393,72 @@ def test_same_entry_multiple_legs_not_ambiguous(tmp_path):
 
     assert len(result.matched) == 1
     assert result.match_diagnostics == []
+
+
+def _foreign_txn(original_currency: str | None) -> Transaction:
+    metadata: dict = {"original_amount": Decimal("41.00")}
+    if original_currency:
+        metadata["original_currency"] = original_currency
+    return Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("37.00"),
+        currency="CNY",
+        description="overseas merchant",
+        account="Liabilities:Credit:Card",
+        provider="bocom_credit",
+        metadata=metadata,
+    )
+
+
+def _foreign_ledger(tmp_path: Path, card_posting: str) -> Path:
+    return _write_ledger(
+        tmp_path,
+        f"""
+1900-01-01 open Liabilities:Credit:Card
+1900-01-01 open Expenses:Shopping
+
+2030-01-02 * "overseas merchant"
+    Liabilities:Credit:Card  {card_posting}
+    Expenses:Shopping
+""".strip(),
+    )
+
+
+def test_foreign_txn_matches_billed_amount(tmp_path):
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(_foreign_ledger(tmp_path, "-37.00 CNY"))
+
+    result = sieve.match([_foreign_txn("HKD")])
+
+    assert len(result.matched) == 1
+
+
+def test_foreign_txn_matches_posting_in_original_currency(tmp_path):
+    """A card posting recorded at the original amount and currency still matches."""
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(_foreign_ledger(tmp_path, "-41.00 HKD"))
+
+    result = sieve.match([_foreign_txn("HKD")])
+
+    assert len(result.matched) == 1
+
+
+def test_foreign_txn_without_original_currency_matches_original_number(tmp_path):
+    """With no original currency, the original number is matched in the billed one."""
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(_foreign_ledger(tmp_path, "-41.00 CNY"))
+
+    result = sieve.match([_foreign_txn(None)])
+
+    assert len(result.matched) == 1
+
+
+def test_original_amount_requires_its_currency(tmp_path):
+    """A known original currency pins the match: its number in CNY is not it."""
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(_foreign_ledger(tmp_path, "-41.00 CNY"))
+
+    result = sieve.match([_foreign_txn("HKD")])
+
+    assert result.matched == []
+    assert len(result.missing) == 1

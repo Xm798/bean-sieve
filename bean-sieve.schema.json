@@ -305,7 +305,7 @@
         },
         "bocom_credit": {
           "description": "交通银行信用卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["original_date", "section"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["original_date", "section", "original_amount", "original_currency"] } } } }]
         },
         "bosc_credit": { "$ref": "#/$defs/providerConfig", "description": "上海银行信用卡" },
         "ccb_credit": { "$ref": "#/$defs/providerConfig", "description": "建设银行信用卡" },
@@ -320,7 +320,7 @@
         "cncb_credit": { "$ref": "#/$defs/providerConfig", "description": "中信银行信用卡" },
         "cmb_credit": {
           "description": "招商银行信用卡",
-          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["posting_date"] } } } }]
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["posting_date", "original_amount", "country"] } } } }]
         },
         "cmbc_credit": {
           "description": "民生银行信用卡",

@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from ....core.metadata_keys import ORIGINAL_AMOUNT
 from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
@@ -25,9 +26,11 @@ class CMBCreditProvider(BaseProvider):
     - Row structure (9 cells):
       - [2]: 交易日 (MMDD, may be empty for repayments)
       - [3]: 记账日 (MMDD)
-      - [4]: 交易描述
-      - [6]: 卡号后4位
-      - [7]: 入账金额
+      - [4]: 交易摘要
+      - [5]: 人民币金额 (e.g. "¥ 1,234.56")
+      - [6]: 卡号末四位
+      - [7]: 交易地金额 (original amount, no currency code)
+      - [8]: 交易地 (country/area code, e.g. "HK")
 
     CMB uses unified account management (按户管理), all cards share one statement.
     """
@@ -133,12 +136,7 @@ class CMBCreditProvider(BaseProvider):
     ) -> Transaction | None:
         """Parse a single transaction row (9 cells).
 
-        Structure:
-        - [2]: 交易日 (MMDD, may be empty for repayments)
-        - [3]: 记账日 (MMDD)
-        - [4]: 交易描述
-        - [6]: 卡号后4位
-        - [7]: 入账金额
+        See the class docstring for the cell layout.
         """
         try:
             # Extract posting date (always present)
@@ -172,13 +170,9 @@ class CMBCreditProvider(BaseProvider):
             if not description:
                 return None
 
-            # Extract amount
-            amount_str = self.clean_text(cells[7].get_text())
-            amount_str = amount_str.replace(",", "").replace("\xa0", "")
-            if not amount_str:
+            amount = self._parse_amount(cells[5].get_text())
+            if amount is None:
                 return None
-
-            amount = Decimal(amount_str)
 
             # Extract card last 4 digits
             card_last4 = self.clean_text(cells[6].get_text())
@@ -188,6 +182,15 @@ class CMBCreditProvider(BaseProvider):
             metadata: dict = {}
             if trans_date and trans_date != post_date:
                 metadata["posting_date"] = post_date.isoformat()
+
+            # The statement gives the original amount without its currency, so
+            # only the number is kept; a country code does not pin a currency.
+            original_amount = self._parse_amount(cells[7].get_text())
+            if original_amount is not None and original_amount != amount:
+                metadata[ORIGINAL_AMOUNT] = original_amount
+                country = self.clean_text(cells[8].get_text())
+                if country:
+                    metadata["country"] = country
 
             return Transaction(
                 date=txn_date,
@@ -200,7 +203,16 @@ class CMBCreditProvider(BaseProvider):
                 source_line=row_idx + 1,
                 metadata=metadata,
             )
-        except (ValueError, IndexError, AttributeError, InvalidOperation):
+        except (ValueError, IndexError, AttributeError):
+            return None
+
+    def _parse_amount(self, text: str) -> Decimal | None:
+        cleaned = self.clean_text(text).replace("¥", "").replace(",", "").strip()
+        if not cleaned:
+            return None
+        try:
+            return Decimal(cleaned)
+        except InvalidOperation:
             return None
 
     def _determine_year(

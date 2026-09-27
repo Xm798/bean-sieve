@@ -284,10 +284,10 @@ rules:
 | Provider | Metadata 字段 |
 | :--- | :--- |
 | `boc_credit` | `original_trans_date`, `original_post_date` |
-| `bocom_credit` | `original_date`, `section` |
+| `bocom_credit` | `original_date`, `section`, `original_amount`, `original_currency` |
 | `cgb_credit` | `original_date`, `trans_type` |
 | `cib_credit` | `original_date` |
-| `cmb_credit` | `posting_date` |
+| `cmb_credit` | `posting_date`, `original_amount`, `country` |
 | `cmbc_credit` | `posting_date` |
 | `hxb_credit` | `original_date` |
 | `hsbchk_credit` | `transaction_status`, `country`, `district`, `direction` |
@@ -297,6 +297,10 @@ rules:
 | `bosc_credit` | — |
 | `ccb_credit` | — |
 | `cncb_credit` | — |
+
+境外交易的金额取人民币入账金额，交易地原币金额记入 `original_amount`（招行账单不给原币币种，只记金额与交易地 `country`）。
+
+匹配账本时，信用卡 posting 为入账金额，或为原币金额与原币币种（无原币币种时为入账币种）的，均视为同一笔。
 
 ### 借记卡
 

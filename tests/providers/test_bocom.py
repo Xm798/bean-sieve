@@ -186,6 +186,8 @@ class TestBOCOMCreditProvider:
 
         spending_txn = transactions[2]
         assert spending_txn.metadata["section"] == "spending"
+        assert "original_amount" not in spending_txn.metadata
+        assert "original_currency" not in spending_txn.metadata
 
     def test_year_extraction_from_statement_cycle(self, tmp_path):
         """Test year extraction from statement cycle date."""
@@ -196,8 +198,8 @@ class TestBOCOMCreditProvider:
     <tr><td>消费、取现、其他费用明细</td></tr>
     <tr><td>
         <table>
-            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td></tr>
-            <tr><td></td><td>01/15</td><td>01/15</td><td>1234</td><td>消费 测试</td><td>CNY100.00</td></tr>
+            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td><td>入账金额</td></tr>
+            <tr><td></td><td>01/15</td><td>01/15</td><td>1234</td><td>消费 测试</td><td>CNY100.00</td><td>CNY100.00</td></tr>
         </table>
     </td></tr>
 </table>
@@ -220,8 +222,8 @@ class TestBOCOMCreditProvider:
     <tr><td>消费、取现、其他费用明细</td></tr>
     <tr><td>
         <table>
-            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td></tr>
-            <tr><td></td><td>12/28</td><td>01/16</td><td>0007</td><td>消费 商户甲</td><td>CNY60.00</td></tr>
+            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td><td>入账金额</td></tr>
+            <tr><td></td><td>12/28</td><td>01/16</td><td>0007</td><td>消费 商户甲</td><td>CNY60.00</td><td>CNY60.00</td></tr>
         </table>
     </td></tr>
 </table>
@@ -247,8 +249,8 @@ class TestBOCOMCreditProvider:
     <tr><td>消费、取现、其他费用明细</td></tr>
     <tr><td>
         <table>
-            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td></tr>
-            <tr><td></td><td>11/20</td><td>12/20</td><td>0007</td><td>消费 商户甲</td><td>CNY20.00</td></tr>
+            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td><td>入账金额</td></tr>
+            <tr><td></td><td>11/20</td><td>12/20</td><td>0007</td><td>消费 商户甲</td><td>CNY20.00</td><td>CNY20.00</td></tr>
         </table>
     </td></tr>
 </table>
@@ -291,8 +293,8 @@ class TestBOCOMAmountParsing:
     <tr><td>消费、取现、其他费用明细</td></tr>
     <tr><td>
         <table>
-            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td></tr>
-            <tr><td></td><td>10/22</td><td>10/22</td><td>1234</td><td>消费 大额</td><td>CNY12,345.67</td></tr>
+            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td><td>入账金额</td></tr>
+            <tr><td></td><td>10/22</td><td>10/22</td><td>1234</td><td>消费 大额</td><td>CNY12,345.67</td><td>CNY12,345.67</td></tr>
         </table>
     </td></tr>
 </table>
@@ -306,8 +308,8 @@ class TestBOCOMAmountParsing:
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("12345.67")
 
-    def test_usd_amount(self, tmp_path):
-        """Test parsing USD amounts."""
+    def test_foreign_transaction_takes_billed_amount(self, tmp_path):
+        """The 入账金额 column is the amount; 交易金额 is kept as the original."""
         html = """<html>
 <body>
 <table><tr><td>账单周期 2025/10/14-2025/11/13</td></tr></table>
@@ -315,8 +317,8 @@ class TestBOCOMAmountParsing:
     <tr><td>消费、取现、其他费用明细</td></tr>
     <tr><td>
         <table>
-            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td></tr>
-            <tr><td></td><td>10/22</td><td>10/22</td><td>1234</td><td>消费 海外</td><td>USD100.50</td></tr>
+            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td><td>入账金额</td></tr>
+            <tr><td></td><td>10/22</td><td>10/22</td><td>1234</td><td>消费 海外</td><td>HKD41.00</td><td>CNY37.00</td></tr>
         </table>
     </td></tr>
 </table>
@@ -328,8 +330,11 @@ class TestBOCOMAmountParsing:
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 1
-        assert transactions[0].amount == Decimal("100.50")
-        assert transactions[0].currency == "USD"
+        txn = transactions[0]
+        assert txn.amount == Decimal("37.00")
+        assert txn.currency == "CNY"
+        assert txn.metadata["original_amount"] == Decimal("41.00")
+        assert txn.metadata["original_currency"] == "HKD"
 
 
 class TestBOCOMStatementPeriod:

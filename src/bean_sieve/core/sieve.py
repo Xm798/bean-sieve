@@ -277,7 +277,9 @@ class Sieve:
     def _get_candidates(self, txn: Transaction) -> list[TxnPosting]:
         """Get candidate ledger entries for matching."""
         candidates = []
-        abs_amount = abs(txn.amount)
+        amounts = {abs(txn.amount)}
+        if txn.original_amount is not None:
+            amounts.add(txn.original_amount)
 
         # Check dates within tolerance
         for delta in range(self.config.date_tolerance + 1):
@@ -285,8 +287,8 @@ class Sieve:
                 if delta == 0 and sign != 0:
                     continue
                 check_date = txn.date + timedelta(days=delta * sign if sign else 0)
-                key = (check_date, abs_amount)
-                candidates.extend(self._ledger_index.get(key, []))
+                for amount in amounts:
+                    candidates.extend(self._ledger_index.get((check_date, amount), []))
 
         return candidates
 
@@ -312,29 +314,12 @@ class Sieve:
         # Amount must match (with tolerance)
         if posting.units and posting.units.number is not None:
             units_number = posting.units.number
-            amount_diff = abs(abs(txn.amount) - abs(units_number))
-
-            # Check currency match or price conversion
-            if posting.units.currency != txn.currency:
-                # Different currency - must have price and total cost must match
-                if posting.price and posting.price.number is not None:
-                    total_cost = abs(units_number * posting.price.number)
-                    cost_diff = abs(abs(txn.amount) - total_cost)
-                    if cost_diff > self.config.amount_tolerance:
-                        return False
-                else:
-                    # No price conversion, currencies don't match
-                    return False
-            elif posting.price and posting.price.number is not None:
-                # Same currency with price - check total cost as alternative
-                total_cost = abs(units_number * posting.price.number)
-                cost_diff = abs(abs(txn.amount) - total_cost)
-                if (
-                    amount_diff > self.config.amount_tolerance
-                    and cost_diff > self.config.amount_tolerance
-                ):
-                    return False
-            elif amount_diff > self.config.amount_tolerance:
+            units_currency = posting.units.currency
+            price_number = posting.price.number if posting.price else None
+            if not (
+                self._amount_matches(txn, units_number, units_currency, price_number)
+                or self._original_amount_matches(txn, units_number, units_currency)
+            ):
                 return False
 
             # Check amount sign matches the expected direction for Asset/Liability accounts
@@ -370,6 +355,42 @@ class Sieve:
                 return False
 
         return True
+
+    def _amount_matches(
+        self,
+        txn: Transaction,
+        units_number: Decimal,
+        units_currency: str,
+        price_number: Decimal | None,
+    ) -> bool:
+        """Compare the billed amount against the posting's units or its cost."""
+        tolerance = self.config.amount_tolerance
+        amount_diff = abs(abs(txn.amount) - abs(units_number))
+
+        if price_number is not None:
+            cost_diff = abs(abs(txn.amount) - abs(units_number * price_number))
+            if units_currency != txn.currency:
+                return cost_diff <= tolerance
+            return amount_diff <= tolerance or cost_diff <= tolerance
+
+        return units_currency == txn.currency and amount_diff <= tolerance
+
+    def _original_amount_matches(
+        self, txn: Transaction, units_number: Decimal, units_currency: str
+    ) -> bool:
+        """Compare a foreign transaction's original amount against the posting.
+
+        bean-sieve 0.7.0 and earlier wrote the original amount as the card
+        posting: BOCOM with its original currency (`20.00 HKD`), CMB labelled
+        as the billed currency (`20.00 CNY`), since its statement gives no
+        original currency. Accepting both keeps those ledgers matching.
+        """
+        if txn.original_amount is None:
+            return False
+        if units_currency != (txn.original_currency or txn.currency):
+            return False
+        diff = abs(txn.original_amount - abs(units_number))
+        return diff <= self.config.amount_tolerance
 
     def _diagnose_ambiguous(
         self, txn: Transaction, chosen: TxnPosting, n_others: int

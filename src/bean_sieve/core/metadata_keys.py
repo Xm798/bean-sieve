@@ -6,7 +6,9 @@ posting level, since Beancount metadata keys must start with a lowercase
 letter.
 
 The remaining keys (`method`, `balance`, …) are the provider-facing
-vocabulary and stay as literals at their sites.
+vocabulary and stay as literals at their sites, except those the core reads:
+any provider setting `ORIGINAL_AMOUNT`/`ORIGINAL_CURRENCY` opts into matching
+on the original amount.
 """
 
 IGNORED = "_ignored"
@@ -19,4 +21,6 @@ MATCHED_RULE = "matched_rule"
 MATCHED_PRESET_RULE = "matched_preset_rule"
 ORIGINAL_PAYEE = "original_payee"
 ORIGINAL_DESCRIPTION = "original_description"
+ORIGINAL_AMOUNT = "original_amount"
+ORIGINAL_CURRENCY = "original_currency"
 REFERENCE = "reference"

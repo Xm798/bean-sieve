@@ -11,6 +11,7 @@ from pathlib import Path
 import xlrd
 from xlrd.biffh import XLRDError
 
+from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
 from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
@@ -175,9 +176,9 @@ class SPDBCreditProvider(BaseProvider):
                 original_value
             )
             if original_amount is not None:
-                metadata["original_amount"] = original_amount
+                metadata[ORIGINAL_AMOUNT] = original_amount
             if original_currency:
-                metadata["original_currency"] = original_currency
+                metadata[ORIGINAL_CURRENCY] = original_currency
             if (
                 original_value
                 and original_value != "-"

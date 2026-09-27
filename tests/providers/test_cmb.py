@@ -36,11 +36,15 @@ def create_cmb_html_with_transactions(
     - description: str
     - card_last4: str
     - amount: str (e.g., "100.00" or "-100.00")
+    - original_amount: optional 交易地金额, defaults to amount
+    - country: optional 交易地, defaults to empty
 
     statement_month is the 账单 header CMB derives the billing cycle from.
     """
     rows = []
     for txn in transactions:
+        original_amount = txn.get("original_amount", txn["amount"])
+        country = txn.get("country", "")
         # Create 9-cell row structure matching CMB format
         row = f"""<tr>
             <td>{txn["trans_date"]}{txn["post_date"]}{txn["description"]}¥ {txn["amount"]}{txn["card_last4"]}{txn["amount"]}</td>
@@ -50,8 +54,8 @@ def create_cmb_html_with_transactions(
             <td>{txn["description"]}</td>
             <td>¥ {txn["amount"]}</td>
             <td>{txn["card_last4"]}</td>
-            <td>{txn["amount"]}</td>
-            <td></td>
+            <td>{original_amount}</td>
+            <td>{country}</td>
         </tr>"""
         rows.append(row)
 
@@ -270,6 +274,41 @@ class TestCMBAmountParsing:
 
         assert len(txns) == 1
         assert txns[0].amount == Decimal("12345.67")
+
+    def test_foreign_transaction_takes_rmb_amount(self, tmp_path):
+        """人民币金额 is the amount; 交易地金额 and 交易地 are kept as metadata."""
+        transactions = [
+            {
+                "trans_date": "1210",
+                "post_date": "1211",
+                "description": "OVERSEAS MERCHANT",
+                "card_last4": "0001",
+                "amount": "37.00",
+                "original_amount": "41.00",
+                "country": "HK",
+            },
+            {
+                "trans_date": "1211",
+                "post_date": "1212",
+                "description": "境内商户",
+                "card_last4": "0001",
+                "amount": "43.00",
+                "country": "CN",
+            },
+        ]
+        html = create_cmb_html_with_transactions(transactions)
+        file_path = tmp_path / "招商银行信用卡电子账单.eml"
+        file_path.write_text(create_cmb_eml(html), encoding="utf-8")
+
+        txns = CMBCreditProvider().parse(file_path)
+
+        assert [t.amount for t in txns] == [Decimal("37.00"), Decimal("43.00")]
+        assert txns[0].currency == "CNY"
+        assert txns[0].metadata["original_amount"] == Decimal("41.00")
+        assert txns[0].metadata["country"] == "HK"
+        assert "original_currency" not in txns[0].metadata
+        assert "original_amount" not in txns[1].metadata
+        assert "country" not in txns[1].metadata
 
     def test_negative_amount(self, tmp_path):
         """Test parsing negative amounts (refunds/repayments)."""

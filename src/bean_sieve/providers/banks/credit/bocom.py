@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
 from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
@@ -22,6 +23,9 @@ class BOCOMCreditProvider(BaseProvider):
     Transaction sections:
     - 还款、退货、费用返还明细: payments/refunds (negative amounts)
     - 消费、取现、其他费用明细: spending/cash advances (positive amounts)
+
+    Row cells: '', 交易日期, 记账日期, 卡末四位, 交易说明, 交易金额 (original
+    currency, e.g. "HKD41.00"), 入账金额 (billed currency, e.g. "CNY37.00").
     """
 
     provider_id = "bocom_credit"
@@ -53,7 +57,7 @@ class BOCOMCreditProvider(BaseProvider):
             trans_rows = []
             for row in rows:
                 cells = row.find_all("td")
-                if len(cells) >= 6:
+                if len(cells) >= 7:
                     cell_texts = [c.get_text(strip=True) for c in cells]
                     if self._is_date(cell_texts[1]):
                         trans_rows.append(cell_texts)
@@ -118,19 +122,26 @@ class BOCOMCreditProvider(BaseProvider):
             post_date_str = cells[2]  # MM/DD
             card_last4 = cells[3]  # e.g., "1234"
             description = cells[4]
-            amount_str = cells[5]  # e.g., "CNY9974.12" or "USD100.00"
 
             # Parse dates using statement period to determine correct year
             trans_date = self._parse_date_with_period(trans_date_str, statement_period)
             post_date = self._parse_date_with_period(post_date_str, statement_period)
 
-            # Parse amount and currency
-            amount, currency = self._parse_amount(amount_str)
+            amount, currency = self._parse_amount(cells[6])
             if amount is None:
                 return None
 
             # payment section = payments to card = negative (income for cardholder)
             amount = -abs(amount) if section == "payment" else abs(amount)
+
+            metadata: dict = {
+                "original_date": trans_date_str,
+                "section": section or "unknown",
+            }
+            original_amount, original_currency = self._parse_amount(cells[5])
+            if original_amount is not None and original_currency != currency:
+                metadata[ORIGINAL_AMOUNT] = original_amount
+                metadata[ORIGINAL_CURRENCY] = original_currency
 
             return Transaction(
                 date=trans_date,
@@ -142,10 +153,7 @@ class BOCOMCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx + 1,
-                metadata={
-                    "original_date": trans_date_str,
-                    "section": section or "unknown",
-                },
+                metadata=metadata,
             )
         except (IndexError, ValueError):
             return None
