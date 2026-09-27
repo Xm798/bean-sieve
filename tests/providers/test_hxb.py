@@ -424,6 +424,33 @@ class TestHXBStatementPeriod:
             date(2025, 11, 30),
         )
 
+    def test_period_from_statement_title_when_filename_has_no_month(self, tmp_path):
+        """A renamed file still gets its period from 对账单(YYYY/MM) + 账单日."""
+        html = """<html><body>
+<div>华夏信用卡对账单(2030/01)</div>
+<div>账单日</div>
+<div>每月26日</div>
+<table><tr><td>交易日</td></tr></table>
+<table>
+<tr><td>12/28</td></tr>
+<tr><td>12/29</td></tr>
+<tr><td>merchant-a</td></tr>
+<tr><td>0001</td></tr>
+<tr><td>￥47.00</td></tr>
+</table>
+</body></html>"""
+        file_path = tmp_path / "HXB-0001-203001.eml"
+        file_path.write_text(create_hxb_eml(html), encoding="utf-8")
+
+        transactions = HXBCreditProvider().parse(file_path)
+
+        assert len(transactions) == 1
+        assert transactions[0].date == date(2029, 12, 28)
+        assert transactions[0].statement_period == (
+            date(2029, 12, 27),
+            date(2030, 1, 26),
+        )
+
     def test_period_from_filename_fallback(self, tmp_path):
         """Test fallback to filename when period not in HTML."""
         html = """<html><body>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date, timedelta
 from decimal import Decimal
@@ -32,7 +33,7 @@ class HXBCreditProvider(BaseProvider):
         text = self._html_to_text(html)
 
         # Extract statement period from HTML content or filename
-        statement_period = self._extract_statement_period(html, file_path)
+        statement_period = self._extract_statement_period(html, text, file_path)
         fallback_year = self._extract_year_from_path(file_path)
 
         transactions = self._parse_transactions(
@@ -53,14 +54,14 @@ class HXBCreditProvider(BaseProvider):
         return date.today().year
 
     def _extract_statement_period(
-        self, html: str, file_path: Path
+        self, html: str, text: str, file_path: Path
     ) -> tuple[date, date] | None:
         """Extract statement period from HTML content or filename.
 
         Tries multiple patterns:
         1. HTML content: 2025/11/01-2025/11/30, 2025年11月01日-2025年11月30日
-        2. HTML billing date (账单日 每月XX日) + filename month
-        3. Filename: 2025年11月 -> assumes full month coverage
+        2. HTML billing date (账单日 每月XX日) + statement month
+        3. Statement month alone -> assumes full month coverage
         """
         # Try to find period in HTML content
         # Pattern: YYYY/MM/DD-YYYY/MM/DD
@@ -79,50 +80,46 @@ class HXBCreditProvider(BaseProvider):
             end = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
             return (start, end)
 
-        # Derive period from billing date + filename month
-        # e.g., "账单日 每月26日" with filename "2026年02月" → Jan 27 - Feb 26
-        period = self._derive_period_from_billing_date(html, file_path)
+        statement_month = self._extract_statement_month(text, file_path)
+        if statement_month is None:
+            return None
+        year, month = statement_month
+
+        # e.g., "账单日 每月26日" on the 2026/02 statement → Jan 27 - Feb 26
+        period = self._derive_period_from_billing_date(text, year, month)
         if period:
             return period
 
-        # Fallback: extract year and month from filename and assume full month
-        match = re.search(r"(\d{4})年(\d{1,2})月", file_path.name)
-        if match:
-            year = int(match.group(1))
-            month = int(match.group(2))
-            start = date(year, month, 1)
-            if month == 12:
-                end = date(year + 1, 1, 1) - timedelta(days=1)
-            else:
-                end = date(year, month + 1, 1) - timedelta(days=1)
-            return (start, end)
+        return (
+            date(year, month, 1),
+            date(year, month, calendar.monthrange(year, month)[1]),
+        )
 
-        return None
+    def _extract_statement_month(
+        self, text: str, file_path: Path
+    ) -> tuple[int, int] | None:
+        """Read the statement month from the 对账单(YYYY/MM) title or the filename."""
+        match = re.search(r"对账单\s*[(（]\s*(\d{4})/(\d{1,2})\s*[)）]", text)
+        if match is None:
+            match = re.search(r"(\d{4})年(\d{1,2})月", file_path.name)
+        if match is None:
+            return None
+        return int(match.group(1)), int(match.group(2))
 
     def _derive_period_from_billing_date(
-        self, html: str, file_path: Path
+        self, text: str, year: int, month: int
     ) -> tuple[date, date] | None:
-        """Derive billing period from billing date (账单日) and filename month.
+        """Derive billing period from billing date (账单日) and statement month.
 
         Credit card billing period runs from previous billing date + 1
         to current billing date. e.g., billing date 26th for Feb statement
         means the period is Jan 27 - Feb 26.
         """
-        import calendar
-
-        text = re.sub(r"<[^>]+>", " ", html)
         match = re.search(r"账单日\s*每月\s*(\d{1,2})\s*日", text)
         if not match:
             return None
 
         billing_day = int(match.group(1))
-
-        fm = re.search(r"(\d{4})年(\d{1,2})月", file_path.name)
-        if not fm:
-            return None
-
-        year = int(fm.group(1))
-        month = int(fm.group(2))
 
         # End date: billing day of statement month (clamp to month's last day)
         max_day = calendar.monthrange(year, month)[1]
