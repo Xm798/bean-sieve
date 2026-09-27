@@ -319,7 +319,12 @@ def test_skips_malformed_rows_without_sensitive_logs(
     assert record.getMessage() == "Skipping malformed psbc_credit row 2"
     assert record.args == ("psbc_credit", 2)
     assert record.exc_info is None
-    record_text = repr(record.__dict__)
+    # Runtime attributes (thread id, timestamps, pid) can contain a short
+    # sentinel like "007" by chance, so only what the provider passed in is
+    # scanned: the message, its args and any `extra` fields.
+    runtime_keys = logging.LogRecord("", 0, "", 0, "", None, None).__dict__.keys()
+    extras = {k: v for k, v in record.__dict__.items() if k not in runtime_keys}
+    record_text = repr((record.getMessage(), record.args, extras))
     for value in invalid.values():
         if value:
             assert value not in record_text
