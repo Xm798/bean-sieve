@@ -298,7 +298,13 @@ rules:
 | `ccb_credit` | — |
 | `cncb_credit` | — |
 
-境外交易的金额取人民币入账金额，交易地原币金额记入 `original_amount`（招行账单不给原币币种，只记金额与交易地 `country`）。
+境外交易的金额取人民币入账金额，交易地原币金额记入 `original_amount`（招行账单不给原币币种，只记金额与交易地 `country`）。已知原币币种时，对方科目写成原币并以 `@@` 标注入账额，信用卡 posting 保持入账币种：
+
+```beancount
+2030-01-02 * "OVERSEAS MERCHANT"
+    Liabilities:Credit:BOCOM   -37.00 CNY
+    Expenses:FIXME              41.00 HKD @@ 37.00 CNY
+```
 
 匹配账本时，信用卡 posting 为入账金额，或为原币金额与原币币种（无原币币种时为入账币种）的，均视为同一笔。
 

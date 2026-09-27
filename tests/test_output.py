@@ -363,3 +363,52 @@ def test_ignored_transactions_never_reach_the_writer():
         provider="prov-a",
     )
     assert apply_rules([txn], config) == []
+
+
+def _foreign_txn(amount: str, metadata: dict) -> Transaction:
+    return Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal(amount),
+        currency="CNY",
+        description="desc-a",
+        account="Liabilities:Credit:Test",
+        contra_account="Expenses:Test",
+        provider="prov-a",
+        metadata=metadata,
+    )
+
+
+def test_foreign_expense_prices_contra_posting_in_original_currency():
+    writer = BeancountWriter(output_metadata=[])
+    txn = _foreign_txn(
+        "37.00",
+        {"original_amount": Decimal("41.00"), "original_currency": "HKD"},
+    )
+
+    assert writer.format_transaction(txn).split("\n")[1:] == [
+        "    Liabilities:Credit:Test  -37.00 CNY",
+        "    Expenses:Test  41.00 HKD @@ 37.00 CNY",
+    ]
+
+
+def test_foreign_refund_keeps_the_sign_on_the_original_units():
+    writer = BeancountWriter(output_metadata=[])
+    txn = _foreign_txn(
+        "-37.00",
+        {"original_amount": Decimal("41.00"), "original_currency": "HKD"},
+    )
+
+    assert writer.format_transaction(txn).split("\n")[1:] == [
+        "    Liabilities:Credit:Test  37.00 CNY",
+        "    Expenses:Test  -41.00 HKD @@ 37.00 CNY",
+    ]
+
+
+def test_original_amount_without_currency_writes_billed_amount():
+    writer = BeancountWriter(output_metadata=[])
+    txn = _foreign_txn("37.00", {"original_amount": Decimal("41.00")})
+
+    assert writer.format_transaction(txn).split("\n")[1:] == [
+        "    Liabilities:Credit:Test  -37.00 CNY",
+        "    Expenses:Test  37.00 CNY",
+    ]

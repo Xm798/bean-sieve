@@ -8,7 +8,7 @@ letter.
 The remaining keys (`method`, `balance`, …) are the provider-facing
 vocabulary and stay as literals at their sites, except those the core reads:
 any provider setting `ORIGINAL_AMOUNT`/`ORIGINAL_CURRENCY` opts into matching
-on the original amount.
+on the original amount and a contra-side `@@` price in the output.
 """
 
 IGNORED = "_ignored"

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### 修复
 
 - **招行/交行信用卡境外交易**：金额改取人民币入账金额。此前招行取的是「交易地金额」列并标为 CNY，交行取的是「交易金额」列（原币，如 `HKD41.00`）。原币金额记入 `original_amount`，交行另记 `original_currency`，招行账单不给原币币种，改记交易地 `country`。对账时，信用卡 posting 为原币金额与原币币种（招行为原币数值加 CNY）的，也视为同一笔，因此旧版本原样导入的条目仍能匹配，不会被当成遗漏重复生成
+- **外币交易输出**：带 `original_amount` 与 `original_currency` 且原币币种与入账币种不同的交易，对方科目改写为 `原币 @@ 入账额`（如 `Expenses:FIXME  41.00 HKD @@ 37.00 CNY`），信用卡 posting 不变。涉及交行与浦发信用卡，生成的 .bean 文本会因此变化
 
 ### 其他
 

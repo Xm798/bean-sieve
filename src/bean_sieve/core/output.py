@@ -226,7 +226,23 @@ class BeancountWriter:
         contra = txn.contra_account
         if not contra:
             contra = self.default_expense if txn.is_expense else self.default_income
-        postings.append(f"{contra}  {contra_amount} {txn.currency}")
+        original_amount = txn.original_amount
+        original_currency = txn.original_currency
+        if (
+            original_amount is not None
+            and original_currency
+            and original_currency != txn.currency
+            and contra_amount
+        ):
+            # The card is billed in txn.currency, so the conversion sits on the
+            # contra side and the card posting keeps the billed amount.
+            units = original_amount.copy_sign(contra_amount)
+            postings.append(
+                f"{contra}  {units} {original_currency}"
+                f" @@ {abs(contra_amount)} {txn.currency}"
+            )
+        else:
+            postings.append(f"{contra}  {contra_amount} {txn.currency}")
 
         return postings
 
