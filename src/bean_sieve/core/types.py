@@ -273,3 +273,6 @@ class ReconcileContext:
     # via model_copy); other fields are shared objects and may show later
     # in-place edits.
     parsed: dict[Path, list[Transaction]] = field(default_factory=dict)
+    # Per-path id of the provider that parsed it: an explicitly named provider
+    # owns files that detection would not recognise.
+    provider_ids: dict[Path, str] = field(default_factory=dict)

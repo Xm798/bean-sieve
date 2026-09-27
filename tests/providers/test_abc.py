@@ -117,6 +117,13 @@ class TestABCCreditProvider:
         assert not ABCCreditProvider.can_handle(Path("abc_statement.csv"))
         assert not ABCCreditProvider.can_handle(Path("statement.eml"))
 
+    def test_can_handle_detects_encoded_eml_content(self, tmp_path, abc_html_content):
+        """A renamed statement is detected from its base64-encoded body."""
+        file_path = tmp_path / "statement.eml"
+        file_path.write_text(create_abc_eml(abc_html_content), encoding="utf-8")
+
+        assert ABCCreditProvider.can_handle(file_path)
+
     def test_parse_transactions(self, abc_eml_file):
         """Test parsing transactions from EML file."""
         provider = ABCCreditProvider()
@@ -567,7 +574,10 @@ class TestABCPostOutput:
         output = provider.post_output(
             "",
             empty_result(),
-            ReconcileContext(statement_paths=[abc_eml_file]),
+            ReconcileContext(
+                statement_paths=[abc_eml_file],
+                provider_ids={abc_eml_file: "abc_credit"},
+            ),
         )
 
         assert output == EXPECTED_BALANCED_REPORT
@@ -585,6 +595,7 @@ class TestABCPostOutput:
             empty_result(),
             ReconcileContext(
                 statement_paths=[abc_eml_file],
+                provider_ids={abc_eml_file: "abc_credit"},
                 date_range=(date(2030, 1, 1), date(2030, 1, 1)),
             ),
         )
@@ -596,6 +607,7 @@ class TestABCPostOutput:
         file_path.write_text(create_abc_eml(REBATE_HTML), encoding="utf-8")
         context = ReconcileContext(
             statement_paths=[file_path],
+            provider_ids={file_path: "abc_credit"},
             config=Config(
                 providers={
                     "abc_credit": ProviderConfig(
@@ -609,6 +621,23 @@ class TestABCPostOutput:
         output = ABCCreditProvider().post_output("; base\n", empty_result(), context)
 
         assert output == EXPECTED_REBATE_OUTPUT
+
+    def test_post_output_reports_files_assigned_to_it(self, tmp_path, abc_html_content):
+        """A statement the run assigned to ABC is reported whatever its name."""
+        file_path = tmp_path / "statement.eml"
+        file_path.write_text(create_abc_eml(abc_html_content), encoding="utf-8")
+        other_path = tmp_path / "农业银行-other.eml"
+        other_html = abc_html_content.replace("1234", "5678")
+        other_path.write_text(create_abc_eml(other_html), encoding="utf-8")
+        context = ReconcileContext(
+            statement_paths=[file_path, other_path],
+            provider_ids={file_path: "abc_credit", other_path: "other"},
+        )
+
+        output = ABCCreditProvider().post_output("", empty_result(), context)
+
+        assert "尾号 1234" in output
+        assert "5678" not in output
 
 
 class TestABCStatementPeriod:

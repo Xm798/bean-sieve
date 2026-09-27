@@ -264,6 +264,7 @@ def full_reconcile(
         account_filter=account_filter,
         output_path=output_path,
         parsed={path: provider.parse(path) for path, provider in pset.files},
+        provider_ids={path: provider.provider_id for path, provider in pset.files},
     )
 
     transactions = [txn for path, _ in pset.files for txn in context.parsed[path]]

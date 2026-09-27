@@ -103,9 +103,23 @@ class BaseProvider(ABC):
         try:
             # Read first 500 bytes for header detection
             content = cls._read_file_header(file_path, 500)
+            if file_path.suffix.lower() == ".eml":
+                content += cls._read_eml_text(file_path)
             return any(kw in content for kw in cls.content_keywords)
         except Exception:
             return False
+
+    @classmethod
+    def _read_eml_text(cls, file_path: Path) -> str:
+        """Return an EML's decoded subject and body.
+
+        Mail clients encode the subject (RFC 2047) and body (base64 or
+        quoted-printable), so keywords only appear once these are decoded.
+        """
+        with open(file_path, "rb") as f:
+            msg = email.message_from_binary_file(f)
+        provider = cls()
+        return provider.decode_subject(msg) + provider._extract_html_from_message(msg)
 
     @classmethod
     def _read_file_header(cls, file_path: Path, size: int = 500) -> str:
@@ -118,6 +132,14 @@ class BaseProvider(ABC):
             except (UnicodeDecodeError, UnicodeError):
                 continue
         return ""
+
+    def own_statement_paths(self, context: ReconcileContext) -> list[Path]:
+        """Statement paths this run assigned to this provider, in run order."""
+        return [
+            path
+            for path in context.statement_paths
+            if context.provider_ids.get(path) == self.provider_id
+        ]
 
     # === Lifecycle Hooks (override in subclasses as needed) ===
 

@@ -307,13 +307,7 @@ class ABCCreditProvider(BaseProvider):
         context: ReconcileContext,
     ) -> str:
         """Append statement summary comparison and rebate entries to output."""
-        # Get source files from context
-        source_files = [
-            p for p in context.statement_paths if p.suffix.lower() == ".eml"
-        ]
-
-        # Filter to only files that this provider can handle
-        source_files = [p for p in source_files if self.can_handle(p)]
+        source_files = self.own_statement_paths(context)
 
         if not source_files:
             return content
