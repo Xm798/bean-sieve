@@ -325,6 +325,52 @@ class TestHXBAmountParsing:
         assert transactions[0].amount == Decimal("99.99")
         assert transactions[0].currency == "USD"
 
+    def test_usd_section_rows(self, tmp_path):
+        """Rows after 美元账务信息 parse as USD; its summary amounts do not."""
+        html = """<html><body>
+<div>人民币账务信息</div>
+<table><tr><td>交易日</td></tr></table>
+<table>
+<tr><td>11/05</td></tr>
+<tr><td>11/05</td></tr>
+<tr><td>merchant-a</td></tr>
+<tr><td>0001</td></tr>
+<tr><td>￥47.00</td></tr>
+</table>
+<div>美元账务信息</div>
+<table>
+<tr><td>本期应还款</td></tr>
+<tr><td>＄59.00</td></tr>
+<tr><td>＄0.00</td></tr>
+</table>
+<table><tr><td>交易日</td></tr></table>
+<table>
+<tr><td>11/06</td></tr>
+<tr><td>11/08</td></tr>
+<tr><td>merchant-b</td></tr>
+<tr><td>0002</td></tr>
+<tr><td>＄53.00</td></tr>
+</table>
+<table>
+<tr><td>11/07</td></tr>
+<tr><td>11/08</td></tr>
+<tr><td>rebate-c</td></tr>
+<tr><td>0002</td></tr>
+<tr><td>-＄7.00</td></tr>
+</table>
+<div>收费标准</div>
+</body></html>"""
+        file_path = tmp_path / "华夏信用卡-电子账单2025年11月.eml"
+        file_path.write_text(create_hxb_eml(html), encoding="utf-8")
+
+        transactions = HXBCreditProvider().parse(file_path)
+
+        assert [(t.amount, t.currency, t.card_last4) for t in transactions] == [
+            (Decimal("47.00"), "CNY", "0001"),
+            (Decimal("53.00"), "USD", "0002"),
+            (Decimal("-7.00"), "USD", "0002"),
+        ]
+
     def test_negative_amount_refund(self, tmp_path):
         """Test parsing negative amounts (refunds)."""
         html = """<html><body>

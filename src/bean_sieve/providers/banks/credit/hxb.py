@@ -180,8 +180,12 @@ class HXBCreditProvider(BaseProvider):
                 in_trans = True
                 i += 1
                 continue
+            # The USD section repeats the CNY layout: a balance summary, then
+            # its own 交易日 header and rows with ＄ amounts.
             if lines[i] == "美元账务信息":
-                break
+                in_trans = False
+                i += 1
+                continue
 
             if in_trans and re.match(r"^\d{2}/\d{2}$", lines[i]):
                 txn = self._parse_single_transaction(
