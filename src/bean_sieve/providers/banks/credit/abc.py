@@ -30,7 +30,20 @@ class StatementSummary:
     statement_cycle: str | None = None  # 账单周期
     statement_balance: Decimal | None = None  # 本期应还款额
     new_charges: Decimal | None = None  # 本期账单金额 (from 账务说明)
-    rebate_used: Decimal | None = None  # 本期使用刷卡金
+    adjustment: Decimal | None = None  # 本期调整金额 (from 账务说明)
+    rebate_used: Decimal = Decimal(0)  # 本期使用刷卡金
+
+    @property
+    def rebate_offset(self) -> Decimal:
+        """Rebate that actually reduced the debt this cycle.
+
+        本期使用刷卡金 is gross: when a purchase paid with 刷卡金 is refunded,
+        the bank reclaims that 刷卡金 and only the net reaches 本期调整金额,
+        which is the figure in the statement's balance formula.
+        """
+        if self.adjustment is None:
+            return self.rebate_used
+        return min(self.rebate_used, self.adjustment)
 
 
 @register_provider
@@ -259,34 +272,11 @@ class ABCCreditProvider(BaseProvider):
                                 )
                                 break
 
-            # 本期账单金额 (from 账务说明 formula table)
-            # Labels and values are in sibling tables; labels include operator
-            # cells (-, =, +) that have no corresponding value cell
+            # 账务说明 formula table, anchored on its 本期账单金额 label
             if "本期账单金额" in text and summary.new_charges is None:
-                td = span.find_parent("td")
-                tr = td.find_parent("tr") if td else None
-                label_table = tr.find_parent("table") if tr else None
-                if label_table:
-                    value_table = label_table.find_next_sibling("table")
-                    if value_table and tr:
-                        label_cells = tr.find_all("td", recursive=False)
-                        # Find index of target label, skipping operator cells
-                        value_idx = 0
-                        for cell in label_cells:
-                            cell_text = cell.get_text(strip=True)
-                            if "本期账单金额" in cell_text:
-                                break
-                            if cell_text not in ("-", "=", "+"):
-                                value_idx += 1
-                        value_row = value_table.find("tr")
-                        if value_row:
-                            vals = value_row.find_all("td", recursive=False)
-                            if value_idx < len(vals):
-                                val_text = vals[value_idx].get_text(strip=True)
-                                if re.match(r"^[\d,]+\.\d{2}$", val_text):
-                                    summary.new_charges = Decimal(
-                                        val_text.replace(",", "")
-                                    )
+                formula = self._parse_account_formula(span)
+                summary.new_charges = formula.get("本期账单金额")
+                summary.adjustment = formula.get("本期调整金额")
 
             # 本期使用刷卡金
             if "本期使用刷卡金" in text:
@@ -299,6 +289,40 @@ class ABCCreditProvider(BaseProvider):
                             summary.rebate_used = Decimal(amount_text.replace(",", ""))
 
         return summary
+
+    def _parse_account_formula(self, label_span) -> dict[str, Decimal]:
+        """Map each 账务说明 Chinese label (e.g. 本期调整金额) to its amount.
+
+        Labels and values sit in sibling tables; the label row also holds
+        operator cells (-, =, +) that have no value cell.
+        """
+        td = label_span.find_parent("td")
+        tr = td.find_parent("tr") if td else None
+        label_table = tr.find_parent("table") if tr else None
+        value_table = label_table.find_next_sibling("table") if label_table else None
+        value_row = value_table.find("tr") if value_table else None
+        if tr is None or value_row is None:
+            return {}
+
+        # A label cell's first span is the Chinese name; the English one follows.
+        labels = [
+            re.sub(r"\s+", "", span.get_text()) if span else ""
+            for span in (
+                cell.find("span") for cell in tr.find_all("td", recursive=False)
+            )
+        ]
+        labels = [label for label in labels if label not in ("-", "=", "+")]
+        values = [
+            cell.get_text(strip=True)
+            for cell in value_row.find_all("td", recursive=False)
+        ]
+
+        formula: dict[str, Decimal] = {}
+        for label, value in zip(labels, values, strict=False):
+            if not re.match(r"^-?[\d,]+\.\d{2}$", value):
+                continue
+            formula[label] = Decimal(value.replace(",", ""))
+        return formula
 
     def post_output(
         self,
@@ -340,7 +364,8 @@ class ABCCreditProvider(BaseProvider):
             stmt_balance = (
                 -summary.statement_balance if summary.statement_balance else Decimal(0)
             )
-            rebate = summary.rebate_used or Decimal(0)
+            rebate = summary.rebate_offset
+            rebate_used = summary.rebate_used
             new_charges = summary.new_charges
 
             summary_lines.append(f";   解析消费:       {expenses:>12.2f} CNY")
@@ -349,6 +374,15 @@ class ABCCreditProvider(BaseProvider):
             summary_lines.append(f";   账单应还:       {stmt_balance:>12.2f} CNY")
             if rebate > 0:
                 summary_lines.append(f";   刷卡金抵扣:     {rebate:>12.2f} CNY")
+            if rebate < rebate_used:
+                summary_lines.append(
+                    f";     (本期使用刷卡金 {rebate_used:.2f}, 本期调整 {rebate:.2f})"
+                )
+            elif summary.adjustment is not None and summary.adjustment > rebate_used:
+                summary_lines.append(
+                    f";   ⚠️ 调整金额 {summary.adjustment:.2f} 超出刷卡金使用"
+                    f" {rebate_used:.2f}，差额需手工核对"
+                )
 
             # Compare parsed expenses against 本期账单金额 (new charges)
             # This is more accurate than comparing against 本期应还 which includes

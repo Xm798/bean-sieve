@@ -518,6 +518,75 @@ REBATE_HTML = """<html>
 </html>"""
 
 
+def formula_rebate_html(rebate_used: str, adjustment: str) -> str:
+    """Statement laid out like the real 账务说明 formula and 刷卡金统计 tables."""
+    return f"""<html>
+<head><title>金穗信用卡电子对账单</title></head>
+<body>
+<table>
+    <tr><td><span>620000******1234</span></td></tr>
+    <tr><td><span>2030/01/01-2030/01/31</span></td></tr>
+    <tr><td><span>本期应还款额</span></td></tr>
+    <tr><td>-27.00</td></tr>
+</table>
+<div>
+<table>
+<tr>
+<td><span>币种</span><span>Curr</span></td>
+<td><span>本期应还金额</span><span>New Balance</span></td>
+<td><span>-</span></td>
+<td><span>本期账户&#xA;溢缴款</span><span>Deposit</span></td>
+<td><span>=</span></td>
+<td><span>上期账单&#xA;应还金额</span><span>Previous &#xA;Balance</span></td>
+<td><span>-</span></td>
+<td><span>上期账户&#xA;溢缴款</span><span>Previous &#xA;Deposit</span></td>
+<td><span>+</span></td>
+<td><span>本期账单金额</span><span>New Charge</span></td>
+<td><span>-</span></td>
+<td><span>本期还款、退货金额</span><span>Payments</span></td>
+<td><span>-</span></td>
+<td><span>本期调整金额</span><span>Adjustment</span></td>
+</tr>
+</table>
+<table>
+<tr>
+<td><span>人民币(CNY)</span></td>
+<td><span>27.00</span></td>
+<td><span>0.00</span></td>
+<td><span>100.00</span></td>
+<td><span>0.00</span></td>
+<td><span>30.00</span></td>
+<td><span>100.00</span></td>
+<td><span>{adjustment}</span></td>
+</tr>
+</table>
+</div>
+<table>
+    <tr>
+        <td>300102</td>
+        <td>300102</td>
+        <td>1234</td>
+        <td>payee-a</td>
+        <td>-10.00/CNY</td>
+        <td>-10.00/CNY</td>
+    </tr>
+    <tr>
+        <td>300103</td>
+        <td>300103</td>
+        <td>1234</td>
+        <td>payee-b</td>
+        <td>-20.00/CNY</td>
+        <td>-20.00/CNY</td>
+    </tr>
+</table>
+<table>
+<tr><td><span>可用刷卡金余额</span></td><td><span>0.00</span></td></tr>
+<tr><td><span>本期使用刷卡金</span></td><td><span>{rebate_used}</span></td></tr>
+</table>
+</body>
+</html>"""
+
+
 EXPECTED_BALANCED_REPORT = """
 ; ============================================================
 ; 农业银行信用卡 账单核对
@@ -638,6 +707,61 @@ class TestABCPostOutput:
 
         assert "尾号 1234" in output
         assert "5678" not in output
+
+
+class TestABCRebateAdjustment:
+    """The rebate entry books 本期调整金额, the net that reduced the debt."""
+
+    @staticmethod
+    def run(tmp_path, rebate_used: str, adjustment: str) -> str:
+        file_path = tmp_path / "农业银行金穗信用卡刷卡金.eml"
+        html = formula_rebate_html(rebate_used, adjustment)
+        file_path.write_text(create_abc_eml(html), encoding="utf-8")
+        context = ReconcileContext(
+            statement_paths=[file_path],
+            provider_ids={file_path: "abc_credit"},
+            config=Config(
+                providers={
+                    "abc_credit": ProviderConfig(
+                        accounts={"1234": "Liabilities:Credit:ABC:1234"},
+                        rebate_income_account="Income:Rebate:ABC",
+                    )
+                }
+            ),
+        )
+        return ABCCreditProvider().post_output("", empty_result(), context)
+
+    def test_summary_reads_formula_fields(self, tmp_path):
+        file_path = tmp_path / "农业银行金穗信用卡.eml"
+        file_path.write_text(
+            create_abc_eml(formula_rebate_html("5.00", "3.00")), encoding="utf-8"
+        )
+
+        summary = ABCCreditProvider()._extract_summary(file_path)
+
+        assert summary.new_charges == Decimal("30.00")
+        assert summary.adjustment == Decimal("3.00")
+        assert summary.rebate_used == Decimal("5.00")
+
+    def test_entry_books_adjustment_when_it_differs_from_rebate_used(self, tmp_path):
+        output = self.run(tmp_path, "5.00", "3.00")
+
+        assert "  Liabilities:Credit:ABC:1234  3.00 CNY\n" in output
+        assert ";   刷卡金抵扣:             3.00 CNY\n" in output
+        assert ";     (本期使用刷卡金 5.00, 本期调整 3.00)\n" in output
+        assert "状态: ✅ 平账 (刷卡金 3.00)" in output
+
+    def test_equal_amounts_report_no_breakdown(self, tmp_path):
+        output = self.run(tmp_path, "3.00", "3.00")
+
+        assert "  Liabilities:Credit:ABC:1234  3.00 CNY\n" in output
+        assert "本期调整" not in output
+
+    def test_adjustment_above_rebate_used_is_flagged(self, tmp_path):
+        output = self.run(tmp_path, "3.00", "5.00")
+
+        assert "  Liabilities:Credit:ABC:1234  3.00 CNY\n" in output
+        assert "⚠️ 调整金额 5.00 超出刷卡金使用 3.00" in output
 
 
 class TestABCStatementPeriod:
