@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
 from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
@@ -14,6 +15,23 @@ from ...base import BaseProvider
 # Issuer name written as escapes
 _ISSUER_SHORT = "\u5e7f\u53d1"
 _ISSUER = f"{_ISSUER_SHORT}\u94f6\u884c"
+
+_CURRENCY_CODES = {
+    "人民币": "CNY",
+    "美元": "USD",
+    "港币": "HKD",
+    "澳门元": "MOP",
+    "新台币": "TWD",
+    "欧元": "EUR",
+    "英镑": "GBP",
+    "日元": "JPY",
+    "韩元": "KRW",
+    "新加坡元": "SGD",
+    "澳大利亚元": "AUD",
+    "加拿大元": "CAD",
+    "瑞士法郎": "CHF",
+    "泰铢": "THB",
+}
 
 
 @register_provider
@@ -28,6 +46,8 @@ class CGBCreditProvider(BaseProvider):
     - Statement period: 账单周期:YYYY/MM/DD-YYYY/MM/DD
     - Card sections: 卡号：6200********1234 followed by transaction table
     - Transaction row: 交易日期 入账日期 (类型)摘要 金额 货币 入账金额 入账货币
+    - A foreign-currency card bills in its own currency (e.g. 美元) and lists
+      spending in a third currency (e.g. 港币) with the original amount
 
     Transaction types:
     - (消费): spending, positive amount
@@ -107,9 +127,9 @@ class CGBCreditProvider(BaseProvider):
             r"\(([^)]+)\)"  # Transaction type (消费/还款/赠送)
             r"(.+?)\s+"  # Description
             r"([-\d,.]+)\s+"  # Transaction amount
-            r"(人民币|美元)\s+"  # Transaction currency
+            r"([\u4e00-\u9fff]+)\s+"  # Transaction currency
             r"([-\d,.]+)\s+"  # Posting amount
-            r"(人民币|美元)"  # Posting currency
+            r"([\u4e00-\u9fff]+)"  # Posting currency
         )
 
         for i, match in enumerate(re.finditer(pattern, section)):
@@ -134,6 +154,8 @@ class CGBCreditProvider(BaseProvider):
             post_date_str = match.group(2)  # YYYY/MM/DD
             trans_type = match.group(3)  # 消费/还款/赠送
             description = match.group(4).strip()
+            trans_amount_str = match.group(5)
+            trans_currency_str = match.group(6)
             posting_amount_str = match.group(7)  # Use posting amount (入账金额)
             posting_currency_str = match.group(8)
 
@@ -146,11 +168,21 @@ class CGBCreditProvider(BaseProvider):
             if amount is None:
                 return None
 
-            # Map currency
-            currency = "CNY" if posting_currency_str == "人民币" else "USD"
+            currency = self._map_currency(posting_currency_str)
+            original_currency = self._map_currency(trans_currency_str)
 
             # Build description with type prefix
             full_description = f"({trans_type}){description}"
+
+            metadata: dict = {
+                "original_date": trans_date_str,
+                "trans_type": trans_type,
+            }
+            if original_currency != currency:
+                original_amount = self._parse_amount(trans_amount_str)
+                if original_amount is not None:
+                    metadata[ORIGINAL_AMOUNT] = original_amount
+                    metadata[ORIGINAL_CURRENCY] = original_currency
 
             return Transaction(
                 date=trans_date,
@@ -162,13 +194,14 @@ class CGBCreditProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
                 source_line=row_idx,
-                metadata={
-                    "original_date": trans_date_str,
-                    "trans_type": trans_type,
-                },
+                metadata=metadata,
             )
         except (IndexError, ValueError):
             return None
+
+    @staticmethod
+    def _map_currency(name: str) -> str:
+        return _CURRENCY_CODES.get(name, name)
 
     def _parse_date(self, date_str: str) -> date:
         """Parse date from YYYY/MM/DD format."""

@@ -197,6 +197,32 @@ class TestCGBAmountParsing:
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("100.50")
         assert transactions[0].currency == "USD"
+        assert transactions[0].original_amount is None
+
+    def test_third_currency_on_usd_card(self, tmp_path):
+        """Test that HKD spending billed in USD keeps the HKD original."""
+        html = """<html>
+<body>
+<table><tr><td>账单周期:2030/01/01-2030/01/31</td></tr></table>
+<table>
+    卡号：6200********1234
+    2030/01/02 2030/01/03 (消费)merchant-a 80.00 港币 10.00 美元
+    2030/01/04 2030/01/04 (还款)rebate-a -2.00 美元 -2.00 美元
+</table>
+</body></html>"""
+        file_path = tmp_path / f"{_ISSUER_SHORT}信用卡.eml"
+        file_path.write_text(create_cgb_eml(html), encoding="utf-8")
+
+        transactions = CGBCreditProvider().parse(file_path)
+
+        assert len(transactions) == 2
+        spending, rebate = transactions
+        assert spending.amount == Decimal("10.00")
+        assert spending.currency == "USD"
+        assert spending.original_amount == Decimal("80.00")
+        assert spending.original_currency == "HKD"
+        assert rebate.amount == Decimal("-2.00")
+        assert rebate.original_amount is None
 
     def test_empty_statement(self, tmp_path):
         """Test handling of statement with no transactions."""
