@@ -348,3 +348,78 @@ class TestBOCOMStatementPeriod:
         assert transactions
         for txn in transactions:
             assert txn.statement_period == (date(2025, 10, 14), date(2025, 11, 13))
+
+
+DETAIL_LAYOUT_HTML = """<html>
+<head><title>交通银行信用卡电子账单</title></head>
+<body>
+<table><tr><td>
+    <div>交通银行信用卡 卡号:622200******0009 账单周期：2030/01/05-2030/02/04</div>
+    <div>本期账务明细</div>
+    <div>以下是您的还款、退货及费用返还明细</div>
+    <div><table>
+        <thead><tr><th>交易日期</th><th>记账日期</th><th>交易说明</th><th>交易币种/金额</th><th>入账币种/金额</th></tr></thead>
+        <tbody>
+            <tr><td colspan="5">人民币账户明细</td></tr>
+            <tr><td colspan="5">附属卡 卡号末四位 0008</td></tr>
+            <tr><td>2030-01-10</td><td>2030-01-11</td><td>退货 商户甲</td><td>CNY 10.00</td><td>CNY 10.00</td></tr>
+            <tr><td>2030-02-01</td><td>2030-02-01</td><td>信用卡还款 转账还款</td><td>CNY 1,000.00</td><td>CNY 1,000.00</td></tr>
+        </tbody>
+    </table></div>
+    <div>以下是您的消费、取现及其他费用明细</div>
+    <div><table>
+        <thead><tr><th>交易日期</th><th>记账日期</th><th>交易说明</th><th>交易币种/金额</th><th>入账币种/金额</th></tr></thead>
+        <tbody>
+            <tr><td colspan="5">人民币账户明细</td></tr>
+            <tr><td>2030-01-06</td><td>2030-01-07</td><td>消费 商户乙</td><td>CNY 20.00</td><td>CNY 20.00</td></tr>
+            <tr><td>2030-01-08</td><td>2030-01-08</td><td>消费 商户丙</td><td>HKD 40.00</td><td>CNY 36.00</td></tr>
+        </tbody>
+    </table></div>
+</td></tr></table>
+</body>
+</html>"""
+
+
+class TestBOCOMDetailLayout:
+    """Tests for the layout with YYYY-MM-DD dates and 卡号末四位 card rows."""
+
+    @pytest.fixture
+    def transactions(self, tmp_path):
+        file_path = tmp_path / "交通银行信用卡2030年02月电子账单.eml"
+        file_path.write_text(create_bocom_eml(DETAIL_LAYOUT_HTML), encoding="utf-8")
+        return BOCOMCreditProvider().parse(file_path)
+
+    def test_parses_rows_of_both_sections(self, transactions):
+        assert [
+            (t.date, t.post_date, t.amount, t.description) for t in transactions
+        ] == [
+            (date(2030, 1, 10), date(2030, 1, 11), Decimal("-10.00"), "退货 商户甲"),
+            (
+                date(2030, 2, 1),
+                date(2030, 2, 1),
+                Decimal("-1000.00"),
+                "信用卡还款 转账还款",
+            ),
+            (date(2030, 1, 6), date(2030, 1, 7), Decimal("20.00"), "消费 商户乙"),
+            (date(2030, 1, 8), date(2030, 1, 8), Decimal("36.00"), "消费 商户丙"),
+        ]
+        assert [t.metadata["section"] for t in transactions] == [
+            "payment",
+            "payment",
+            "spending",
+            "spending",
+        ]
+
+    def test_card_comes_from_card_row_else_statement_card(self, transactions):
+        assert [t.card_last4 for t in transactions] == ["0008", "0008", "0009", "0009"]
+
+    def test_foreign_transaction_keeps_original_amount(self, transactions):
+        txn = transactions[3]
+        assert txn.currency == "CNY"
+        assert txn.metadata["original_amount"] == Decimal("40.00")
+        assert txn.metadata["original_currency"] == "HKD"
+
+    def test_statement_period(self, transactions):
+        assert transactions
+        for txn in transactions:
+            assert txn.statement_period == (date(2030, 1, 5), date(2030, 2, 4))
