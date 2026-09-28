@@ -284,3 +284,68 @@ class TestBOCTransactionRowParsing:
 
         assert result is not None
         assert result.amount == Decimal("12345.67")
+
+
+class TestBOCTableBoundaries:
+    """Tests for locating transaction tables in a merged statement."""
+
+    def test_next_card_header_ends_table(self, tmp_path):
+        """A card section following a table on the same page is not a row."""
+
+        def block(x0, y0, x1, text):
+            return (x0, y0, x1, y0 + 10, text, 0, 0)
+
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = [
+            block(20, 100, 200, "卡片A(卡号：1111)\n"),
+            block(500, 140, 550, "Expenditure\n"),
+            block(40, 200, 450, "2030-01-02\n2030-01-03\n1111\npayee-a\n30.00\n"),
+            block(20, 240, 200, "卡片B(卡号：2222)\n"),
+            block(500, 300, 560, "Available Balance\n"),
+            block(40, 330, 550, "外币/USD\n0.00\n0.00\n40.00\n"),
+        ]
+
+        mock_doc = MagicMock()
+        mock_doc.page_count = 1
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
+
+        file_path = tmp_path / "中国银行信用卡电子合并账单2030年01月账单.PDF"
+        file_path.write_bytes(b"%PDF-1.4")
+
+        with patch("fitz.open", return_value=mock_doc):
+            transactions = BOCCreditProvider().parse(file_path)
+
+        assert len(transactions) == 1
+        txn = transactions[0]
+        assert txn.amount == Decimal("-30.00")
+        assert txn.description == "payee-a"
+        assert txn.card_last4 == "1111"
+
+    def test_trailing_summary_without_loyalty_section_is_dropped(self, tmp_path):
+        """A summary after the last card's table stays out of its last row."""
+
+        def block(x0, y0, x1, text):
+            return (x0, y0, x1, y0 + 10, text, 0, 0)
+
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = [
+            block(20, 100, 200, "卡片A(卡号：1111)\n"),
+            block(500, 140, 550, "Expenditure\n"),
+            block(40, 200, 450, "2030-01-02\n2030-01-03\n1111\npayee-a\n30.00\n"),
+            block(500, 300, 560, "Available Balance\n"),
+            block(40, 330, 550, "外币/USD\n0.00\n0.00\n40.00\n"),
+        ]
+
+        mock_doc = MagicMock()
+        mock_doc.page_count = 1
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
+
+        file_path = tmp_path / "中国银行信用卡电子合并账单2030年01月账单.PDF"
+        file_path.write_bytes(b"%PDF-1.4")
+
+        with patch("fitz.open", return_value=mock_doc):
+            transactions = BOCCreditProvider().parse(file_path)
+
+        assert len(transactions) == 1
+        assert transactions[0].amount == Decimal("-30.00")
+        assert transactions[0].description == "payee-a"

@@ -53,73 +53,19 @@ class BOCCreditProvider(BaseProvider):
             page = doc[page_num]
             blocks = list(page.get_text("blocks"))
 
-            # First pass: detect card number and transaction section boundaries
-            in_transaction_section = False
-            trans_start_y: float | None = None
-            trans_end_y: float | None = None
+            tables, current_card = self._find_tables(blocks, current_card)
 
-            for block in blocks:
-                y0 = float(block[1])
-                content = str(block[4]).strip()
-                block_type = int(block[6])
-
-                if block_type != 0:
-                    continue
-
-                # Detect card number
-                card_match = re.search(r"\(卡号[：:]\s*(\d+)\)", content)
-                if card_match:
-                    current_card = card_match.group(1)[-4:]
-
-                # Detect transaction section start (after "Expenditure" header)
-                if content == "Expenditure":
-                    in_transaction_section = True
-                    trans_start_y = y0 + 30  # Start after header row
-                    continue
-
-                # Detect transaction section end
-                if in_transaction_section and (
-                    "Loyalty Plan" in content or "积分奖励计划" in content
-                ):
-                    trans_end_y = y0
-                    break
-
-            if not current_card or trans_start_y is None:
-                continue
-
-            # Second pass: collect transaction blocks within the section
-            trans_blocks: list[tuple[float, float, float, str]] = []
-            for block in blocks:
-                y0 = float(block[1])
-                x1 = float(block[2])
-                content = str(block[4]).strip()
-                block_type = int(block[6])
-
-                if block_type != 0 or not content:
-                    continue
-
-                # Check if within transaction section
-                if y0 < trans_start_y:
-                    continue
-                if trans_end_y and y0 >= trans_end_y:
-                    continue
-
-                trans_blocks.append((y0, x1, float(block[0]), content))
-
-            # Group blocks by y-coordinate (same row)
-            rows = self._group_by_row(trans_blocks)
-
-            # Parse each row
-            for row_blocks in rows:
-                txn = self._parse_transaction_row(
-                    row_blocks,
-                    current_card,
-                    file_path,
-                    row_counter,
-                )
-                if txn:
-                    row_counter += 1
-                    transactions.append(txn)
+            for card, trans_blocks in tables:
+                for row_blocks in self._group_by_row(trans_blocks):
+                    txn = self._parse_transaction_row(
+                        row_blocks,
+                        card,
+                        file_path,
+                        row_counter,
+                    )
+                    if txn:
+                        row_counter += 1
+                        transactions.append(txn)
 
         doc.close()
 
@@ -127,6 +73,47 @@ class BOCCreditProvider(BaseProvider):
         self.assign_statement_periods(transactions, statement_period)
 
         return transactions
+
+    def _find_tables(
+        self, blocks: list, current_card: str | None
+    ) -> tuple[list[tuple[str, list[tuple[float, float, float, str]]]], str | None]:
+        """Collect the transaction tables on one page.
+
+        A merged statement stacks one section per card, and a page can hold the
+        tail of one card's table followed by the next card's section header.
+        A table runs from its "Expenditure" header to the next card header,
+        the loyalty-plan section, or the page end, whichever comes first.
+        Returns (card, blocks) per table, each block as (y0, x1, x0, text),
+        plus the card in effect at the page end, which a table continuing on
+        the next page belongs to.
+        """
+        tables: list[tuple[str, list[tuple[float, float, float, str]]]] = []
+        table_blocks: list[tuple[float, float, float, str]] | None = None
+        body_start = 0.0
+
+        text_blocks = sorted(
+            (b for b in blocks if int(b[6]) == 0), key=lambda b: float(b[1])
+        )
+        for block in text_blocks:
+            y0 = float(block[1])
+            content = str(block[4]).strip()
+
+            card_match = re.search(r"\(卡号[：:]\s*(\d+)\)", content)
+            if card_match:
+                table_blocks = None
+                current_card = card_match.group(1)[-4:]
+            elif content == "Expenditure":
+                table_blocks = None
+                if current_card:
+                    table_blocks = []
+                    tables.append((current_card, table_blocks))
+                    body_start = y0 + 30  # skip the rest of the header row
+            elif "Loyalty Plan" in content or "积分奖励计划" in content:
+                table_blocks = None
+            elif table_blocks is not None and content and y0 >= body_start:
+                table_blocks.append((y0, float(block[2]), float(block[0]), content))
+
+        return tables, current_card
 
     def _group_by_row(
         self, blocks: list[tuple[float, float, float, str]], tolerance: float = 20
@@ -136,7 +123,9 @@ class BOCCreditProvider(BaseProvider):
         Each transaction row begins with a block whose first line is the
         transaction date (交易日 column). Such blocks seed the rows; every other
         fragment (e.g. a description wrapping onto a second visual line) is
-        attached to the nearest anchor by y-coordinate.
+        attached to the nearest anchor by y-coordinate, provided it lies within
+        ``tolerance`` of it; farther blocks are section headings and page
+        footers that share the table's area, and are left out.
 
         Anchoring is used instead of a flat y-tolerance because consecutive rows
         can be closer together than a description's own line spacing: a blanket
@@ -163,8 +152,9 @@ class BOCCreditProvider(BaseProvider):
         ]
 
         for y0, x1, x0, content in others:
-            idx = min(enumerate(anchor_ys), key=lambda t: abs(t[1] - y0))[0]
-            rows[idx].append((x1, x0, content))
+            idx, anchor_y = min(enumerate(anchor_ys), key=lambda t: abs(t[1] - y0))
+            if abs(anchor_y - y0) <= tolerance:
+                rows[idx].append((x1, x0, content))
 
         return rows
 
