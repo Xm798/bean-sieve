@@ -358,6 +358,8 @@ class TestAppStoreProvider:
             ("$4.99", Decimal("4.99"), "USD"),
             ("€2.99", Decimal("2.99"), "EUR"),
             ("£1.99", Decimal("1.99"), "GBP"),
+            ("US$9.00", Decimal("9.00"), "USD"),
+            ("HK$8.00", Decimal("8.00"), "HKD"),
             ("30.00", Decimal("30.00"), "CNY"),  # no symbol defaults to CNY
         ],
     )
@@ -371,6 +373,33 @@ class TestAppStoreProvider:
         amount, currency = AppStoreProvider._parse_amount(amount_str)
         assert amount == expected_amount
         assert currency == expected_currency
+
+    def test_unknown_currency_symbol_skipped(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that an unrecognised currency symbol skips the row with a warning."""
+        har = _make_har([_make_purchase(amount="ZZ$10.00")])
+        har_file = tmp_path / "apple.har"
+        har_file.write_text(json.dumps(har), encoding="utf-8")
+
+        with caplog.at_level("WARNING"):
+            txns = AppStoreProvider().parse(har_file)
+
+        assert txns == []
+        assert "ZZ$" in caplog.text
+
+    def test_utc_date_converted_to_beijing(self, tmp_path: Path) -> None:
+        """Test that a UTC pliDate after 16:00 lands on the next Beijing day."""
+        har = _make_har([_make_purchase(pli_date="2030-01-02T17:00:00Z")])
+        har_file = tmp_path / "apple.har"
+        har_file.write_text(json.dumps(har), encoding="utf-8")
+
+        txns = AppStoreProvider().parse(har_file)
+
+        assert len(txns) == 1
+        assert txns[0].date.isoformat() == "2030-01-03"
+        assert txns[0].time is not None
+        assert txns[0].time.isoformat() == "01:00:00"
 
     def test_malformed_response_json(self, tmp_path: Path) -> None:
         """Test that malformed JSON in response is skipped gracefully."""

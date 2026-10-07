@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from ...core.types import Transaction
 from .. import register_provider
@@ -20,7 +21,15 @@ logger = logging.getLogger(__name__)
 # tool is primarily used with the Chinese App Store. JPY users should verify.
 CURRENCY_MAP = {
     "¥": "CNY",
+    "CN¥": "CNY",
+    "JP¥": "JPY",
     "$": "USD",
+    "US$": "USD",
+    "HK$": "HKD",
+    "NT$": "TWD",
+    "A$": "AUD",
+    "CA$": "CAD",
+    "S$": "SGD",
     "€": "EUR",
     "£": "GBP",
     "₩": "KRW",
@@ -29,6 +38,9 @@ CURRENCY_MAP = {
 
 # Regex to split currency symbol from amount: "¥19.90" -> ("¥", "19.90")
 AMOUNT_RE = re.compile(r"^([^\d\-]+)?\s*(-?[\d,]+\.?\d*)$")
+
+# pliDate is UTC; the ledger books App Store charges on the Beijing calendar day.
+LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 
 
 @register_provider
@@ -121,7 +133,7 @@ class AppStoreProvider(BaseProvider):
         """Parse a purchase line item into a Transaction."""
         amount_str = pli.get("amountPaid", "")
         amount, currency = self._parse_amount(amount_str)
-        if amount is None or amount == Decimal(0):
+        if amount is None or currency is None or amount == Decimal(0):
             return None
 
         # isCredit means refund/credit — negate to income
@@ -165,8 +177,11 @@ class AppStoreProvider(BaseProvider):
         )
 
     @staticmethod
-    def _parse_amount(amount_str: str | None) -> tuple[Decimal | None, str]:
-        """Parse amount string like '¥19.90' into (Decimal, currency_code)."""
+    def _parse_amount(amount_str: str | None) -> tuple[Decimal | None, str | None]:
+        """Parse amount string like '¥19.90' into (Decimal, currency_code).
+
+        An unrecognised currency symbol yields a None currency.
+        """
         if not amount_str:
             return None, "CNY"
 
@@ -179,7 +194,14 @@ class AppStoreProvider(BaseProvider):
         if not value_str:
             return None, "CNY"
 
-        currency = CURRENCY_MAP.get(symbol, "CNY")
+        currency = CURRENCY_MAP.get(symbol) if symbol else "CNY"
+        if currency is None:
+            logger.warning(
+                "Unknown currency symbol %r in App Store amount %r; row skipped",
+                symbol,
+                amount_str,
+            )
+            return None, None
 
         try:
             return Decimal(value_str), currency
@@ -195,6 +217,6 @@ class AppStoreProvider(BaseProvider):
             # Handle both "2026-03-22T04:00:44Z" and "2026-03-22T04:00:44.264Z"
             cleaned = date_str.replace("Z", "+00:00")
             dt = datetime.fromisoformat(cleaned)
-            return dt.replace(tzinfo=None)
+            return dt.astimezone(LOCAL_TZ).replace(tzinfo=None)
         except (ValueError, TypeError):
             return None
