@@ -54,3 +54,25 @@ def test_psbc_example_config_and_schema_are_synchronized() -> None:
         "allOf"
     ][1]["properties"]["output_metadata"]["items"]["enum"]
     assert provider_metadata == ["country", "domestic_or_overseas"]
+
+
+def test_rebate_account_prefixes_default():
+    cfg = Config()
+    assert cfg.defaults.rebate_account_prefixes == ["Income:Rebate:"]
+    assert cfg.rebate_account_prefixes() == ("Income:Rebate:",)
+
+
+def test_rebate_account_prefixes_parsed_and_merged_with_configured_accounts():
+    cfg = Config.from_dict(
+        {
+            "defaults": {"rebate_account_prefixes": ["Income:Cashback:"]},
+            "account_mappings": [
+                {"pattern": "a", "account": "Assets:A"},
+                {"pattern": "b", "account": "Assets:B", "rebate_account": "Income:R:B"},
+                {"pattern": "c", "account": "Assets:C", "rebate_account": "Income:R:B"},
+            ],
+            "providers": {"p": {"rebate_income_account": "Income:Cashback:"}},
+        }
+    )
+    assert cfg.defaults.rebate_account_prefixes == ["Income:Cashback:"]
+    assert cfg.rebate_account_prefixes() == ("Income:Cashback:", "Income:R:B")

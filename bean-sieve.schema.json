@@ -35,6 +35,12 @@
           "default": 2,
           "description": "Days tolerance for fuzzy date matching"
         },
+        "rebate_account_prefixes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["Income:Rebate:"],
+          "description": "Rebate income accounts (each also covers its sub-accounts; a trailing colon is optional) whose postings are added to the fund leg when matching rebate-topped repayments. Configured account_mappings[].rebate_account and providers.*.rebate_income_account values are added automatically"
+        },
         "output_metadata": {
           "type": "array",
           "description": "Metadata fields to include in output (omit for all fields)",

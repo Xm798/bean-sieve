@@ -9,7 +9,7 @@ import yaml
 from bean_sieve.api import _deduplicate_cross_statements
 from bean_sieve.config.schema import Config
 from bean_sieve.core.metadata_keys import REBATE_TOPUP_MATCH
-from bean_sieve.core.sieve import Sieve
+from bean_sieve.core.sieve import Sieve, SieveConfig
 from bean_sieve.core.types import MatchResult, Transaction
 from tests.helpers import load_sieve, run_full_reconcile, write_alipay_csv
 
@@ -244,3 +244,86 @@ def test_rebate_reversal_reduces_gross(tmp_path: Path) -> None:
 
     assert len(result.matched) == 1
     assert result.matched[0][1].posting.account == "Assets:A1"
+
+
+CASHBACK_LEDGER = """
+2020-01-01 open Assets:A1 CNY
+2020-01-01 open Income:Cashback:X CNY
+2020-01-01 open Liabilities:L1 CNY
+
+2030-01-06 * "repay"
+    Assets:A1           -27.00 CNY
+    Income:Cashback:X    -3.00 CNY
+    Liabilities:L1
+"""
+
+
+def _load_cashback_sieve(tmp_path: Path, config: SieveConfig) -> Sieve:
+    ledger_path = tmp_path / "ledger.bean"
+    ledger_path.write_text(CASHBACK_LEDGER, encoding="utf-8")
+    sieve = Sieve(config)
+    sieve.load_ledger(ledger_path)
+    return sieve
+
+
+def test_sieve_counts_configured_rebate_prefix(tmp_path: Path) -> None:
+    config = SieveConfig(
+        date_tolerance=0, rebate_account_prefixes=("Income:Cashback:",)
+    )
+
+    result = _load_cashback_sieve(tmp_path, config).match([_gross_row(flagged=True)])
+
+    assert len(result.matched) == 1
+    assert result.matched[0][1].posting.account == "Assets:A1"
+
+
+def test_sieve_default_prefix_ignores_other_income_accounts(tmp_path: Path) -> None:
+    config = SieveConfig(date_tolerance=0)
+
+    result = _load_cashback_sieve(tmp_path, config).match([_gross_row(flagged=True)])
+
+    assert result.matched == []
+
+
+def test_sieve_prefix_without_colon_covers_account_itself(tmp_path: Path) -> None:
+    config = SieveConfig(
+        date_tolerance=0, rebate_account_prefixes=("Income:Cashback:X",)
+    )
+
+    result = _load_cashback_sieve(tmp_path, config).match([_gross_row(flagged=True)])
+
+    assert len(result.matched) == 1
+
+
+CASHBACK_FULL_LEDGER = LEDGER.replace("Income:Rebate:Alipay", "Income:Cashback:Alipay")
+REPAYMENT_ROW = (
+    "2030-01-06 10:00:00,信用借还,bank-a,,信用卡还款,不计收支,30.00,"
+    "bank-a储蓄卡(1111)&红包,还款成功,ORDER0002,,"
+)
+
+
+def test_full_reconcile_reads_rebate_prefixes_from_defaults(tmp_path: Path) -> None:
+    config = CONFIG.replace(
+        "  date_tolerance: 2\n",
+        '  date_tolerance: 2\n  rebate_account_prefixes: ["Income:Cashback:"]\n',
+    )
+    statement = write_alipay_csv(tmp_path, [REPAYMENT_ROW])
+
+    result = run_full_reconcile(tmp_path, [statement], config, CASHBACK_FULL_LEDGER)
+
+    assert len(result.matched) == 1
+    assert result.missing == []
+
+
+def test_full_reconcile_folds_in_mapping_rebate_account(tmp_path: Path) -> None:
+    config = CONFIG.replace(
+        "    account: Assets:Bank:X:1111\n",
+        "    account: Assets:Bank:X:1111\n    rebate_account: Income:Cashback:Alipay\n",
+        1,
+    )
+    statement = write_alipay_csv(tmp_path, [REPAYMENT_ROW])
+
+    result = run_full_reconcile(tmp_path, [statement], config, CASHBACK_FULL_LEDGER)
+
+    assert len(result.matched) == 1
+    assert result.missing == []

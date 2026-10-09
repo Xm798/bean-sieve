@@ -91,6 +91,7 @@ def load_ledger(
     account_filter: str | None = None,
     date_range: tuple[date, date] | None = None,
     date_tolerance: int = 2,
+    rebate_account_prefixes: tuple[str, ...] | None = None,
 ) -> Sieve:
     """
     Load a Beancount ledger for reconciliation.
@@ -100,11 +101,15 @@ def load_ledger(
         account_filter: Only include entries with this account prefix
         date_range: Only include entries within this date range
         date_tolerance: Days tolerance for date matching
+        rebate_account_prefixes: Rebate income accounts for the gross-amount
+            match (None keeps the SieveConfig default)
 
     Returns:
         Configured Sieve instance
     """
     config = SieveConfig(date_tolerance=date_tolerance)
+    if rebate_account_prefixes is not None:
+        config.rebate_account_prefixes = rebate_account_prefixes
     sieve = Sieve(config)
     sieve.load_ledger(ledger_path, account_filter, date_range)
     return sieve
@@ -338,6 +343,7 @@ def full_reconcile(
         account_filter=account_filter,
         date_range=date_range,
         date_tolerance=config.defaults.date_tolerance,
+        rebate_account_prefixes=config.rebate_account_prefixes(),
     )
 
     # Reconcile (with preset rules and covered accounts/ranges)

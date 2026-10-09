@@ -186,6 +186,7 @@ defaults:
   expense_account: Expenses:FIXME
   income_account: Income:FIXME
   date_tolerance: 0  # 日期模糊匹配容差（天）
+  # rebate_account_prefixes: ["Income:Rebate:"]  # 返利收入账户（含子账户），用于红包抵扣还款的总额匹配
 
 # 账户映射（按 provider）
 accounts:

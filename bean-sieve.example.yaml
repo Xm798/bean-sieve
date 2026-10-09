@@ -16,6 +16,9 @@ defaults:
     - source
   # 按时间排序输出：asc（升序）、desc（降序）、不设置则保持原顺序
   sort_by_time: asc
+  # 返利收入账户（含子账户）：红包抵扣的信用卡还款按「银行卡腿 + 返利腿」匹配总额
+  # account_mappings 的 rebate_account 与 providers 的 rebate_income_account 会自动并入
+  # rebate_account_prefixes: ["Income:Rebate:", "Income:Cashback:"]
 
 # 输出格式化（beanfmt）
 # 简写形式：format: true（使用项目 .beanfmt.toml 配置或 beanfmt 默认值）

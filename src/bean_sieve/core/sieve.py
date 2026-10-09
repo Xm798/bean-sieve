@@ -20,6 +20,9 @@ class SieveConfig:
 
     date_tolerance: int = 2  # days
     amount_tolerance: Decimal = Decimal("0.01")
+    # Accounts whose postings count as rebate income in the gross-amount match;
+    # see _is_rebate_account for how each entry is read.
+    rebate_account_prefixes: tuple[str, ...] = ("Income:Rebate:",)
 
 
 class Sieve:
@@ -99,7 +102,9 @@ class Sieve:
 
             rebate_sums = {
                 currency: total
-                for currency, total in _rebate_sums(entry).items()
+                for currency, total in _rebate_sums(
+                    entry, self.config.rebate_account_prefixes
+                ).items()
                 if total > 0
             }
             if rebate_sums:
@@ -583,12 +588,25 @@ def _has_gross_fallback(txn: Transaction) -> bool:
     return bool(txn.metadata.get(REBATE_TOPUP_MATCH))
 
 
-def _rebate_sums(entry: BeanTransaction) -> dict[str, Decimal]:
+def _is_rebate_account(account: str, prefixes: Iterable[str]) -> bool:
+    """Whether account is one of prefixes or a sub-account of one.
+
+    A trailing colon is ignored, so ``Income:Rebate:`` and ``Income:Rebate``
+    both cover ``Income:Rebate`` and every ``Income:Rebate:*`` account.
+    """
+    for prefix in prefixes:
+        base = prefix.rstrip(":")
+        if account == base or account.startswith(base + ":"):
+            return True
+    return False
+
+
+def _rebate_sums(entry: BeanTransaction, prefixes: Iterable[str]) -> dict[str, Decimal]:
     # Income postings are negative when earned, so negating them lets a
     # reversal posting reduce the gross rather than add to it.
     sums: dict[str, Decimal] = {}
     for posting in entry.postings:
-        if not posting.account.startswith("Income:Rebate:"):
+        if not _is_rebate_account(posting.account, prefixes):
             continue
         if posting.units is None or posting.units.number is None:
             continue

@@ -22,6 +22,11 @@ class DefaultsConfig(BaseModel):
     sort_by_time: Annotated[str | None, Field(pattern=r"^(asc|desc)$")] = "asc"
     # Default transaction flag: "*" (cleared) or "!" (pending)
     flag: Annotated[str, Field(pattern=r"^[*!]$")] = "!"
+    # Rebate income accounts (and their sub-accounts) that the gross-amount
+    # match of rebate-topped repayments adds back to the fund leg
+    rebate_account_prefixes: list[str] = Field(
+        default_factory=lambda: ["Income:Rebate:"]
+    )
 
 
 class AccountMapping(BaseModel):
@@ -152,6 +157,14 @@ class Config(BaseModel):
     def get_provider_config(self, provider_id: str) -> ProviderConfig:
         """Get configuration for a specific provider."""
         return self.providers.get(provider_id, ProviderConfig())
+
+    def rebate_account_prefixes(self) -> tuple[str, ...]:
+        """Rebate accounts for matching: the defaults list, then every
+        configured rebate account, deduplicated in first-seen order."""
+        configured = [m.rebate_account for m in self.account_mappings]
+        configured += [p.rebate_income_account for p in self.providers.values()]
+        merged = [*self.defaults.rebate_account_prefixes, *configured]
+        return tuple(dict.fromkeys(a for a in merged if a))
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":

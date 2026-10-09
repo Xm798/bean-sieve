@@ -365,6 +365,9 @@ def check(files, ledger, config_path, provider, date_range):
             ledger_path,
             date_range=dr,
             date_tolerance=config.defaults.date_tolerance if config else 2,
+            rebate_account_prefixes=(
+                config.rebate_account_prefixes() if config else None
+            ),
         )
         match_result = sieve.match(transactions)
 
