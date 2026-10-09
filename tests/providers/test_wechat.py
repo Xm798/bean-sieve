@@ -462,6 +462,107 @@ class TestWechatCashWithdraw:
         assert txn.amount == Decimal("500.00")
 
 
+def _wechat_workbook(tmp_path: Path, rows: list[list[str]]) -> Path:
+    """Write a WeChat export: 16 blank rows, the 11-column header, then rows."""
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    for _ in range(16):
+        ws.append((None,))
+    ws.append(
+        (
+            "交易时间",
+            "交易类型",
+            "交易对方",
+            "商品",
+            "收/支",
+            "金额(元)",
+            "支付方式",
+            "当前状态",
+            "交易单号",
+            "商户单号",
+            "备注",
+        )
+    )
+    for row in rows:
+        ws.append(tuple(row))
+    file_path = tmp_path / "wechat.xlsx"
+    wb.save(file_path)
+    return file_path
+
+
+class TestWechatWalletTransfers:
+    """Neutral rows that move money between WeChat wallets or out to a bank."""
+
+    @staticmethod
+    def _row(tx_type: str, amount: str, method: str, status: str) -> list[str]:
+        return [
+            "2030-01-03 10:00:00",
+            tx_type,
+            "/",
+            "/",
+            "/",
+            amount,
+            method,
+            status,
+            "T0001",
+            "M0001",
+            "/",
+        ]
+
+    def test_merchant_top_up_moves_balance_to_merchant_account(self):
+        row = self._row("经营账户充值", "10.00", "零钱", "已转入")
+        txn = WechatProvider()._parse_row(row, Path("wechat.xlsx"), 1)
+
+        assert txn is not None
+        assert txn.amount == Decimal("10.00")
+        assert txn.metadata["method"] == "零钱"
+        assert txn.metadata["_withdrawal_target"] == "经营账户"
+        assert txn.card_last4 is None
+        assert txn.description == "经营账户充值"
+
+    def test_lingqiantong_out_to_bank(self):
+        row = self._row("零钱通转出-到某银行(1111)", "20.00", "零钱通", "资金已到账")
+        txn = WechatProvider()._parse_row(row, Path("wechat.xlsx"), 1)
+
+        assert txn is not None
+        assert txn.amount == Decimal("20.00")
+        assert txn.metadata["method"] == "零钱通"
+        assert txn.metadata["_withdrawal_target"] == "某银行(1111)"
+        assert txn.card_last4 is None
+        assert txn.description == "零钱通转出-到某银行(1111)"
+
+    def test_lingqiantong_out_to_balance(self):
+        row = self._row("零钱通转出-到零钱", "30.00", "零钱通", "资金已到账")
+        txn = WechatProvider()._parse_row(row, Path("wechat.xlsx"), 1)
+
+        assert txn is not None
+        assert txn.amount == Decimal("30.00")
+        assert txn.metadata["method"] == "零钱通"
+        assert txn.metadata["_withdrawal_target"] == "零钱"
+
+    def test_neutral_row_with_unrelated_status_is_dropped(self):
+        row = self._row("其他", "40.00", "零钱", "状态-x")
+        assert WechatProvider()._parse_row(row, Path("wechat.xlsx"), 1) is None
+
+    def test_parsed_from_xlsx(self, tmp_path):
+        file_path = _wechat_workbook(
+            tmp_path,
+            [
+                self._row("经营账户充值", "10.00", "零钱", "已转入"),
+                self._row("零钱通转出-到某银行(1111)", "20.00", "零钱通", "资金已到账"),
+            ],
+        )
+
+        transactions = WechatProvider().parse(file_path)
+
+        assert [t.metadata["_withdrawal_target"] for t in transactions] == [
+            "经营账户",
+            "某银行(1111)",
+        ]
+        assert all(t.amount > 0 for t in transactions)
+
+
 def test_card_last4_extracted_from_method_with_suffix():
     from bean_sieve.providers.payment.wechat import WechatProvider
 

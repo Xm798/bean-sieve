@@ -10,6 +10,7 @@ from beancount import loader
 from beancount.core.data import Directive, TxnPosting
 from beancount.core.data import Transaction as BeanTransaction
 
+from .metadata_keys import REBATE_TOPUP_MATCH
 from .types import MatchDiagnostic, MatchResult, MetaDiagnostic, Transaction
 
 
@@ -32,6 +33,9 @@ class Sieve:
         self.config = config or SieveConfig()
         self._ledger_entries: list[TxnPosting] = []
         self._ledger_index: dict[tuple, list[TxnPosting]] = {}
+        self._rebate_index: dict[tuple, list[TxnPosting]] = {}
+        self._postings_by_txn: dict[int, list[TxnPosting]] = {}
+        self._rebate_sums: dict[int, dict[str, Decimal]] = {}
 
     def load_ledger(
         self,
@@ -75,6 +79,9 @@ class Sieve:
         """Process ledger entries and build matching index."""
         self._ledger_entries = []
         self._ledger_index = {}
+        self._rebate_index = {}
+        self._postings_by_txn = {}
+        self._rebate_sums = {}
 
         for entry in entries:
             if not isinstance(entry, BeanTransaction):
@@ -89,6 +96,14 @@ class Sieve:
                 entry.date < date_range[0] or entry.date > date_range[1]
             ):
                 continue
+
+            rebate_sums = {
+                currency: total
+                for currency, total in _rebate_sums(entry).items()
+                if total > 0
+            }
+            if rebate_sums:
+                self._rebate_sums[id(entry)] = rebate_sums
 
             # Process postings - only Asset/Liability accounts (cash flow side)
             for posting in entry.postings:
@@ -105,6 +120,7 @@ class Sieve:
 
                 txn_posting = TxnPosting(entry, posting)
                 self._ledger_entries.append(txn_posting)
+                self._postings_by_txn.setdefault(id(entry), []).append(txn_posting)
 
                 # Build index for fast lookup
                 # Index by (date, abs_amount) for fuzzy matching
@@ -123,11 +139,19 @@ class Sieve:
                             self._ledger_index[cost_key] = []
                         self._ledger_index[cost_key].append(txn_posting)
 
+                    # A statement row that reports the gross amount of a
+                    # rebate-funded payment finds the fund leg under the sum.
+                    rebate = rebate_sums.get(posting.units.currency)
+                    if rebate:
+                        gross_key = (entry.date, abs(posting.units.number) + rebate)
+                        self._rebate_index.setdefault(gross_key, []).append(txn_posting)
+
     def match(
         self,
         transactions: Iterable[Transaction],
         covered_accounts: list[str] | None = None,
         covered_ranges: dict[str, list[tuple[date, date]]] | None = None,
+        covered_groups: list[set[str]] | None = None,
         meta_check: bool = True,
         ambiguous_check: bool = True,
     ) -> MatchResult:
@@ -147,6 +171,13 @@ class Sieve:
             covered_ranges: Optional dict mapping account to list of (start, end) date
                 ranges. An account listed here yields Extra entries only within its
                 ranges; an account absent from it keeps every unmatched entry.
+            covered_groups: Optional sets of accounts that one statement speaks for
+                as a whole. An unmatched posting is exempt from Extra when it is
+                the opposite leg of a matched posting of the same ledger
+                transaction: a different account in the same group, same
+                currency, and the negated amount. Each matched posting exempts at
+                most one such leg. If None, covered_accounts forms the single
+                group (every account when covered_accounts is also None).
             meta_check: When True (default), card_last4 is a soft check producing
                 MetaDiagnostic entries. When False, card_last4 hard-filters matches.
             ambiguous_check: When True (default), matches with multiple viable
@@ -164,16 +195,28 @@ class Sieve:
         match_diagnostics: list[MatchDiagnostic] = []
         used_ledger_entries: set[int] = set()
 
-        for txn in transactions:
+        # A rebate top-up row can also fall back to the rebate sums, so it
+        # picks after every exact-only row has taken its posting; the results
+        # are reported in statement order regardless.
+        order = sorted(
+            range(len(transactions)),
+            key=lambda i: _has_gross_fallback(transactions[i]),
+        )
+        found: list[tuple[TxnPosting | None, int]] = [(None, 0)] * len(transactions)
+        for i in order:
             match, n_others = self._find_match(
-                txn,
+                transactions[i],
                 used_ledger_entries,
                 meta_check=meta_check,
                 ambiguous_check=ambiguous_check,
             )
+            found[i] = (match, n_others)
+            if match:
+                used_ledger_entries.add(id(match))
+
+        for txn, (match, n_others) in zip(transactions, found, strict=True):
             if match:
                 matched.append((txn, match))
-                used_ledger_entries.add(id(match))
                 if meta_check:
                     diag = self._diagnose_meta(txn, match)
                     if diag is not None:
@@ -185,10 +228,16 @@ class Sieve:
             else:
                 missing.append(txn)
 
-        # Find extra ledger entries (not matched to any statement transaction)
+        exempt = self._settled_transfer_legs(
+            [entry for _, entry in matched],
+            used_ledger_entries,
+            covered_accounts,
+            covered_groups,
+        )
+
         extra = []
         for entry in self._ledger_entries:
-            if id(entry) in used_ledger_entries:
+            if id(entry) in used_ledger_entries or id(entry) in exempt:
                 continue
             # Filter by covered accounts
             if (
@@ -214,6 +263,51 @@ class Sieve:
             meta_diagnostics=diagnostics,
             match_diagnostics=match_diagnostics,
         )
+
+    def _settled_transfer_legs(
+        self,
+        matched: list[TxnPosting],
+        used: set[int],
+        covered_accounts: list[str] | None,
+        covered_groups: list[set[str]] | None,
+    ) -> set[int]:
+        """Return ids of unmatched postings settled by a matched sibling leg.
+
+        A transfer between two accounts of one statement-wide provider shows up
+        as a single statement row, which consumes one leg; that same row also
+        accounts for the opposite leg. One row settles one two-sided transfer,
+        so each matched leg pairs with at most one opposite leg.
+        """
+        if covered_groups is None and covered_accounts is not None:
+            covered_groups = [set(covered_accounts)]
+
+        def same_group(a: str, b: str) -> bool:
+            if covered_groups is None:
+                return True
+            return any(a in group and b in group for group in covered_groups)
+
+        tolerance = self.config.amount_tolerance
+        exempt: set[int] = set()
+        for leg in matched:
+            units = leg.posting.units
+            if units is None or units.number is None:
+                continue
+            for sibling in self._postings_by_txn[id(leg.txn)]:
+                posting = sibling.posting
+                if (
+                    id(sibling) in used
+                    or id(sibling) in exempt
+                    or posting.account == leg.posting.account
+                    or posting.units is None
+                    or posting.units.number is None
+                    or posting.units.currency != units.currency
+                    or abs(posting.units.number + units.number) > tolerance
+                    or not same_group(posting.account, leg.posting.account)
+                ):
+                    continue
+                exempt.add(id(sibling))
+                break
+        return exempt
 
     def _in_covered_range(
         self,
@@ -253,11 +347,31 @@ class Sieve:
                 if self._match_by_order_id(txn, entry):
                     return entry, 0
 
+        # A flagged gross row tries the rebate sums only after every exact
+        # candidate failed: an exact posting is the stronger evidence, and the
+        # same-amount statement row it would otherwise steal has no fallback.
+        tiers = (False, True) if _has_gross_fallback(txn) else (False,)
+        for gross in tiers:
+            chosen, n_others = self._pick(
+                txn, used, meta_check, ambiguous_check, gross=gross
+            )
+            if chosen is not None:
+                return chosen, n_others
+        return None, 0
+
+    def _pick(
+        self,
+        txn: Transaction,
+        used: set[int],
+        meta_check: bool,
+        ambiguous_check: bool,
+        gross: bool,
+    ) -> tuple[TxnPosting | None, int]:
         candidates = (
             candidate
-            for candidate in self._get_candidates(txn)
+            for candidate in self._get_candidates(txn, gross=gross)
             if id(candidate) not in used
-            and self._is_match(txn, candidate, meta_check=meta_check)
+            and self._is_match(txn, candidate, meta_check=meta_check, gross=gross)
         )
         # Only scan all candidates to detect ambiguity for unconstrained
         # transactions; otherwise stop at the first match.
@@ -274,8 +388,11 @@ class Sieve:
         n_others = sum(1 for c in viable[1:] if c.txn is not chosen.txn)
         return chosen, n_others
 
-    def _get_candidates(self, txn: Transaction) -> list[TxnPosting]:
+    def _get_candidates(
+        self, txn: Transaction, gross: bool = False
+    ) -> list[TxnPosting]:
         """Get candidate ledger entries for matching."""
+        index = self._rebate_index if gross else self._ledger_index
         candidates = []
         amounts = {abs(txn.amount)}
         if txn.original_amount is not None:
@@ -288,7 +405,7 @@ class Sieve:
                     continue
                 check_date = txn.date + timedelta(days=delta * sign if sign else 0)
                 for amount in amounts:
-                    candidates.extend(self._ledger_index.get((check_date, amount), []))
+                    candidates.extend(index.get((check_date, amount), []))
 
         return candidates
 
@@ -301,9 +418,17 @@ class Sieve:
         return meta.get("order_id") == txn.order_id
 
     def _is_match(
-        self, txn: Transaction, entry: TxnPosting, meta_check: bool = True
+        self,
+        txn: Transaction,
+        entry: TxnPosting,
+        meta_check: bool = True,
+        gross: bool = False,
     ) -> bool:
-        """Check if transaction matches ledger entry."""
+        """Check if transaction matches ledger entry.
+
+        With ``gross``, the amount must equal the posting plus its transaction's
+        rebates instead of the posting itself.
+        """
         posting = entry.posting
         bean_txn = entry.txn
 
@@ -316,10 +441,16 @@ class Sieve:
             units_number = posting.units.number
             units_currency = posting.units.currency
             price_number = posting.price.number if posting.price else None
-            if not (
-                self._amount_matches(txn, units_number, units_currency, price_number)
-                or self._original_amount_matches(txn, units_number, units_currency)
-            ):
+            if gross:
+                rebate = self._rebate_sums.get(id(bean_txn), {}).get(units_currency)
+                amount_ok = bool(rebate) and self._amount_matches(
+                    txn, abs(units_number) + rebate, units_currency, None
+                )
+            else:
+                amount_ok = self._amount_matches(
+                    txn, units_number, units_currency, price_number
+                ) or self._original_amount_matches(txn, units_number, units_currency)
+            if not amount_ok:
                 return False
 
             # Check amount sign matches the expected direction for Asset/Liability accounts
@@ -446,6 +577,24 @@ class Sieve:
             actual=meta_card,
             message=message,
         )
+
+
+def _has_gross_fallback(txn: Transaction) -> bool:
+    return bool(txn.metadata.get(REBATE_TOPUP_MATCH))
+
+
+def _rebate_sums(entry: BeanTransaction) -> dict[str, Decimal]:
+    # Income postings are negative when earned, so negating them lets a
+    # reversal posting reduce the gross rather than add to it.
+    sums: dict[str, Decimal] = {}
+    for posting in entry.postings:
+        if not posting.account.startswith("Income:Rebate:"):
+            continue
+        if posting.units is None or posting.units.number is None:
+            continue
+        currency = posting.units.currency
+        sums[currency] = sums.get(currency, Decimal(0)) - posting.units.number
+    return sums
 
 
 def _entry_location(entry: TxnPosting) -> tuple[str, int, str]:

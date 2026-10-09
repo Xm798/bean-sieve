@@ -9,6 +9,7 @@ from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
 
+from ...core.metadata_keys import REBATE_TOPUP_MATCH
 from ...core.preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
 from ...core.types import ReconcileContext, Transaction
 from .. import register_provider
@@ -48,6 +49,9 @@ STATEMENT_PERIOD_REGEX = re.compile(
     r"起始时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?\s+"
     r"终止时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?"
 )
+
+# Payment-method segments after "&" that Alipay funds itself
+REBATE_METHOD_REGEX = re.compile(r"红包|立减|优惠|补贴|满减")
 
 
 @register_provider
@@ -140,7 +144,7 @@ class AlipayProvider(BaseProvider):
         item_name = row[4]
         tx_type_str = row[5]
         amount_str = row[6]
-        method = row[7].split("&")[0].strip()
+        method, *method_extras = (part.strip() for part in row[7].split("&"))
         status = row[8]
         order_id = row[9].strip() if len(row) > 9 else ""
         merchant_id = row[10].strip() if len(row) > 10 else ""
@@ -165,6 +169,23 @@ class AlipayProvider(BaseProvider):
         # Build description
         description = item_name if item_name else category
 
+        metadata: dict[str, object] = {
+            "category": category,
+            "peer_account": peer_account,
+            "method": method,
+            "status": status,
+            "merchant_id": merchant_id,
+            "tx_type": tx_type_str,
+            "remarks": remarks,
+        }
+        # A purchase paid with "card&红包" reports the net card charge, but a
+        # credit repayment reports the gross amount the card was credited with,
+        # which the ledger splits into the fund leg and an Income:Rebate leg.
+        if category == "信用借还" and any(
+            REBATE_METHOD_REGEX.search(extra) for extra in method_extras
+        ):
+            metadata[REBATE_TOPUP_MATCH] = True
+
         return Transaction(
             date=tx_datetime.date(),
             time=tx_datetime.time(),
@@ -178,15 +199,7 @@ class AlipayProvider(BaseProvider):
             source_file=file_path,
             source_line=line_num,
             statement_period=statement_period,
-            metadata={
-                "category": category,
-                "peer_account": peer_account,
-                "method": method,
-                "status": status,
-                "merchant_id": merchant_id,
-                "tx_type": tx_type_str,
-                "remarks": remarks,
-            },
+            metadata=metadata,
         )
 
     _extract_card_last4 = staticmethod(extract_card_last4)

@@ -1,16 +1,19 @@
 """Tests for account_mappings resolution.
 
-The four rules in core.accounts differ in direction, case sensitivity and
+The five rules in core.accounts differ in direction, case sensitivity and
 literal-vs-regex; each test below flips if one is swapped for another.
 """
 
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from bean_sieve.api import _resolve_target_account, _set_target_accounts
 from bean_sieve.config.schema import AccountMapping, Config
 from bean_sieve.core.accounts import (
     apply_rebate_account,
+    resolve_by_bank_and_suffix,
     resolve_by_keyword_regex,
     resolve_by_keyword_substring,
     resolve_by_method,
@@ -115,6 +118,49 @@ class TestResolveByMethodCi:
         assert mapping.account == "Assets:First"
 
 
+class TestResolveByBankAndSuffix:
+    """Pattern must contain both the bank name and the suffix of `bank(XXXX)`."""
+
+    def test_long_form_pattern_matches(self):
+        mappings = [AccountMapping(pattern="某银行储蓄卡(1111)", account="Assets:X")]
+        mapping = resolve_by_bank_and_suffix(mappings, "某银行(1111)")
+
+        assert mapping is not None
+        assert mapping.account == "Assets:X"
+
+    def test_other_bank_with_same_suffix_does_not_match(self):
+        mappings = [AccountMapping(pattern="另一银行储蓄卡(1111)", account="Assets:X")]
+
+        assert resolve_by_bank_and_suffix(mappings, "某银行(1111)") is None
+
+    def test_same_bank_with_other_suffix_does_not_match(self):
+        mappings = [AccountMapping(pattern="某银行储蓄卡(2222)", account="Assets:X")]
+
+        assert resolve_by_bank_and_suffix(mappings, "某银行(1111)") is None
+
+    def test_text_without_suffix_does_not_match(self):
+        mappings = [AccountMapping(pattern="某银行储蓄卡(1111)", account="Assets:X")]
+
+        assert resolve_by_bank_and_suffix(mappings, "某银行") is None
+
+    def test_match_ignores_case(self):
+        mappings = [AccountMapping(pattern="BankX Debit(1111)", account="Assets:X")]
+        mapping = resolve_by_bank_and_suffix(mappings, "bankx(1111)")
+
+        assert mapping is not None
+        assert mapping.account == "Assets:X"
+
+    def test_first_mapping_in_config_order_wins(self):
+        mappings = [
+            AccountMapping(pattern="某银行储蓄卡(1111)", account="Assets:First"),
+            AccountMapping(pattern="某银行信用卡(1111)", account="Assets:Second"),
+        ]
+        mapping = resolve_by_bank_and_suffix(mappings, "某银行(1111)")
+
+        assert mapping is not None
+        assert mapping.account == "Assets:First"
+
+
 class TestResolveByKeywordSubstring:
     """Keyword must be a case-insensitive substring of the pattern."""
 
@@ -145,6 +191,14 @@ class TestResolveByKeywordSubstring:
         ]
 
         assert resolve_by_keyword_substring(mappings, "wallet") == "Assets:First"
+
+    def test_exact_match_ignores_case(self):
+        mappings = [
+            AccountMapping(pattern="wallet-main", account="Assets:Main"),
+            AccountMapping(pattern="WALLET", account="Assets:Wallet"),
+        ]
+
+        assert resolve_by_keyword_substring(mappings, "wallet") == "Assets:Wallet"
 
 
 class TestResolveByKeywordRegex:
@@ -177,6 +231,42 @@ class TestResolveByKeywordRegex:
         ]
 
         assert resolve_by_keyword_regex(mappings, "wallet") == "Assets:First"
+
+    def test_exact_match_is_a_full_regex_match(self):
+        mappings = [
+            AccountMapping(pattern="bank-main", account="Assets:Main"),
+            AccountMapping(pattern="BANK", account="Assets:Bank"),
+        ]
+
+        assert resolve_by_keyword_regex(mappings, "b.nk") == "Assets:Bank"
+
+
+KEYWORD_RESOLVERS = pytest.mark.parametrize(
+    "resolve", [resolve_by_keyword_substring, resolve_by_keyword_regex]
+)
+
+
+@KEYWORD_RESOLVERS
+@pytest.mark.parametrize(
+    ("longer", "shorter"), [("零钱通", "零钱"), ("余额宝", "余额")]
+)
+def test_keyword_exact_pattern_beats_earlier_containing_pattern(
+    resolve, longer, shorter
+):
+    mappings = [
+        AccountMapping(pattern=longer, account="Assets:Longer"),
+        AccountMapping(pattern=shorter, account="Assets:Shorter"),
+    ]
+
+    assert resolve(mappings, shorter) == "Assets:Shorter"
+    assert resolve(mappings, longer) == "Assets:Longer"
+
+
+@KEYWORD_RESOLVERS
+def test_keyword_falls_back_to_containing_pattern(resolve):
+    mappings = [AccountMapping(pattern="微信零钱", account="Assets:Balance")]
+
+    assert resolve(mappings, "零钱") == "Assets:Balance"
 
 
 class TestApplyRebateAccount:

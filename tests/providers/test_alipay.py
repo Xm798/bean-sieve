@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from bean_sieve.core.metadata_keys import REBATE_TOPUP_MATCH
 from bean_sieve.providers import get_provider
 from bean_sieve.providers.payment.alipay import AlipayProvider
+from tests.helpers import write_alipay_csv
 
 
 @pytest.fixture
@@ -415,3 +417,60 @@ def test_merge_transactions_preserves_card_last4():
     merged = provider._merge_transactions([t1, t2])
     assert merged.card_last4 == "1234"
     assert merged.amount == Decimal("30.00")
+
+
+def _parse_rows(tmp_path: Path, rows: list[str]):
+    return AlipayProvider().parse(write_alipay_csv(tmp_path, rows))
+
+
+class TestAlipayCombinedMethod:
+    """Combined payment methods such as "card&红包"."""
+
+    def test_repayment_with_combined_method_is_flagged(self, tmp_path):
+        (txn,) = _parse_rows(
+            tmp_path,
+            [
+                "2030-01-06 10:00:00,信用借还,bank-a,,信用卡还款,不计收支,30.00,"
+                "bank-a储蓄卡(1111)&红包,还款成功,ORDER0002,,",
+            ],
+        )
+
+        assert txn.metadata["method"] == "bank-a储蓄卡(1111)"
+        assert txn.metadata[REBATE_TOPUP_MATCH] is True
+        assert txn.card_last4 == "1111"
+
+    def test_purchase_with_combined_method_is_not_flagged(self, tmp_path):
+        (txn,) = _parse_rows(
+            tmp_path,
+            [
+                "2030-01-06 11:00:00,日用百货,merchant-a,,item-a,支出,30.00,"
+                "bank-a储蓄卡(1111)&红包,交易成功,ORDER0003,,",
+            ],
+        )
+
+        assert txn.metadata["method"] == "bank-a储蓄卡(1111)"
+        assert REBATE_TOPUP_MATCH not in txn.metadata
+
+    def test_repayment_with_single_method_is_not_flagged(self, tmp_path):
+        (txn,) = _parse_rows(
+            tmp_path,
+            [
+                "2030-01-06 12:00:00,信用借还,bank-a,,信用卡还款,不计收支,30.00,"
+                "bank-a储蓄卡(1111),还款成功,ORDER0004,,",
+            ],
+        )
+
+        assert txn.metadata["method"] == "bank-a储蓄卡(1111)"
+        assert REBATE_TOPUP_MATCH not in txn.metadata
+
+    def test_repayment_with_non_rebate_combined_method_is_not_flagged(self, tmp_path):
+        (txn,) = _parse_rows(
+            tmp_path,
+            [
+                "2030-01-06 13:00:00,信用借还,bank-a,,信用卡还款,不计收支,30.00,"
+                "bank-a储蓄卡(1111)&余额,还款成功,ORDER0005,,",
+            ],
+        )
+
+        assert txn.metadata["method"] == "bank-a储蓄卡(1111)"
+        assert REBATE_TOPUP_MATCH not in txn.metadata

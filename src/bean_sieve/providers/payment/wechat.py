@@ -42,15 +42,18 @@ class WechatTxType(StrEnum):
     CASH_IN = "零钱充值"
     CASH_WITHDRAW = "零钱提现"
     MERCHANT_WITHDRAW = "经营账户提现"
+    MERCHANT_TOP_UP = "经营账户充值"
     CREDIT_CARD_REFUND = "信用卡还款"
     BUY_LICAITONG = "购买理财通"
-    CASH_TO_LOOSE_CHANGE = "零钱通转出-到零钱"
-    CASH_TO_OTHERS = "零钱通转出"
     FAMILY_CARD = "亲属卡交易"
     SPONSOR_CODE = "赞赏码"
     OTHER = "其他"
     DONATION = "分分捐"
 
+
+# 零钱通转出-到招商银行(1234): the destination follows "到"
+LINGQIANTONG_OUT_PREFIX = "^零钱通转出-到"
+LINGQIANTONG_OUT_REGEX = re.compile(LINGQIANTONG_OUT_PREFIX + "(.+)$")
 
 # Number of header lines to skip in WeChat CSV/XLSX
 WECHAT_HEADER_LINES = 17
@@ -251,6 +254,13 @@ class WechatProvider(BaseProvider):
                     method = source
             elif status in ("已存入零钱", "已存入经营账户"):
                 order_type = WechatOrderType.INCOME
+            elif tx_type_str == WechatTxType.MERCHANT_TOP_UP.value:
+                order_type = WechatOrderType.EXPENSE
+                withdrawal_target = "经营账户"
+            elif match := LINGQIANTONG_OUT_REGEX.match(tx_type_str):
+                order_type = WechatOrderType.EXPENSE
+                withdrawal_target = match.group(1)
+                method = "零钱通"
             else:
                 return None
 
@@ -295,6 +305,9 @@ class WechatProvider(BaseProvider):
             description=description,
             payee=peer,
             order_id=order_id,
+            # Taken from the funding wallet, never the destination card: a card
+            # suffix would make this row look like the bank statement's incoming
+            # leg and get it deduplicated away.
             card_last4=self._extract_card_last4(method),
             provider=self.provider_id,
             source_file=file_path,
@@ -384,6 +397,35 @@ class WechatProvider(BaseProvider):
                 ),
                 action=PresetRuleAction(
                     account_keyword="经营账户",
+                    contra_account_metadata_key=WITHDRAWAL_TARGET,
+                ),
+                priority=90,
+            ),
+            PresetRule(
+                rule_id="wechat_merchant_top_up",
+                name="经营账户充值",
+                provider="wechat",
+                condition=PresetRuleCondition(
+                    metadata={"tx_type": r"^经营账户充值$"},
+                ),
+                # The funding side resolves through the row's method "零钱": a
+                # "零钱" keyword would also hit a "零钱通" pattern.
+                action=PresetRuleAction(
+                    contra_account_metadata_key=WITHDRAWAL_TARGET,
+                ),
+                priority=90,
+            ),
+            # "零钱通" is not a substring of a "零钱" pattern, so this keyword
+            # resolves to the 零钱通 mapping whatever order the mappings are in.
+            PresetRule(
+                rule_id="wechat_lingqiantong_out",
+                name="零钱通转出",
+                provider="wechat",
+                condition=PresetRuleCondition(
+                    metadata={"tx_type": LINGQIANTONG_OUT_PREFIX},
+                ),
+                action=PresetRuleAction(
+                    account_keyword="零钱通",
                     contra_account_metadata_key=WITHDRAWAL_TARGET,
                 ),
                 priority=90,

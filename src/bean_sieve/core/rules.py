@@ -9,6 +9,7 @@ from datetime import time
 from ..config.schema import Config, Rule
 from .accounts import (
     apply_rebate_account,
+    resolve_by_bank_and_suffix,
     resolve_by_keyword_substring,
     resolve_by_method_ci,
 )
@@ -115,15 +116,20 @@ class RulesEngine:
                 txn.account = account
                 txn.metadata[MATCHED_PRESET_RULE] = preset.rule_id
 
-        # The metadata value is a full method string (e.g. "交通银行(8888)"), so it
-        # resolves the same way as txn.metadata["method"] does.
         if action.contra_account_metadata_key and not txn.contra_account:
             value = txn.metadata.get(action.contra_account_metadata_key, "")
             if value:
-                mapping = resolve_by_method_ci(self.config.account_mappings, value)
+                # The value is first read as a full method string (e.g.
+                # "交通银行(8888)"). WeChat spells a 交易类型 destination as
+                # `bank(XXXX)` while users pattern the 支付方式 spelling such as
+                # `bank储蓄卡(XXXX)`, so bank name plus suffix is the fallback.
+                mapping = resolve_by_method_ci(
+                    self.config.account_mappings, value
+                ) or resolve_by_bank_and_suffix(self.config.account_mappings, value)
                 if mapping:
                     txn.contra_account = mapping.account
                     txn.match_source = MatchSource.RULE
+                    txn.metadata[MATCHED_PRESET_RULE] = preset.rule_id
 
         # Negate amount if specified (only if positive, to avoid double-negation)
         if action.negate and txn.amount > 0:

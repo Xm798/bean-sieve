@@ -33,6 +33,7 @@ from .core.metadata_keys import (
     MATCHED_PRESET_RULE,
     OUTPUT_METADATA,
     POSTING_METADATA,
+    REBATE_TOPUP_MATCH,
 )
 from .core.types import MatchSource
 from .providers import (
@@ -116,6 +117,7 @@ def reconcile(
     preset_rules: list[PresetRule] | None = None,
     covered_accounts: list[str] | None = None,
     covered_ranges: dict[str, list[tuple[date, date]]] | None = None,
+    covered_groups: list[set[str]] | None = None,
 ) -> ReconcileResult:
     """
     Reconcile transactions against ledger and apply rules.
@@ -127,6 +129,8 @@ def reconcile(
         preset_rules: Preset rules from provider for automatic account lookup
         covered_accounts: Accounts covered by this statement for Extra calculation
         covered_ranges: Card to date ranges mapping for Extra calculation
+        covered_groups: Account sets each spoken for by one statement as a whole,
+            letting a matched leg exempt its sibling leg from Extra
 
     Returns:
         ReconcileResult with matched, missing, and processed transactions
@@ -138,6 +142,7 @@ def reconcile(
         transactions,
         covered_accounts=covered_accounts,
         covered_ranges=covered_ranges,
+        covered_groups=covered_groups,
         meta_check=config.diagnostics.meta_check,
         ambiguous_check=config.diagnostics.ambiguous_match,
     )
@@ -323,7 +328,8 @@ def full_reconcile(
     transactions = _set_target_accounts(transactions, config, preset_rules)
 
     # Collect covered accounts and ranges from providers
-    covered_accounts = _collect_covered_accounts(transactions, pset, config)
+    covered_groups = _collect_covered_groups(transactions, pset, config)
+    covered_accounts = sorted(set().union(*covered_groups))
     covered_ranges = _collect_covered_ranges(transactions, pset, config)
 
     # Load ledger
@@ -342,6 +348,7 @@ def full_reconcile(
         preset_rules=preset_rules,
         covered_accounts=covered_accounts,
         covered_ranges=covered_ranges,
+        covered_groups=covered_groups,
     )
 
     # Generate output
@@ -556,7 +563,8 @@ def _deduplicate_cross_statements(
     using 1:1 pairing to preserve legitimate same-day same-amount transactions.
 
     Pairing criteria:
-    - Same date, amount, target account
+    - Same date, amount, target account; a rebate top-up indirect record left
+      unpaired then takes the largest unused direct record of smaller amount
     - Time within 5 minutes (if both have time), or same day (if no time)
     - One is direct (card_last4 in provider's accounts), one is indirect (method)
     """
@@ -579,47 +587,55 @@ def _deduplicate_cross_statements(
             # Neither - keep as direct (will be preserved)
             direct_records.append(txn)
 
-    # Try to pair each indirect record with a direct record
+    accounts = {
+        id(t): _resolve_target_account(t, config)
+        for t in (*direct_records, *indirect_records)
+    }
     used_direct: set[int] = set()
-    result = []
+    paired_indirect: set[int] = set()
+
+    def pairable(indirect: Transaction, direct: Transaction) -> bool:
+        if id(direct) in used_direct:
+            return False
+        if accounts[id(direct)] != accounts[id(indirect)]:
+            return False
+        if indirect.date != direct.date:
+            return False
+        t1, t2 = indirect.tx_datetime, direct.tx_datetime
+        return t1 is None or t2 is None or abs(t1 - t2) <= timedelta(minutes=5)
 
     for indirect in indirect_records:
-        indirect_account = _resolve_target_account(indirect, config)
-        matched = False
-
         for direct in direct_records:
-            if id(direct) in used_direct:
-                continue
+            if pairable(indirect, direct) and abs(indirect.amount) == abs(
+                direct.amount
+            ):
+                used_direct.add(id(direct))
+                paired_indirect.add(id(indirect))
+                break
 
-            direct_account = _resolve_target_account(direct, config)
+    # A rebate-funded repayment reports the gross amount while the bank debits
+    # only the net, and the ledger has a single fund leg for both rows to
+    # compete for. Pairing runs after every exact pair is taken so a gross row
+    # never claims a direct row that an equal-amount indirect row owns, and the
+    # largest smaller row is the closest net candidate.
+    for indirect in indirect_records:
+        if id(indirect) in paired_indirect or not indirect.metadata.get(
+            REBATE_TOPUP_MATCH
+        ):
+            continue
+        best: Transaction | None = None
+        for direct in direct_records:
+            if (
+                pairable(indirect, direct)
+                and 0 < direct.amount < indirect.amount
+                and (best is None or direct.amount > best.amount)
+            ):
+                best = direct
+        if best is not None:
+            used_direct.add(id(best))
+            paired_indirect.add(id(indirect))
 
-            # Must target same account
-            if indirect_account != direct_account:
-                continue
-
-            # Must be same date and amount
-            if indirect.date != direct.date:
-                continue
-            if abs(indirect.amount) != abs(direct.amount):
-                continue
-
-            # Time check: within 5 minutes if both have time
-            if indirect.time and direct.time:
-                from datetime import datetime, timedelta
-
-                t1 = datetime.combine(indirect.date, indirect.time)
-                t2 = datetime.combine(direct.date, direct.time)
-                if abs(t1 - t2) > timedelta(minutes=5):
-                    continue
-
-            # Found a match - mark direct as used, discard indirect
-            used_direct.add(id(direct))
-            matched = True
-            break
-
-        if not matched:
-            # No matching direct record - keep indirect
-            result.append(indirect)
+    result = [i for i in indirect_records if id(i) not in paired_indirect]
 
     # Add all direct records (they are always kept)
     result.extend(direct_records)
@@ -678,23 +694,27 @@ def _get_dedup_priority(txn: Transaction, config: Config) -> int:
     return 50
 
 
-def _collect_covered_accounts(
+def _collect_covered_groups(
     transactions: list[Transaction],
     pset: ProviderSet,
     config: Config,
-) -> list[str]:
+) -> list[set[str]]:
     """
-    Collect covered accounts from all providers involved.
+    Collect the account groups whose legs one statement row can account for.
 
-    Returns the union of accounts from each provider's get_covered_accounts().
+    A statement-wide provider (payment platform, household bank) reports a
+    transfer between two of its accounts as one row, so all its accounts form
+    one group. A per-card provider issues a separate statement for each card,
+    each of which must show its own leg, so every account stands alone.
     """
-    return list(
-        {
-            account
-            for provider, batch in pset.group(transactions)
-            for account in provider.get_covered_accounts(batch, config)
-        }
-    )
+    groups: list[set[str]] = []
+    for provider, batch in pset.group(transactions):
+        accounts = provider.get_covered_accounts(batch, config)
+        if provider.per_card_statement:
+            groups.extend({account} for account in accounts)
+        elif accounts:
+            groups.append(set(accounts))
+    return groups
 
 
 def _collect_covered_ranges(

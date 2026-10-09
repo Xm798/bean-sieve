@@ -3,6 +3,9 @@
 from datetime import date, time
 from decimal import Decimal
 
+import pytest
+
+from bean_sieve.api import _set_target_accounts
 from bean_sieve.config.schema import (
     AccountMapping,
     Config,
@@ -10,6 +13,7 @@ from bean_sieve.config.schema import (
     RuleAction,
     RuleCondition,
 )
+from bean_sieve.core.metadata_keys import MATCHED_PRESET_RULE
 from bean_sieve.core.preset_rules import (
     PresetRule,
     PresetRuleAction,
@@ -17,6 +21,8 @@ from bean_sieve.core.preset_rules import (
 )
 from bean_sieve.core.rules import RulesEngine, apply_rules
 from bean_sieve.core.types import MatchSource, Transaction
+from bean_sieve.providers.payment.alipay import AlipayProvider
+from bean_sieve.providers.payment.wechat import WechatProvider
 
 
 class TestRulesEngine:
@@ -497,3 +503,194 @@ class TestPresetRules:
         result = engine.apply(txn)
         assert result.account == "Assets:Wallet:WeChat:Balance"
         assert result.contra_account is None
+
+
+class TestWechatWalletTransferPresets:
+    """WeChat preset rules resolve both legs of wallet-to-wallet/bank transfers."""
+
+    @staticmethod
+    def _config() -> Config:
+        # 零钱 is listed before 零钱通 so a substring match on "零钱" would
+        # wrongly pick it for 零钱通 rows.
+        return Config(
+            account_mappings=[
+                AccountMapping(pattern="零钱", account="Assets:WeChat:Balance"),
+                AccountMapping(pattern="零钱通", account="Assets:WeChat:Fund"),
+                AccountMapping(pattern="经营账户", account="Assets:WeChat:Merchant"),
+                AccountMapping(pattern="某银行", account="Assets:Bank:Some"),
+            ],
+        )
+
+    @staticmethod
+    def _txn(tx_type: str, method: str, target: str) -> Transaction:
+        return Transaction(
+            date=date(2030, 1, 3),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description=tx_type,
+            provider="wechat",
+            metadata={
+                "tx_type": tx_type,
+                "method": method,
+                "status": "资金已到账",
+                "_withdrawal_target": target,
+            },
+        )
+
+    def _engine(self, config: Config | None = None) -> RulesEngine:
+        return RulesEngine(
+            config or self._config(), preset_rules=WechatProvider.get_preset_rules()
+        )
+
+    def test_merchant_top_up(self):
+        txn = self._txn("经营账户充值", "零钱", "经营账户")
+        result = self._engine().apply(txn)
+        assert result.account == "Assets:WeChat:Balance"
+        assert result.contra_account == "Assets:WeChat:Merchant"
+        assert result.metadata[MATCHED_PRESET_RULE] == "wechat_merchant_top_up"
+
+    def test_lingqiantong_out_to_bank(self):
+        txn = self._txn("零钱通转出-到某银行(1111)", "零钱通", "某银行(1111)")
+        result = self._engine().apply(txn)
+        assert result.account == "Assets:WeChat:Fund"
+        assert result.contra_account == "Assets:Bank:Some"
+        assert result.metadata[MATCHED_PRESET_RULE] == "wechat_lingqiantong_out"
+
+    @pytest.mark.parametrize("bank_pattern", ["某银行储蓄卡(1111)", "某银行(1111)"])
+    def test_lingqiantong_out_to_bank_with_card_pattern(self, bank_pattern):
+        engine = self._engine(
+            Config(
+                account_mappings=[
+                    AccountMapping(pattern="零钱通", account="Assets:WeChat:Fund"),
+                    AccountMapping(pattern=bank_pattern, account="Assets:Bank:X:1111"),
+                ],
+            )
+        )
+        txn = self._txn("零钱通转出-到某银行(1111)", "零钱通", "某银行(1111)")
+        result = engine.apply(txn)
+        assert result.contra_account == "Assets:Bank:X:1111"
+
+    def test_lingqiantong_out_to_balance(self):
+        txn = self._txn("零钱通转出-到零钱", "零钱通", "零钱")
+        result = self._engine().apply(txn)
+        assert result.account == "Assets:WeChat:Fund"
+        assert result.contra_account == "Assets:WeChat:Balance"
+
+    def test_target_account_resolution_in_api(self):
+        txns = [
+            self._txn("经营账户充值", "零钱", "经营账户"),
+            self._txn("零钱通转出-到某银行(1111)", "零钱通", "某银行(1111)"),
+        ]
+        result = _set_target_accounts(
+            txns, self._config(), WechatProvider.get_preset_rules()
+        )
+        assert [t.account for t in result] == [
+            "Assets:WeChat:Balance",
+            "Assets:WeChat:Fund",
+        ]
+
+    def test_merchant_top_up_with_fund_mapping_listed_first(self):
+        # 零钱通 comes first, so a "零钱" keyword lookup would land on it.
+        config = Config(
+            account_mappings=[
+                AccountMapping(pattern="零钱通", account="Assets:WeChat:Fund"),
+                AccountMapping(pattern="零钱", account="Assets:WeChat:Balance"),
+                AccountMapping(pattern="经营账户", account="Assets:WeChat:Merchant"),
+            ],
+        )
+        presets = WechatProvider.get_preset_rules()
+
+        result = RulesEngine(config, preset_rules=presets).apply(
+            self._txn("经营账户充值", "零钱", "经营账户")
+        )
+        assert result.account == "Assets:WeChat:Balance"
+        assert result.contra_account == "Assets:WeChat:Merchant"
+
+        (targeted,) = _set_target_accounts(
+            [self._txn("经营账户充值", "零钱", "经营账户")], config, presets
+        )
+        assert targeted.account == "Assets:WeChat:Balance"
+        applied = RulesEngine(config, preset_rules=presets).apply(targeted)
+        assert applied.contra_account == "Assets:WeChat:Merchant"
+
+
+class TestWalletKeywordWithLongerWalletListedFirst:
+    """A generic wallet keyword resolves to its own mapping even when a longer
+    wallet name containing it is listed earlier."""
+
+    @staticmethod
+    def _wechat_config() -> Config:
+        return Config(
+            account_mappings=[
+                AccountMapping(pattern="零钱通", account="Assets:WeChat:Fund"),
+                AccountMapping(pattern="零钱", account="Assets:WeChat:Balance"),
+                AccountMapping(pattern="某银行", account="Assets:Bank:Some"),
+            ],
+        )
+
+    @staticmethod
+    def _wechat_txns() -> list[Transaction]:
+        withdraw = Transaction(
+            date=date(2030, 1, 3),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="零钱提现",
+            provider="wechat",
+            metadata={
+                "tx_type": "零钱提现",
+                "method": "零钱",
+                "status": "提现已到账",
+                "_withdrawal_target": "某银行(1111)",
+            },
+        )
+        deposit = Transaction(
+            date=date(2030, 1, 4),
+            amount=Decimal("-20.00"),
+            currency="CNY",
+            description="payee-a",
+            provider="wechat",
+            metadata={"tx_type": "转账", "status": "已存入零钱"},
+        )
+        return [withdraw, deposit]
+
+    def test_wechat_rules_engine(self):
+        engine = RulesEngine(
+            self._wechat_config(), preset_rules=WechatProvider.get_preset_rules()
+        )
+        withdraw, deposit = (engine.apply(t) for t in self._wechat_txns())
+        assert withdraw.metadata[MATCHED_PRESET_RULE] == "wechat_cash_withdraw"
+        assert withdraw.account == "Assets:WeChat:Balance"
+        assert deposit.metadata[MATCHED_PRESET_RULE] == "wechat_to_balance"
+        assert deposit.account == "Assets:WeChat:Balance"
+
+    def test_wechat_set_target_accounts(self):
+        result = _set_target_accounts(
+            self._wechat_txns(),
+            self._wechat_config(),
+            WechatProvider.get_preset_rules(),
+        )
+        assert [t.account for t in result] == [
+            "Assets:WeChat:Balance",
+            "Assets:WeChat:Balance",
+        ]
+
+    def test_alipay_balance_set_target_accounts(self):
+        config = Config(
+            account_mappings=[
+                AccountMapping(pattern="余额宝", account="Assets:Alipay:YuEBao"),
+                AccountMapping(pattern="余额", account="Assets:Alipay:Balance"),
+            ],
+        )
+        txn = Transaction(
+            date=date(2030, 1, 5),
+            amount=Decimal("30.00"),
+            currency="CNY",
+            description="payee-b",
+            provider="alipay",
+            metadata={"method": "余额"},
+        )
+        (result,) = _set_target_accounts(
+            [txn], config, AlipayProvider.get_preset_rules()
+        )
+        assert result.account == "Assets:Alipay:Balance"
+        assert result.metadata[MATCHED_PRESET_RULE] == "alipay_balance"
