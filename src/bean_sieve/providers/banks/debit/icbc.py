@@ -39,6 +39,7 @@ class ICBCDebitProvider(BaseProvider):
     supported_formats = [".csv"]
     filename_keywords = ["hisdetail"]
     content_keywords: list[str] = []
+    per_card_statement = True  # ICBC exports one statement per card
 
     # Column indices (0-based, after header)
     COL_DATE = 0  # 交易日期
@@ -75,6 +76,7 @@ class ICBCDebitProvider(BaseProvider):
         # balance directive selection when multiple transactions share a date
         # and the parser has no time field to disambiguate.
         transactions.reverse()
+        self.assign_statement_periods(transactions)
         return transactions
 
     def _parse_row(

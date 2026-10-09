@@ -37,6 +37,7 @@ class CMBDebitProvider(BaseProvider):
     supported_formats = [".csv"]
     filename_keywords = ["CMB_"]
     content_keywords = ["招商银行交易记录"]
+    per_card_statement = True  # CMB exports one statement per card
 
     COL_DATE = 0  # 交易日期
     COL_TIME = 1  # 交易时间
@@ -65,6 +66,7 @@ class CMBDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
+        self.assign_statement_periods(transactions)
         return transactions
 
     def _parse_row(

@@ -44,6 +44,7 @@ class BOCOMDebitProvider(BaseProvider):
     supported_formats = [".xls"]
     filename_keywords = ["交通银行"]
     content_keywords = []  # Overridden by _match_content for XLS binary detection
+    per_card_statement = True  # BOCOM exports one statement per card
 
     COL_DATE = 0  # 记账日期
     COL_TIME = 1  # 交易时间
@@ -91,6 +92,7 @@ class BOCOMDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
+        self.assign_statement_periods(transactions)
         return transactions
 
     @classmethod

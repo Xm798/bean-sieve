@@ -282,3 +282,111 @@ providers:
         (date(2030, 7, 15), "Liabilities:CreditCard:BOSC:B"),
     }
     assert len(result.match_result.missing) == 1
+
+
+CMB_DEBIT_CONFIG = """
+defaults:
+  currency: CNY
+  date_tolerance: 2
+
+providers:
+  cmb_debit:
+    accounts:
+      "1111": Assets:Bank:CMB:A
+      "2222": Assets:Bank:CMB:B
+"""
+
+CMB_DEBIT_OPENS = """
+2020-01-01 open Assets:Bank:CMB:A CNY
+2020-01-01 open Assets:Bank:CMB:B CNY
+2020-01-01 open Expenses:FIXME
+"""
+
+
+def write_cmb_debit_csv(
+    tmp_path: Path, card_suffix: str, rows: list[tuple[str, str]]
+) -> Path:
+    """Write a CMB debit export with one (YYYYMMDD, expense) row per entry."""
+    lines = [
+        '"# 招商银行交易记录"',
+        f'"# 账    号: [一卡通:6214********{card_suffix}   招商银行]"',
+        "",
+        '"交易日期","交易时间","收入","支出","余额","交易类型","交易备注"',
+    ]
+    lines += [
+        f'"\t{day}","\t12:00:00","","{expense}","100.00","type-a","\tremark-a"'
+        for day, expense in rows
+    ]
+    file_path = tmp_path / f"CMB_{card_suffix}.csv"
+    file_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return file_path
+
+
+def run_cmb_debit(tmp_path: Path, statements: list[Path], ledger: str):
+    config_path = tmp_path / "bean-sieve.yaml"
+    config_path.write_text(CMB_DEBIT_CONFIG, encoding="utf-8")
+    ledger_path = tmp_path / "main.bean"
+    ledger_path.write_text(CMB_DEBIT_OPENS + ledger, encoding="utf-8")
+    result = full_reconcile(
+        statements, ledger_path, config_path=config_path, provider_id="cmb_debit"
+    )
+    return {
+        (entry.txn.date, entry.posting.account) for entry in result.match_result.extra
+    }
+
+
+def test_debit_statement_covers_only_its_own_card(tmp_path: Path) -> None:
+    # A debit export carries one card, so card B's ledger entries inside card
+    # A's row span are not something A's file can contradict.
+    statement_a = write_cmb_debit_csv(
+        tmp_path, "1111", [("20300302", "10.00"), ("20300310", "20.00")]
+    )
+    extra = run_cmb_debit(
+        tmp_path,
+        [statement_a],
+        """
+2030-03-02 * "payee-a" "matches card A row"
+  Assets:Bank:CMB:A  -10.00 CNY
+  Expenses:FIXME
+
+2030-03-10 * "payee-b" "matches card A row"
+  Assets:Bank:CMB:A  -20.00 CNY
+  Expenses:FIXME
+
+2030-03-05 * "payee-x" "extra: card A, unmatched"
+  Assets:Bank:CMB:A  -30.00 CNY
+  Expenses:FIXME
+
+2030-03-05 * "payee-y" "not extra: card B has no statement loaded"
+  Assets:Bank:CMB:B  -40.00 CNY
+  Expenses:FIXME
+""",
+    )
+    assert extra == {(date(2030, 3, 5), "Assets:Bank:CMB:A")}
+
+
+def test_debit_transfer_needs_a_row_on_each_card(tmp_path: Path) -> None:
+    # Card A's row settles only A's leg of an A->B transfer: B's own export
+    # has to show the incoming leg, so its absence there is Extra.
+    statement_a = write_cmb_debit_csv(tmp_path, "1111", [("20300310", "50.00")])
+    statement_b = write_cmb_debit_csv(
+        tmp_path, "2222", [("20300301", "10.00"), ("20300320", "20.00")]
+    )
+    extra = run_cmb_debit(
+        tmp_path,
+        [statement_a, statement_b],
+        """
+2030-03-01 * "payee-b" "matches card B row"
+  Assets:Bank:CMB:B  -10.00 CNY
+  Expenses:FIXME
+
+2030-03-20 * "payee-c" "matches card B row"
+  Assets:Bank:CMB:B  -20.00 CNY
+  Expenses:FIXME
+
+2030-03-10 * "transfer-a-to-b" "A leg matches card A row"
+  Assets:Bank:CMB:A  -50.00 CNY
+  Assets:Bank:CMB:B   50.00 CNY
+""",
+    )
+    assert extra == {(date(2030, 3, 10), "Assets:Bank:CMB:B")}

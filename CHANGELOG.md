@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **支付宝红包抵扣的信用卡还款**：`信用借还` 行的组合付款方式含红包类部分（`&` 之后为红包、立减、优惠、补贴或满减，如 `储蓄卡(1111)&红包`）时，账单金额是含红包的总额，而账本把它拆成银行卡腿与 `Income:Rebate:` 腿。此类行在其他行匹配完后再匹配，先按原金额精确匹配，找不到时再匹配「银行卡腿 + 返利腿净额」等于账单金额的分录；跨账单去重先完成所有等额配对，再让它与金额小于总额的最大一笔同日银行流水配对。此前该行被报为 Missing。`储蓄卡&余额` 等非红包组合不受影响。普通消费行的金额本就是实扣金额，仍按原金额精确匹配
 - **返利账户可配置**：红包抵扣信用卡还款的总额匹配不再只认 `Income:Rebate:`，改由 `defaults.rebate_account_prefixes` 指定（默认 `["Income:Rebate:"]`，含子账户），`account_mappings` 的 `rebate_account` 与 Provider 的 `rebate_income_account` 自动并入。此前返利记在其他账户（如 `Income:Cashback:`）的账本无法匹配，该行被报为 Missing
 
+- **借记卡账单覆盖范围**：农行、中行、交行、建行、兴业、工行、招行、平安的借记卡流水改按单卡账单处理：一份流水只覆盖它自己那张卡、按该卡首末交易日期定范围。此前同一 Provider 下配置的其他卡的账本条目也会被报为 Extra，卡间转账只要一侧流水有记录，另一侧的腿就被豁免
 ### 其他
 
 - Release workflow 升级到 `softprops/action-gh-release@v3`（runtime 由 Node 20 换为 Node 24，输入参数不变）

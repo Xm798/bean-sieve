@@ -39,6 +39,7 @@ class BOCDebitProvider(BaseProvider):
     supported_formats = [".csv"]
     filename_keywords = ["中国银行"]
     content_keywords = ["业务摘要"]
+    per_card_statement = True  # BOC exports one statement per card
 
     COL_TX_TIME = 0  # 交易时间
     COL_SUMMARY = 1  # 业务摘要
@@ -109,6 +110,7 @@ class BOCDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
+        self.assign_statement_periods(transactions)
         return transactions
 
     def _parse_row(

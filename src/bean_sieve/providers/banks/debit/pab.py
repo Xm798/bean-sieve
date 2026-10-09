@@ -27,6 +27,7 @@ class PABDebitProvider(BaseProvider):
     supported_formats = [".xls", ".xlsx"]
     filename_pattern = re.compile(r"平安.*借记|借记.*平安")
     content_keywords = []  # Binary file, can't check content
+    per_card_statement = True  # PAB exports one statement per card
 
     # Column indices (0-based, after header row)
     COL_TIME = 0  # 交易时间
@@ -57,6 +58,7 @@ class PABDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
+        self.assign_statement_periods(transactions)
         return transactions
 
     def _extract_card_last4(self, sheet) -> str | None:

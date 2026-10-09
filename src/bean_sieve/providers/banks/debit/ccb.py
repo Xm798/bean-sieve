@@ -39,6 +39,7 @@ class CCBDebitProvider(BaseProvider):
     supported_formats = [".xls"]
     filename_pattern = re.compile(r"交易明细_\d{4}_\d{8}_\d{8}")
     content_keywords = []  # Binary XLS (BIFF8), content detection not possible
+    per_card_statement = True  # CCB exports one statement per card
 
     COL_TX_DATE = 1  # 交易日期
     COL_TX_TIME = 2  # 交易时间
@@ -72,6 +73,7 @@ class CCBDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
+        self.assign_statement_periods(transactions)
         return transactions
 
     def _find_header_row(self, sheet) -> int:

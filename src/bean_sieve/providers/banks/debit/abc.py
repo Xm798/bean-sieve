@@ -40,6 +40,7 @@ class ABCDebitProvider(BaseProvider):
     supported_formats = [".xlsx", ".xls"]
     filename_pattern = re.compile(r"detail\d{8}")
     content_keywords = []  # Binary file, content detection not possible
+    per_card_statement = True  # ABC exports one statement per card
 
     COL_TX_DATE = 0  # 交易日期
     COL_TX_TIME = 1  # 交易时间
@@ -85,6 +86,7 @@ class ABCDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
+        self.assign_statement_periods(transactions)
         return transactions
 
     @staticmethod
