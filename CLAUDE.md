@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in Linear, team Apps (`APP-123`), project Bean-Sieve, via the `linear` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles: `needs-triage` and `wontfix` are the `Triage` and `Canceled` states, the other three are labels of the same name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## Project Overview
 
 Bean-Sieve is a rule-based statement importer and reconciler for Beancount. It parses bank/payment statements (Alipay, WeChat, credit cards, etc.), matches them against existing Beancount ledger entries, and generates pending entries for missing transactions.
