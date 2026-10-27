@@ -474,6 +474,24 @@ providers:
 
 ## Provider 特定功能
 
+### 按卡号筛选 (card_filter)
+
+按 `card_last4` 只对账部分卡。被过滤掉的行在解析之后、匹配之前丢弃：不产生 Missing/pending，也不参与 Extra 判定和账户约束。
+
+```yaml
+providers:
+  abc_credit:
+    accounts:
+      "1234": Liabilities:Credit:ABC
+    card_filter:
+      include: ["1234"]    # 只对账 1234
+      # exclude: ["5678"]  # 或排除 5678（两者同时配置时 exclude 优先）
+```
+
+- `include` 是白名单，`card_last4` 不在列表中的行（包括没有卡号的行）会被丢弃。
+- `exclude` 是黑名单，没有卡号的行保留。
+- 过滤只影响对账流程；`post_output` 等钩子看到的 `context.parsed` 仍是整份账单的解析结果。
+
 ### 借记卡余额断言 (Balance Directive)
 
 对账后可自动生成 Beancount `balance` 指令，用于校验账户余额。取账单中最后一笔交易的余额，日期为账单结束日次日。

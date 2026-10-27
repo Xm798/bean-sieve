@@ -382,3 +382,107 @@ def test_full_reconcile_post_output_reuses_parsed_snapshot(tmp_path, monkeypatch
     assert [t.date for t in result.processed] == [date(2030, 1, 2)]
     assert ";   解析消费:              30.00 CNY" in output.read_text(encoding="utf-8")
     assert parse_calls == [statement]
+
+
+def test_filter_provider_cards_honors_include_and_exclude():
+    from datetime import date
+    from decimal import Decimal
+
+    from bean_sieve.api import _filter_provider_cards
+    from bean_sieve.config.schema import CardFilter, Config, ProviderConfig
+    from bean_sieve.core.types import Transaction
+
+    def txn(card):
+        return Transaction(
+            date=date(2030, 1, 1),
+            amount=Decimal("1.00"),
+            currency="CNY",
+            description="x",
+            provider="fake_card",
+            card_last4=card,
+        )
+
+    txns = [txn("1111"), txn("2222"), txn(None)]
+
+    assert _filter_provider_cards(txns, Config()) == txns
+
+    include = Config(
+        providers={
+            "fake_card": ProviderConfig(card_filter=CardFilter(include=["1111"]))
+        }
+    )
+    assert [t.card_last4 for t in _filter_provider_cards(txns, include)] == ["1111"]
+
+    exclude = Config(
+        providers={
+            "fake_card": ProviderConfig(card_filter=CardFilter(exclude=["2222"]))
+        }
+    )
+    assert [t.card_last4 for t in _filter_provider_cards(txns, exclude)] == [
+        "1111",
+        None,
+    ]
+
+    both = Config(
+        providers={
+            "fake_card": ProviderConfig(
+                card_filter=CardFilter(include=["1111", "2222"], exclude=["2222"])
+            )
+        }
+    )
+    assert [t.card_last4 for t in _filter_provider_cards(txns, both)] == ["1111"]
+
+
+def test_full_reconcile_card_filter_drops_other_cards(tmp_path, monkeypatch):
+    from datetime import date
+    from decimal import Decimal
+    from pathlib import Path
+
+    from bean_sieve.api import full_reconcile
+    from bean_sieve.core.types import Transaction
+    from bean_sieve.providers import PROVIDERS
+    from bean_sieve.providers.base import BaseProvider
+
+    class CardProvider(BaseProvider):
+        provider_id = "fake_card"
+        provider_name = "Fake Card"
+        supported_formats = [".csv"]
+
+        def parse(self, _file_path: Path) -> list[Transaction]:
+            return [
+                Transaction(
+                    date=date(2030, 1, 2),
+                    amount=Decimal("10.00"),
+                    currency="CNY",
+                    description="keep",
+                    provider="fake_card",
+                    card_last4="1111",
+                ),
+                Transaction(
+                    date=date(2030, 1, 3),
+                    amount=Decimal("20.00"),
+                    currency="CNY",
+                    description="drop",
+                    provider="fake_card",
+                    card_last4="2222",
+                ),
+            ]
+
+    monkeypatch.setitem(PROVIDERS, "fake_card", CardProvider)
+
+    statement = tmp_path / "statement.csv"
+    statement.write_text("", encoding="utf-8")
+    ledger = tmp_path / "ledger.bean"
+    ledger.write_text("1900-01-01 open Liabilities:Credit:FAKE CNY\n", encoding="utf-8")
+    config_file = tmp_path / "bean-sieve.yaml"
+    config_file.write_text(
+        'providers:\n  fake_card:\n    card_filter:\n      include: ["1111"]\n',
+        encoding="utf-8",
+    )
+
+    result = full_reconcile(
+        [statement], ledger, config_path=config_file, provider_id="fake_card"
+    )
+
+    assert [t.description for t in result.processed] == ["keep"]
+    assert [t.description for t in result.match_result.missing] == ["keep"]

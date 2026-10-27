@@ -76,3 +76,31 @@ def test_rebate_account_prefixes_parsed_and_merged_with_configured_accounts():
     )
     assert cfg.defaults.rebate_account_prefixes == ["Income:Cashback:"]
     assert cfg.rebate_account_prefixes() == ("Income:Cashback:", "Income:R:B")
+
+
+def test_card_filter_parsed_from_dict():
+    cfg = Config.from_dict(
+        {
+            "providers": {
+                "abc_credit": {
+                    "card_filter": {"include": ["1111"], "exclude": ["2222"]}
+                }
+            }
+        }
+    )
+    card_filter = cfg.get_provider_config("abc_credit").card_filter
+    assert card_filter is not None
+    assert card_filter.include == ["1111"]
+    assert card_filter.exclude == ["2222"]
+
+
+def test_card_filter_defaults_to_none():
+    assert Config().get_provider_config("abc_credit").card_filter is None
+
+
+def test_card_filter_is_in_json_schema():
+    root = Path(__file__).parents[1]
+    schema = json.loads((root / "bean-sieve.schema.json").read_text(encoding="utf-8"))
+    card_filter = schema["$defs"]["providerConfig"]["properties"]["card_filter"]
+    assert card_filter["properties"]["include"]["items"] == {"type": "string"}
+    assert card_filter["properties"]["exclude"]["items"] == {"type": "string"}
