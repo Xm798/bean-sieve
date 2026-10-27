@@ -118,12 +118,22 @@ class FormatConfig(BaseModel):
         return kwargs
 
 
+class CardFilter(BaseModel):
+    """Whitelist/blacklist of card_last4 values taking part in reconciliation."""
+
+    include: list[str] | None = None
+    exclude: list[str] | None = None
+
+
 class ProviderConfig(BaseModel):
     # Key -> account. A payment platform keys on metadata['method']
     # ("余额" -> Assets:Wallet:Alipay:Balance), a bank on card_last4
     # ("1234" -> Assets:Bank:PAB:1234). These accounts also bound the
     # accounts Extra is reported for.
     accounts: dict[str, str] = Field(default_factory=dict)
+    # Drop statement rows outside this card_last4 whitelist/blacklist before
+    # matching, so they produce no Missing/Extra and never constrain matching.
+    card_filter: CardFilter | None = None
     # Transaction-level metadata fields, appended to the global output_metadata.
     output_metadata: list[str] = Field(default_factory=list)
     # Posting-level metadata fields; there is no global counterpart.
