@@ -223,6 +223,11 @@
             "type": "string",
             "description": "Regex pattern to match payee (as condition)"
           },
+          "metadata": {
+            "type": "object",
+            "description": "Regex patterns to match metadata fields; every key must match",
+            "additionalProperties": { "type": "string" }
+          },
           "card_last4": {
             "type": "string",
             "description": "Card suffix (last 4 digits) to match"
