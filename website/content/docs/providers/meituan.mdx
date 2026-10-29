@@ -1,0 +1,62 @@
+---
+title: 美团
+description: 解析美团导出的 CSV 交易明细，与账本对账
+---
+
+{/* Placeholder page: sections marked 待补充 still need writing. */}
+
+## 账单下载方式
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="meituan" />
+
+## 配置示例
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 解析出的元数据字段
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 已知限制
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 输出样例
+
+仓库的 [`examples/meituan/`](https://github.com/Xm798/bean-sieve/tree/master/examples/meituan) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile 美团账单(20300801-20300831).csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+<include lang="csv" meta='title="美团账单(20300801-20300831).csv"'>../../../generated/examples/meituan/美团账单(20300801-20300831).csv</include>
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/meituan/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/meituan/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/meituan/expected.bean</include>
+
+</Tab>
+
+</Tabs>

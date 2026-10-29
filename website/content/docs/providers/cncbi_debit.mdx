@@ -1,0 +1,62 @@
+---
+title: 中信银行（国际）
+description: 解析中信银行（国际）导出的 CSV 交易明细，与账本对账
+---
+
+{/* Placeholder page: sections marked 待补充 still need writing. */}
+
+## 账单下载方式
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="cncbi_debit" />
+
+## 配置示例
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 解析出的元数据字段
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 已知限制
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 输出样例
+
+仓库的 [`examples/cncbi_debit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/cncbi_debit) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile CNCBI_2030_09.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+<include lang="csv" meta='title="CNCBI_2030_09.csv"'>../../../generated/examples/cncbi_debit/CNCBI_2030_09.csv</include>
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/cncbi_debit/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/cncbi_debit/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/cncbi_debit/expected.bean</include>
+
+</Tab>
+
+</Tabs>

@@ -1,0 +1,33 @@
+---
+title: 数据源总览
+description: Bean-Sieve 能解析的账单来源，以及自动识别与手动指定 provider 的方法
+icon: List
+---
+
+每种账单由一个 provider 解析。`bean-sieve reconcile` 等命令默认按扩展名、文件名和文件内容自动选择 provider，识别不出时会报错，这时用 `-p` 指定：
+
+```bash
+bean-sieve reconcile statement.csv -p alipay -l books/
+```
+
+每个 provider 页面列出它的识别规则、配置写法、元数据字段和一组可运行的示例。
+
+## 支付平台
+
+<ProviderList category="payment" />
+
+## 信用卡
+
+<ProviderList category="credit" />
+
+银行按户或按卡出信用卡账单，这决定了账本里怎么建账户：
+
+| 管理方式 | 银行 | 账户设置 |
+| :--- | :--- | :--- |
+| 按户管理 | 招商银行、民生银行、华夏银行、平安银行、浦发银行、北京银行、上海银行 | 名下所有卡共用一个账户 |
+| 按卡管理，账单日合并 | 建设银行、广发银行 | 每张卡一个账户 |
+| 按卡管理 | 中信银行、光大银行、交通银行、农业银行、工商银行、兴业银行、中国银行、邮政储蓄 | 每张卡一个账户 |
+
+## 借记卡
+
+<ProviderList category="debit" />

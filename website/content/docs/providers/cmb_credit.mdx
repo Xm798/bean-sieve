@@ -1,0 +1,112 @@
+---
+title: 招商银行信用卡
+description: 解析招商银行信用卡的电子邮件账单，与账本对账
+---
+
+## 账单下载方式
+
+招商银行信用卡每月把电子账单发到绑定的邮箱，邮件标题为「招商银行信用卡电子账单」。还没开通时，在掌上生活 App 或招商银行 App 把账单寄送方式改为电子邮件。
+
+收到账单后，在邮件客户端把整封邮件保存为 `.eml` 文件：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="cmb_credit" />
+
+文件名不含「招商银行信用卡」或「招行信用卡」也没关系：Bean-Sieve 会解码邮件标题和正文，在里面找「招商银行信用卡」。
+
+账单正文里的每行交易包含交易日、记账日、交易摘要、人民币金额、卡号后四位、交易地金额和交易地。日期取交易日，还款这类没有交易日的行取记账日。账单只写月日，年份按账单月份推断，跨年的 12 月和 1 月交易会归到正确的年份。
+
+## 配置示例
+
+招商银行信用卡按户管理：名下所有卡共用一个额度、一份账单，账本里通常也只建一个账户。`accounts` 的键是卡号后四位，把每张卡都指向这个账户：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  cmb_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:CMB
+      "5678": Liabilities:CreditCard:CMB
+    posting_metadata:
+      - card_last4
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+```
+
+多张卡共用一个账户时，账户名看不出是哪张卡。`posting_metadata` 里写上 `card_last4`，输出时会把卡号后四位写在信用卡 posting 下面。
+
+要进一步检查账本里已有的条目，可以把账户列入 `diagnostics.meta_check_accounts`。Bean-Sieve 会在匹配到的条目缺少 `card_last4` 或与账单不一致时输出提示，匹配结果不受影响：
+
+```yaml title="bean-sieve.yaml" config-partial
+diagnostics:
+  meta_check_accounts:
+    - Liabilities:CreditCard:CMB
+```
+
+账单中的交易摘要写入描述，收款方为空，可以用规则的 `target_payee` 补上。
+
+## 解析出的元数据字段
+
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号末四位 | |
+| `posting_date` | 记账日 | 仅在记账日与交易日不同时出现 |
+| `original_amount` | 交易地金额 | 仅在与人民币金额不同时出现（境外交易），只有数字，不带币种 |
+| `country` | 交易地 | 国家或地区代码，如 `HK`，与 `original_amount` 一起出现 |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.cmb_credit.output_metadata` 列出的字段会追加到全局列表上。
+
+## 已知限制
+
+- 账单不写交易地金额的币种，所以境外交易只按人民币入账金额记账，原币金额记在 `original_amount` 里，不生成 `@@` 价格。
+- 对账范围取账单月份的整个自然月（如 2030 年 3 月账单取 3 月 1 日至 31 日），再按每张卡的交易日期向外扩展。账单日不在月末时，这个范围和实际账单周期并不一致，Extra 结果需要人工核对。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
+- 金额一律按人民币处理。
+
+## 输出样例
+
+仓库的 [`examples/cmb_credit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/cmb_credit) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile 招商银行信用卡电子账单2030年03月.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+账单里有两张卡，配置把它们都指向 `Liabilities:CreditCard:CMB`。账本里已有的 3 月 3 日消费被匹配，不再输出；3 月 9 日的境外消费带上了 `original_amount` 和 `country`；账本里 3 月 25 日那笔在账单里找不到，被列为 Extra。
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+账单文件是 base64 编码的邮件，这里不展开，可在 [`examples/cmb_credit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/cmb_credit) 下载。
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/cmb_credit/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/cmb_credit/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/cmb_credit/expected.bean</include>
+
+</Tab>
+
+</Tabs>

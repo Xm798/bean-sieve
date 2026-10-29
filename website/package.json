@@ -4,9 +4,10 @@
   "type": "module",
   "packageManager": "pnpm@12.15.0",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "types:check": "next typegen && tsc --noEmit"
+    "gen": "uv run python scripts/export_providers.py",
+    "dev": "pnpm gen && next dev",
+    "build": "pnpm gen && next build",
+    "types:check": "pnpm gen && next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@fumadocs/language": "0.2.16",

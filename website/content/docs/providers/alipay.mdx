@@ -1,0 +1,137 @@
+---
+title: 支付宝
+description: 解析支付宝导出的交易流水 CSV，与账本对账
+---
+
+## 账单下载方式
+
+<Steps>
+<Step>
+
+在支付宝 App 打开「我的 → 账单」，点右上角「···」，选「开具交易流水证明」，用途选「用于个人对账」。
+
+</Step>
+<Step>
+
+选好时间范围，填写接收邮箱并提交。
+
+</Step>
+<Step>
+
+邮件附件是加密的 ZIP 压缩包，解压密码会通过支付宝消息发送。解压后得到一个 CSV 文件，直接交给 Bean-Sieve 即可，不必转换编码或删掉表头。
+
+</Step>
+</Steps>
+
+App 的菜单名称随版本调整，找不到时在账单页搜索「交易流水」。
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="alipay" />
+
+导出文件使用 GBK 编码，前 24 行是账户信息和说明，其后才是交易表。起止时间从表头的「起始时间」「终止时间」读取，作为这份账单的对账范围。
+
+文件改过名、名字里没有「支付宝」或 `alipay` 时，Bean-Sieve 会改看文件开头的内容，所以一般不用加 `-p alipay`。
+
+## 配置示例
+
+```yaml title="bean-sieve.yaml" config
+account_mappings:
+  - pattern: "余额宝"
+    account: Assets:Alipay:YuEBao
+  - pattern: "余额"
+    account: Assets:Alipay:Balance
+  - pattern: "花呗"
+    account: Liabilities:Alipay:Huabei
+  - pattern: "招商银行信用卡"
+    account: Liabilities:CreditCard:CMB
+  - pattern: "招商银行储蓄卡"
+    account: Assets:Bank:CMB
+
+providers:
+  alipay:
+    accounts:
+      "余额": Assets:Alipay:Balance
+      "余额宝": Assets:Alipay:YuEBao
+      "花呗": Liabilities:Alipay:Huabei
+
+rules:
+  - description: "花呗.*还款"
+    contra_account: Assets:Bank:CMB
+```
+
+两处账户配置各有用途：
+
+- `account_mappings` 按「收/付款方式」列找账户：`pattern` 是该列的子串即算命中，按 YAML 顺序取第一个。`余额` 是 `余额宝` 的子串，所以 `余额宝` 要写在前面。
+- `providers.alipay.accounts` 的键必须与「收/付款方式」完全相同。这里列出的账户也是 Extra 的检查范围：只有这些账户上、账单周期内的账本条目，才会在账单里找不到对应交易时报为 Extra。银行卡还会出现在银行自己的账单里，不要列进来。
+
+余额宝转入转出、收益发放、花呗消费与还款、退款这几类交易由预置规则处理，一般不必为它们写规则。花呗还款的对方科目是还款用的银行卡，预置规则不会替它找账户，需要像上面那样用规则指定。
+
+和银行卡账单一起对账时，同一笔用银行卡付的支付宝消费会在两份账单里各出现一次。Bean-Sieve 会保留银行账单那条，前提是两条日期、金额和账户相同，时间相差不超过 5 分钟。
+
+## 解析出的元数据字段
+
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `order_id` | 交易订单号 | 退款行的订单号带后缀，如 `原订单号_R001` |
+| `card_last4` | 收/付款方式 | 从末尾 `(1234)` 中取出的卡号后四位 |
+| `category` | 交易分类 | 如 `餐饮美食`、`信用借还` |
+| `peer_account` | 对方账号 | |
+| `method` | 收/付款方式 | 组合支付（如 `招商银行信用卡(1234)&红包`）只保留 `&` 前的部分 |
+| `status` | 交易状态 | 如 `交易成功`、`退款成功` |
+| `merchant_id` | 商家订单号 | |
+| `tx_type` | 收/支 | `支出`、`收入` 或 `不计收支` |
+| `remarks` | 备注 | |
+
+默认全部输出，空值和 `/` 会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.alipay.output_metadata` 列出的字段会追加到全局列表上。
+
+退款行和被退款的原交易会带上同一个链接 `^原订单号`，方便在账本里把两笔对上。
+
+## 已知限制
+
+- 同一秒内的多条交易会合并成一条，以便匹配淘宝一单多件这类在账本里只记一笔的消费。合并后金额相加，收款方用空格连接，描述各取前 8 个字后用 `/` 连接，订单号清空，元数据取第一条的。两笔不相干的交易恰好在同一秒发生时，也会被合并。
+- 以下几类行不输出：金额为 0 的行（如「碰一下立减」）、「收/支」为空的行，以及状态为「交易关闭」且没有配对退款的行。
+- 组合支付中，消费行的金额就是银行卡实际扣款，按原样匹配；只有「信用借还」（如用银行卡加红包还花呗）报的是红包抵扣前的总额，匹配时会把账本里返利账户的金额也算进去，详见 `defaults.rebate_account_prefixes`。
+- 金额一律按人民币处理。
+- 表头行数固定为 24 行。支付宝调整导出格式后可能解析失败，遇到时请附上脱敏样例[提 issue](https://github.com/Xm798/bean-sieve/issues)。
+
+## 输出样例
+
+仓库的 [`examples/alipay/`](https://github.com/Xm798/bean-sieve/tree/master/examples/alipay) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile alipay.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+账本里已有的 3 月 12 日晚餐被匹配，不再输出；淘宝一单两件合成了一条；3 月 13 日的「交易关闭」没有出现；账本里 3 月 14 日那笔在账单里找不到，被列为 Extra。
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+原文件是 GBK 编码，这里展示的是转成 UTF-8 后的内容。
+
+<include lang="csv" meta='title="alipay.csv"'>../../../generated/examples/alipay/alipay.csv</include>
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/alipay/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/alipay/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/alipay/expected.bean</include>
+
+</Tab>
+
+</Tabs>

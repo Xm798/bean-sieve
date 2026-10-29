@@ -1,0 +1,62 @@
+---
+title: 建设银行借记卡
+description: 解析建设银行借记卡网银导出的交易明细，与账本对账
+---
+
+{/* Placeholder page: sections marked 待补充 still need writing. */}
+
+## 账单下载方式
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="ccb_debit" />
+
+## 配置示例
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 解析出的元数据字段
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 已知限制
+
+<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+
+## 输出样例
+
+仓库的 [`examples/ccb_debit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/ccb_debit) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile 交易明细_1234_20300601_20300630.xls -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+账单文件 `交易明细_1234_20300601_20300630.xls` 不是纯文本，这里不展开，可在 [`examples/ccb_debit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/ccb_debit) 下载。
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/ccb_debit/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/ccb_debit/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/ccb_debit/expected.bean</include>
+
+</Tab>
+
+</Tabs>

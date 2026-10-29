@@ -241,5 +241,8 @@ website/.source/
 website/out/
 website/next-env.d.ts
 website/*.tsbuildinfo
+# Written by website/scripts/export_providers.py before every dev/build run.
+website/generated/
+website/content/docs/providers/meta.json
 # Re-include the site source modules that the Python `lib/` pattern above hides.
 !website/lib/

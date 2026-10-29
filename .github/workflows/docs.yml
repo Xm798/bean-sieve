@@ -24,6 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # `pnpm build` and `pnpm types:check` first run website/scripts/export_providers.py,
+      # which imports the provider registry from the Python package.
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv sync
       - uses: pnpm/action-setup@v6.1.0
         with:
           package_json_file: website/package.json

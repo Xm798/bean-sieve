@@ -1,0 +1,130 @@
+---
+title: 微信支付
+description: 解析微信支付导出的账单流水（CSV 或 XLSX），与账本对账
+---
+
+## 账单下载方式
+
+<Steps>
+<Step>
+
+在微信打开「我 → 服务 → 钱包 → 账单」，点「常见问题」，选「下载账单」，用途选「用于个人对账」。
+
+</Step>
+<Step>
+
+选好时间范围，填写接收邮箱并提交。
+
+</Step>
+<Step>
+
+邮件附件是加密的 ZIP 压缩包，解压密码由「微信支付」公众号发送。解压后得到 CSV 或 XLSX 文件，两种都可以直接使用。
+
+</Step>
+</Steps>
+
+微信的菜单名称随版本调整，找不到时在账单页的「常见问题」里搜索「下载账单」。
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="wechat" />
+
+CSV 和 XLSX 的内容相同：前 17 行是账户信息和统计，其后是交易表。CSV 先按 UTF-8 读取，失败再按 GBK 读取，单元格里的制表符会被去掉。起止时间从表头的「起始时间」「终止时间」读取，作为这份账单的对账范围。
+
+## 配置示例
+
+```yaml title="bean-sieve.yaml" config
+account_mappings:
+  - pattern: "零钱通"
+    account: Assets:WeChat:LingQianTong
+  - pattern: "零钱"
+    account: Assets:WeChat:Balance
+  - pattern: "招商银行信用卡"
+    account: Liabilities:CreditCard:CMB
+    rebate_account: Income:Rebate:CMB
+  - pattern: "招商银行储蓄卡(5678)"
+    account: Assets:Bank:CMB
+
+providers:
+  wechat:
+    accounts:
+      "零钱": Assets:WeChat:Balance
+      "零钱通": Assets:WeChat:LingQianTong
+```
+
+账户配置的规则与[支付宝](./alipay.mdx#配置示例)相同：
+
+- `account_mappings` 按「支付方式」列找账户，`pattern` 是该列的子串即算命中，按 YAML 顺序取第一个。`零钱` 是 `零钱通` 的子串，所以 `零钱通` 要写在前面。
+- `providers.wechat.accounts` 的键必须与「支付方式」完全相同，这些账户也是 Extra 的检查范围。银行卡不要列进来。
+
+几类特殊交易的处理：
+
+- 零钱提现：从零钱转出，对方科目按「支付方式」里的银行卡找账户。
+- 零钱通转出：交易类型形如 `零钱通转出-到招商银行(5678)`，从零钱通转出。目标卡写成 `银行名(后四位)`，`account_mappings` 里只要有一个 `pattern` 同时含银行名和这四位数字就能对上，比如上面的 `招商银行储蓄卡(5678)`。
+- 收到的红包和转账：状态为「已存入零钱」，记入零钱。
+- 立减优惠：备注里的 `已优惠¥5.00` 会另记一条返利 posting，记到该支付方式对应 `account_mappings` 条目的 `rebate_account`。没写 `rebate_account` 时记到 `Rebate:FIXME`。
+
+## 解析出的元数据字段
+
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `order_id` | 交易单号 | |
+| `card_last4` | 支付方式 | 从末尾 `(1234)` 中取出的卡号后四位；提现取的是转出方，不是到账的卡 |
+| `tx_type` | 交易类型 | 如 `商户消费`、`微信红包`、`零钱提现` |
+| `method` | 支付方式 | 提现和零钱通转出时改写为转出方（`零钱`、`经营账户` 或 `零钱通`） |
+| `status` | 当前状态 | 如 `支付成功`、`已存入零钱` |
+| `merchant_id` | 商户单号 | |
+| `remarks` | 备注 | |
+| `order_type` | 收/支 | `支出`、`收入` 或 `/` |
+| `commission` | 备注 | 服务费金额，仅在有服务费时出现 |
+| `rebate` | 备注 | 已优惠金额，仅在有优惠时出现 |
+| `rebate_currency` | 备注 | 优惠的币种，目前只有 `CNY` |
+
+默认全部输出，空值和 `/` 会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.wechat.output_metadata` 列出的字段会追加到全局列表上。
+
+## 已知限制
+
+- 有服务费的提现，输出的两条 posting 都是扣除服务费后的金额（例如提现 100 元、服务费 0.10 元，输出 -99.90 和 +99.90），服务费本身不入账，需要手工补上。
+- 「收/支」为 `/` 的行，只输出提现、零钱通转出、经营账户充值，以及状态为「已存入零钱」「已存入经营账户」的收款，其余不输出。
+- 「交易对方」为 `/` 的行（如零钱通转出），收款方原样输出为 `"/"`。
+- 优惠金额只在备注带 `¥` 时识别，金额一律按人民币处理。
+- 表头行数固定为 17 行。微信调整导出格式后可能解析失败，遇到时请附上脱敏样例[提 issue](https://github.com/Xm798/bean-sieve/issues)。
+
+## 输出样例
+
+仓库的 [`examples/wechat/`](https://github.com/Xm798/bean-sieve/tree/master/examples/wechat) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile wechat.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+账本里已有的 5 月 8 日晚餐被匹配，不再输出；5 月 3 日的午餐带出了一条 `Income:Rebate:CMB` 返利 posting；5 月 10 日的提现扣掉了服务费；账本里 5 月 13 日那笔在账单里找不到，被列为 Extra。
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+<include lang="csv" meta='title="wechat.csv"'>../../../generated/examples/wechat/wechat.csv</include>
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/wechat/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/wechat/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/wechat/expected.bean</include>
+
+</Tab>
+
+</Tabs>

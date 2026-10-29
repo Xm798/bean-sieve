@@ -6,6 +6,8 @@
     "installation",
     "quick-start",
     "---[Settings2]配置---",
-    "configuration"
+    "configuration",
+    "---[Database]数据源---",
+    "...providers"
   ]
 }
