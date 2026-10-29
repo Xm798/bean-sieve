@@ -212,6 +212,14 @@ rules:
     payee: 打车
     contra_account: Expenses:Transport:Taxi
 
+  # 按 metadata 匹配（正则；多个键须同时命中，均忽略大小写）。
+  # 缺失的键按空串处理，因此不会匹配。用于借记卡转账按对手方账号识别去向。
+  - description: "^转账$|汇款汇出"
+    provider: cib_debit
+    metadata:
+      counterparty_account: "^0000.*1234$"
+    contra_account: Assets:Bank:CMB
+
   # 时间范围
   - description: ".*食堂.*"
     time: "11:00-14:00"

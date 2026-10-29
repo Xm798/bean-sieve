@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Release workflow 升级到 `softprops/action-gh-release@v3`
 - PyPI 发布改用 Trusted Publishing
 
+### 新增
+
+- **规则 metadata 条件**：用户规则支持按 metadata 字段做正则匹配（`metadata: {字段: 正则}`），多个键须同时命中，均忽略大小写，缺失的键按空串处理。用于借记卡转账等 description 不含去向的场景，例如按 `counterparty_account` 把本人的跨行转账归到对应账户
+
 ## [0.7.0] - 2026-09-04
 
 ### 新增

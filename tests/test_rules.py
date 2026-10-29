@@ -109,6 +109,130 @@ class TestRulesEngine:
         assert result.contra_account == "Income:Salary"
         assert result.match_source == MatchSource.RULE
 
+    def test_apply_rule_metadata_regex_condition(self):
+        """Test rule matching by metadata regex condition."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(
+                        description="^转账$",
+                        provider="cib_debit",
+                        metadata={"counterparty_account": "^0000.*1234$"},
+                    ),
+                    action=RuleAction(contra_account="Assets:Bank:CMB"),
+                    priority=100,
+                ),
+            ]
+        )
+        txn = Transaction(
+            date=date(2026, 1, 6),
+            amount=Decimal("10000.00"),
+            currency="CNY",
+            description="转账",
+            provider="cib_debit",
+            metadata={
+                "counterparty_bank": "招商银行",
+                "counterparty_account": "0000123412341234",
+            },
+        )
+        result = RulesEngine(config).apply(txn)
+        assert result.contra_account == "Assets:Bank:CMB"
+        assert result.match_source == MatchSource.RULE
+
+    def test_apply_rule_metadata_value_mismatch(self):
+        """A metadata value not matching the regex leaves the rule unmatched."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(
+                        description="^转账$",
+                        metadata={"counterparty_account": "^0000.*1234$"},
+                    ),
+                    action=RuleAction(contra_account="Assets:Bank:CMB"),
+                ),
+            ]
+        )
+        txn = Transaction(
+            date=date(2026, 1, 6),
+            amount=Decimal("1510.00"),
+            currency="CNY",
+            description="转账",
+            provider="cib_debit",
+            metadata={"counterparty_account": "0000123499995678"},
+        )
+        assert RulesEngine(config).apply(txn).contra_account is None
+
+    def test_apply_rule_metadata_missing_key(self):
+        """A configured metadata key absent from the transaction does not match."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(
+                        description="^转账$",
+                        metadata={"counterparty_account": "^0000"},
+                    ),
+                    action=RuleAction(contra_account="Assets:Bank:CMB"),
+                ),
+            ]
+        )
+        txn = Transaction(
+            date=date(2026, 1, 6),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="转账",
+            provider="cib_debit",
+        )
+        assert RulesEngine(config).apply(txn).contra_account is None
+
+    def test_apply_rule_metadata_requires_all_keys(self):
+        """Every configured metadata key must match."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(
+                        description="^转账$",
+                        metadata={
+                            "counterparty_bank": "招商银行",
+                            "counterparty_account": "^0000.*1234$",
+                        },
+                    ),
+                    action=RuleAction(contra_account="Assets:Bank:CMB"),
+                ),
+            ]
+        )
+        txn = Transaction(
+            date=date(2026, 1, 6),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="转账",
+            provider="cib_debit",
+            metadata={
+                "counterparty_bank": "兴业银行",
+                "counterparty_account": "0000123412341234",
+            },
+        )
+        assert RulesEngine(config).apply(txn).contra_account is None
+
+    def test_apply_rule_metadata_case_insensitive(self):
+        """Metadata regex matching ignores case."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(metadata={"counterparty_bank": "cmb"}),
+                    action=RuleAction(contra_account="Assets:Bank:CMB"),
+                ),
+            ]
+        )
+        txn = Transaction(
+            date=date(2026, 1, 6),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="转账",
+            provider="cib_debit",
+            metadata={"counterparty_bank": "CMB"},
+        )
+        assert RulesEngine(config).apply(txn).contra_account == "Assets:Bank:CMB"
+
     def test_empty_target_payee_clears_payee(self):
         """`target_payee: ""` removes the payee and records the original."""
         config = Config(

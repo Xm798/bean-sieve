@@ -53,6 +53,7 @@ class RulesEngine:
         # Compile regex patterns for performance
         self._desc_patterns: dict[int, re.Pattern] = {}
         self._payee_patterns: dict[int, re.Pattern] = {}
+        self._metadata_patterns: dict[int, dict[str, re.Pattern]] = {}
         for i, rule in enumerate(self._rules):
             if rule.condition.description:
                 with contextlib.suppress(re.error):
@@ -63,6 +64,11 @@ class RulesEngine:
                 with contextlib.suppress(re.error):
                     self._payee_patterns[i] = re.compile(
                         rule.condition.payee, re.IGNORECASE
+                    )
+            for key, pattern in rule.condition.metadata.items():
+                with contextlib.suppress(re.error):
+                    self._metadata_patterns.setdefault(i, {})[key] = re.compile(
+                        pattern, re.IGNORECASE
                     )
 
     def apply(self, txn: Transaction) -> Transaction:
@@ -179,6 +185,18 @@ class RulesEngine:
             else:
                 # Fallback to simple substring match
                 if cond.payee.lower() not in txn.payee.lower():
+                    return False
+
+        # Metadata regex match (all keys must match)
+        if cond.metadata:
+            patterns = self._metadata_patterns.get(rule_idx, {})
+            for key, pattern_str in cond.metadata.items():
+                value = str(txn.metadata.get(key, ""))
+                pattern = patterns.get(key)
+                if pattern:
+                    if not pattern.search(value):
+                        return False
+                elif pattern_str.lower() not in value.lower():
                     return False
 
         # Card suffix match
