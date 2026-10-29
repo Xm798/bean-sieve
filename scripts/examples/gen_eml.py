@@ -413,19 +413,31 @@ def cmb_credit(out_dir: Path) -> None:
     )
 
 
-def _cmbc_section(
-    loop_id: str, band_ids: tuple[str, ...], rows: list[tuple[str, ...]]
+def _cmbc_rows(
+    row_id: str,
+    cell_ids: list[str],
+    rows: list[tuple[str, ...]],
+    wrap_id: str = "",
 ) -> str:
-    row_id, wrap_id, desc_id, amt_id, card_id = band_ids
-    spans = "\n".join(
-        f"""        <span id='{row_id}'><span id='{wrap_id}'>
+    desc_id, amt_id, card_id = cell_ids
+    open_tag = f"<span id='{row_id}'>" + (f"<span id='{wrap_id}'>" if wrap_id else "")
+    close_tag = "</span></span>" if wrap_id else "</span>"
+    return "\n".join(
+        f"""        {open_tag}
             <font>{t}</font><font>{p}</font>
             <span id='{desc_id}'><font>{d}</font></span>
             <span id='{amt_id}'><font>{a}</font></span>
             <span id='{card_id}'><font>{c}</font></span>
-        </span></span>"""
+        {close_tag}"""
         for t, p, d, a, c in rows
     )
+
+
+def _cmbc_section(
+    loop_id: str, band_ids: tuple[str, ...], rows: list[tuple[str, ...]]
+) -> str:
+    row_id, wrap_id, *cell_ids = band_ids
+    spans = _cmbc_rows(row_id, cell_ids, rows, wrap_id)
     return f"    <span id='{loop_id}'>\n{spans}\n    </span>"
 
 
@@ -481,6 +493,34 @@ def cmbc_credit(out_dir: Path) -> None:
 </html>"""
     write_eml(
         out_dir / "民生信用卡2030年03月电子对账单.eml",
+        html,
+        "民生信用卡电子对账单",
+        encoding="base64",
+    )
+    # Earlier statements use a single table: refunds and payments are rows
+    # with negative amounts.
+    rows = [
+        ("02/03", "02/03", "支付宝-store-e", "45.00", "4321"),
+        ("02/05", "02/06", "store-f", "88.00", "8765"),
+        ("02/08", "02/09", "退货-store-e", "-45.00", "4321"),
+        ("02/12", "02/12", "银联入账还款", "-900.00", "4321"),
+    ]
+    row_spans = _cmbc_rows("fixBand9", ["fixBand22", "fixBand8", "fixBand2"], rows)
+    html = f"""<!DOCTYPE HTML>
+<html>
+<head><meta charset="UTF-8"><title>民生银行信用卡电子对账单</title></head>
+<body>
+<div>2030年2月对账单</div>
+<div>Statement Date</div><div>2030/02/20</div>
+<span id='fixBand1'><span id='reportPanel1'>
+<span id='loopBand1'><span id='loopBand2'><span id='loopBand3'>
+{row_spans}
+</span></span></span>
+</span></span>
+</body>
+</html>"""
+    write_eml(
+        out_dir / "民生信用卡2030年02月电子对账单.eml",
         html,
         "民生信用卡电子对账单",
         encoding="base64",

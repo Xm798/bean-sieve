@@ -334,6 +334,7 @@ class TestCMBCStatementPeriod:
 _SECTIONED_IDS = {
     "loopBand7": ("fixBand39", "fixBand40", "fixBand65", "fixBand64", "fixBand41"),
     "loopBand5": ("fixBand15", "fixBand16", "fixBand19", "fixBand18", "fixBand17"),
+    "loopBand9": ("fixBand77", "fixBand78", "fixBand81", "fixBand80", "fixBand79"),
 }
 
 
@@ -365,30 +366,28 @@ def create_sectioned_html(sections: dict[str, list[tuple[str, ...]]]) -> str:
 </html>"""
 
 
-class TestCMBCSectionedTemplate:
-    """Tests for the refund and payment sections of the sectioned template."""
+def parse_html(tmp_path: Path, html: str) -> list:
+    file_path = tmp_path / "民生信用卡2030年03月电子对账单.eml"
+    file_path.write_text(create_cmbc_eml(html), encoding="utf-8")
+    return CMBCCreditProvider().parse(file_path)
 
-    def _parse(self, tmp_path, sections):
-        file_path = tmp_path / "民生信用卡2030年03月电子对账单.eml"
-        file_path.write_text(
-            create_cmbc_eml(create_sectioned_html(sections)), encoding="utf-8"
-        )
-        return CMBCCreditProvider().parse(file_path)
+
+class TestCMBCSectionedTemplate:
+    """Tests for the non-purchase sections of the sectioned template."""
 
     def test_every_refund_and_payment_row_is_parsed(self, tmp_path):
-        txns = self._parse(
-            tmp_path,
-            {
-                "loopBand7": [
-                    ("03/04", "03/05", "退货-payee-a", "-37.00", "1111"),
-                    ("03/08", "03/08", "退货-payee-b", "-43.00", "2222"),
-                ],
-                "loopBand5": [
-                    ("03/10", "03/10", "还款-a", "-500.00", "1111"),
-                    ("03/12", "03/13", "还款-b", "-700.00", "1111"),
-                ],
-            },
-        )
+        sections = {
+            "loopBand7": [
+                ("03/04", "03/05", "退货-payee-a", "-37.00", "1111"),
+                ("03/08", "03/08", "退货-payee-b", "-43.00", "2222"),
+            ],
+            "loopBand5": [
+                ("03/10", "03/10", "还款-a", "-500.00", "1111"),
+                ("03/12", "03/13", "还款-b", "-700.00", "1111"),
+            ],
+        }
+
+        txns = parse_html(tmp_path, create_sectioned_html(sections))
 
         assert [(t.description, t.amount, t.card_last4) for t in txns] == [
             ("退货-payee-a", Decimal("-37.00"), "1111"),
@@ -403,3 +402,106 @@ class TestCMBCSectionedTemplate:
             date(2030, 3, 12),
         ]
         assert [t.source_line for t in txns] == [1, 2, 3, 4]
+
+
+def create_single_table_html(rows: list[tuple[str, ...]]) -> str:
+    """Build a single-table statement.
+
+    Each row is (trans_date, post_date, summary, signed amount, card_last4). The
+    table sits under fixBand1 > loopBand1 > loopBand2 > loopBand3, and a
+    fixBand9 outside loopBand3 stands for the summary block's same-id span.
+    """
+    spans = "".join(
+        f"""<span id='fixBand9'>
+            <font>{t}</font><font>{p}</font>
+            <span id='fixBand22'><font>{d}</font></span>
+            <span id='fixBand8'><font>{a}</font></span>
+            <span id='fixBand2'><font>{c}</font></span>
+        </span>"""
+        for t, p, d, a, c in rows
+    )
+    return f"""<!DOCTYPE HTML>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<div>Statement Date</div><div>2030/03/20</div>
+<span id='fixBand9'><font>01/01</font><font>01/01</font></span>
+<span id='fixBand1'><span id='reportPanel1'>
+<span id='loopBand1'><span id='loopBand2'><span id='loopBand3'>{spans}</span></span></span>
+</span></span>
+</body>
+</html>"""
+
+
+class TestCMBCSingleTableTemplate:
+    """Tests for the single-table template of earlier statements."""
+
+    def test_rows_of_the_single_table_are_parsed(self, tmp_path):
+        html = create_single_table_html(
+            [
+                ("02/25", "02/26", "payee-a", "37.00", "1111"),
+                ("03/02", "03/02", "退货-payee-a", "-37.00", "1111"),
+                ("03/05", "03/05", "还款", "-800.00", "2222"),
+            ]
+        )
+        txns = parse_html(tmp_path, html)
+
+        assert [(t.date, t.description, t.amount, t.card_last4) for t in txns] == [
+            (date(2030, 2, 25), "payee-a", Decimal("37.00"), "1111"),
+            (date(2030, 3, 2), "退货-payee-a", Decimal("-37.00"), "1111"),
+            (date(2030, 3, 5), "还款", Decimal("-800.00"), "2222"),
+        ]
+        assert txns[0].metadata == {"posting_date": "2030-02-26"}
+        assert txns[1].metadata == {}
+        assert [t.source_line for t in txns] == [1, 2, 3]
+        assert txns[0].statement_period == (date(2030, 2, 21), date(2030, 3, 20))
+
+
+class TestCMBCPostingDate:
+    """Refund and payment rows carry the posting date like purchase rows."""
+
+    def test_refund_row_with_later_posting_date(self, tmp_path):
+        html = create_sectioned_html(
+            {"loopBand7": [("03/04", "03/06", "退货-payee-c", "-15.00", "1111")]}
+        )
+        (txn,) = parse_html(tmp_path, html)
+
+        assert txn.metadata == {"posting_date": "2030-03-06"}
+
+    def test_reward_section_row_is_parsed(self, tmp_path):
+        html = create_sectioned_html(
+            {"loopBand9": [("03/09", "03/09", "奖励返还-a", "-5.00", "1111")]}
+        )
+        (txn,) = parse_html(tmp_path, html)
+
+        assert (txn.date, txn.description, txn.amount) == (
+            date(2030, 3, 9),
+            "奖励返还-a",
+            Decimal("-5.00"),
+        )
+
+
+def test_both_templates_produce_the_same_transactions(tmp_path):
+    rows = [
+        ("03/04", "03/05", "退货-payee-d", "-12.00", "1111"),
+        ("03/07", "03/07", "还款-d", "-300.00", "2222"),
+    ]
+    single = parse_html(tmp_path, create_single_table_html(rows))
+    sectioned = parse_html(tmp_path, create_sectioned_html({"loopBand5": rows}))
+
+    assert [t.model_dump() for t in single] == [t.model_dump() for t in sectioned]
+
+
+def test_unknown_layout_with_dated_rows_logs_a_warning(tmp_path, caplog):
+    html = """<!DOCTYPE HTML>
+<html><head><meta charset="UTF-8"></head><body>
+<div>Statement Date</div><div>2030/03/20</div>
+<span id='loopBand3'><span id='rowX'>
+    <font>03/04</font><font>03/05</font><span id='cellX'>payee-x</span>
+</span></span>
+</body></html>"""
+
+    with caplog.at_level("WARNING", logger="bean_sieve.providers.banks.credit.cmbc"):
+        assert parse_html(tmp_path, html) == []
+
+    assert "民生信用卡2030年03月电子对账单.eml" in caplog.text
