@@ -8,8 +8,11 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
 from ....config.schema import ProviderConfig
+from ....core.coverage import Coverage
+from ....core.metadata_keys import STATEMENT_CYCLE
 from ....core.types import ReconcileContext, ReconcileResult, Transaction
 from ... import register_provider
 from ...base import BaseProvider
@@ -20,6 +23,13 @@ logger = logging.getLogger(__name__)
 _MASKED_CARD_RE = re.compile(r"^\d{6}\*{6}\d{4}$")
 # Transaction date cell, YYMMDD
 _ROW_DATE_RE = re.compile(r"^\d{6}$")
+_CYCLE_RE = re.compile(r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})")
+_CARD_CELL_RE = re.compile(r"^(\d{4})[主附]?$")
+_ROW_AMOUNT_RE = re.compile(r"^-?[\d,]+\.\d+/[A-Z]{3}$")
+_SUMMARY_AMOUNT_RE = re.compile(r"^-?[\d,]+\.\d{2}$")
+_PDF_TITLE = "农业银行信用卡对账单"
+# Spans of one PDF line have tops within this many points of each other.
+_PDF_LINE_TOLERANCE = 2.0
 
 
 @dataclass
@@ -49,10 +59,14 @@ class StatementSummary:
 @register_provider
 class ABCCreditProvider(BaseProvider):
     """
-    Provider for Agricultural Bank of China (农业银行) credit card email statements.
+    Provider for Agricultural Bank of China (农业银行) credit card statements.
+
+    Two formats carry the same detail rows:
+    - .eml: the mailed statement (金穗信用卡电子对账单), HTML
+    - .pdf: the reissued statement (农业银行信用卡对账单YYYY年MM月（补）), a
+      text PDF without the mail's 账务说明 formula or 刷卡金 summary
 
     File format:
-    - Format: EML email with HTML content
     - Columns: 交易日期, 入账日期, 卡号后四位, 交易描述, 交易金额/币种, 入账金额/币种
     - Date format: YYMMDD (e.g., "251103" = 2025-11-03)
     - Amount sign: Settlement amount negative for expenses (支出为-)
@@ -60,37 +74,86 @@ class ABCCreditProvider(BaseProvider):
 
     provider_id = "abc_credit"
     provider_name = "农业银行信用卡"
-    supported_formats = [".eml"]
+    supported_formats = [".eml", ".pdf"]
     filename_keywords = ["农业银行", "金穗信用卡"]
-    content_keywords = ["金穗信用卡电子对账单"]
+    content_keywords = ["金穗信用卡电子对账单", _PDF_TITLE]
     per_card_statement = True  # ABC sends separate statements per card
+    coverage_priority = ("statement", "reissue")
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse ABC credit card email statement."""
-        html = self.extract_html_from_eml(file_path)
-        soup = self.parse_html(html)
+        """Parse an ABC credit card statement, mailed or reissued."""
+        if file_path.suffix.lower() == ".pdf":
+            lines = _pdf_lines(file_path)
+            summary = _pdf_summary(lines)
+            statement_period = _parse_cycle(summary.statement_cycle or "")
+            statement_card = summary.card_number[-4:] if summary.card_number else None
+            transactions = self._pdf_transactions(lines, file_path, statement_card)
+        else:
+            soup = self.parse_html(self.extract_html_from_eml(file_path))
+            statement_period = self._extract_statement_period(soup)
+            statement_card = self._extract_statement_card_last4(soup)
+            transactions = self._parse_transactions(soup, file_path, statement_card)
 
-        # Extract statement period for per-card statement support
-        statement_period = self._extract_statement_period(soup)
-        statement_card = self._extract_statement_card_last4(soup)
-
-        transactions = self._parse_transactions(soup, file_path, statement_card)
         self.assign_statement_periods(transactions, statement_period)
+        if statement_period:
+            for txn in transactions:
+                txn.metadata[STATEMENT_CYCLE] = statement_period
+        return transactions
+
+    def coverage(
+        self, file_path: Path, transactions: list[Transaction]
+    ) -> list[Coverage]:
+        """Cover each card for the printed cycle; the mail outranks its reissue.
+
+        statement_period is widened by rows dated outside the cycle, so
+        coverage reads the cycle as printed.
+        """
+        source = "reissue" if file_path.suffix.lower() == ".pdf" else "statement"
+        by_card: dict[str, list[Transaction]] = {}
+        for txn in transactions:
+            if STATEMENT_CYCLE in txn.metadata:
+                by_card.setdefault(txn.card_last4 or "", []).append(txn)
+        return [
+            Coverage(card, *rows[0].metadata[STATEMENT_CYCLE], rows=rows, source=source)
+            for card, rows in by_card.items()
+        ]
+
+    def _pdf_transactions(
+        self,
+        lines: list[list[str]],
+        file_path: Path,
+        statement_card: str | None,
+    ) -> list[Transaction]:
+        """Read detail rows: two dates, the card cell, the description, two amounts.
+
+        A blank cell prints no span, so a row without a card number has one
+        cell fewer; the cells are put back in the mail's six columns.
+        """
+        transactions: list[Transaction] = []
+        for line in lines:
+            if not (
+                len(line) >= 4
+                and _ROW_DATE_RE.match(line[0])
+                and _ROW_DATE_RE.match(line[1])
+                and _ROW_AMOUNT_RE.match(line[-2])
+                and _ROW_AMOUNT_RE.match(line[-1])
+            ):
+                continue
+            middle = line[2:-2]
+            card = middle.pop(0) if middle and _CARD_CELL_RE.match(middle[0]) else ""
+            cells = [line[0], line[1], card, " ".join(middle), line[-2], line[-1]]
+            txn = self._parse_transaction_row(
+                cells, file_path, len(transactions) + 1, statement_card
+            )
+            if txn:
+                transactions.append(txn)
         return transactions
 
     def _extract_statement_period(self, soup) -> tuple[date, date] | None:
         """Extract statement period (e.g., '2025/10/24-2025/11/23')."""
         for span in soup.find_all("span"):
-            text = span.get_text(strip=True)
-            match = re.search(r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})", text)
-            if match:
-                start = date(
-                    int(match.group(1)), int(match.group(2)), int(match.group(3))
-                )
-                end = date(
-                    int(match.group(4)), int(match.group(5)), int(match.group(6))
-                )
-                return (start, end)
+            if cycle := _parse_cycle(span.get_text(strip=True)):
+                return cycle
         return None
 
     def _extract_statement_card_last4(self, soup) -> str | None:
@@ -137,7 +200,10 @@ class ABCCreditProvider(BaseProvider):
 
                 line_num += 1
                 txn = self._parse_transaction_row(
-                    cells, file_path, line_num, statement_card
+                    [self.clean_text(c.get_text()) for c in cells],
+                    file_path,
+                    line_num,
+                    statement_card,
                 )
                 if txn:
                     transactions.append(txn)
@@ -146,20 +212,17 @@ class ABCCreditProvider(BaseProvider):
 
     def _parse_transaction_row(
         self,
-        cells,
+        cells: list[str],
         file_path: Path,
         row_idx: int,
         statement_card: str | None,
     ) -> Transaction | None:
-        """Parse a single transaction row."""
+        """Parse a single transaction row from its six cell texts."""
         try:
-            # Extract cell contents
-            trans_date_str = self.clean_text(cells[0].get_text())
-            # post_date_str = self.clean_text(cells[1].get_text())  # Not used
-            card_cell = self.clean_text(cells[2].get_text())
-            description = self.clean_text(cells[3].get_text())
-            # trans_amount = self.clean_text(cells[4].get_text())  # Original amount
-            settle_amount = self.clean_text(cells[5].get_text())  # Settlement amount
+            trans_date_str = cells[0]
+            card_cell = cells[2]
+            description = cells[3]
+            settle_amount = cells[5]
 
             # Validate date format (YYMMDD)
             if not _ROW_DATE_RE.match(trans_date_str):
@@ -174,7 +237,7 @@ class ABCCreditProvider(BaseProvider):
             # Account-level rows (e.g. 约定还款) leave it empty — those belong to
             # the statement's own card, since each statement covers a single card.
             card_last4: str | None
-            card_match = re.match(r"^(\d{4})[主附]?$", card_cell)
+            card_match = _CARD_CELL_RE.match(card_cell)
             if card_match:
                 card_last4 = card_match.group(1)
             elif not card_cell:
@@ -243,6 +306,8 @@ class ABCCreditProvider(BaseProvider):
 
     def _extract_summary(self, file_path: Path) -> StatementSummary:
         """Extract statement summary information."""
+        if file_path.suffix.lower() == ".pdf":
+            return _pdf_summary(_pdf_lines(file_path))
         html = self.extract_html_from_eml(file_path)
         soup = self.parse_html(html)
         summary = StatementSummary()
@@ -332,6 +397,12 @@ class ABCCreditProvider(BaseProvider):
     ) -> str:
         """Append statement summary comparison and rebate entries to output."""
         source_files = self.own_statement_paths(context)
+        # A file statement selection dropped repeats the one adopted for its
+        # cycle; reporting it would list the card twice.
+        if result.coverage is not None:
+            adopted = {entry.path for entry in result.coverage.adopted}
+            dropped = {drop.entry.path for drop in result.coverage.drops} - adopted
+            source_files = [path for path in source_files if path not in dropped]
 
         if not source_files:
             return content
@@ -512,29 +583,14 @@ class ABCCreditProvider(BaseProvider):
             return False
 
         # Parse statement period for date range check
-        period_start, period_end = None, None
-        if statement_cycle:
-            match = re.search(
-                r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})", statement_cycle
-            )
-            if match:
-                period_start = date(
-                    int(match.group(1)), int(match.group(2)), int(match.group(3))
-                )
-                period_end = date(
-                    int(match.group(4)), int(match.group(5)), int(match.group(6))
-                )
+        period = _parse_cycle(statement_cycle) if statement_cycle else None
 
         # Check extra entries (ledger entries not matched to statement)
         for txn_posting in result.match_result.extra:
             txn, posting = txn_posting
 
             # Check if within statement period
-            if (
-                period_start
-                and period_end
-                and not (period_start <= txn.date <= period_end)
-            ):
+            if period and not (period[0] <= txn.date <= period[1]):
                 continue
 
             # Check if posting matches card (by account containing card_last4)
@@ -563,3 +619,84 @@ class ABCCreditProvider(BaseProvider):
                         return True
 
         return False
+
+
+def _parse_cycle(text: str) -> tuple[date, date] | None:
+    match = _CYCLE_RE.search(text)
+    if not match:
+        return None
+    y1, m1, d1, y2, m2, d2 = map(int, match.groups())
+    return date(y1, m1, d1), date(y2, m2, d2)
+
+
+def _pdf_summary(lines: list[list[str]]) -> StatementSummary:
+    """Read the reissue's card, cycle and 本期应还款额.
+
+    The reissue prints neither the 账务说明 formula nor 本期使用刷卡金, so
+    new_charges stays unset and no rebate is used.
+    """
+    summary = StatementSummary()
+    awaiting_balance = False
+    for line in lines:
+        for cell in line:
+            if summary.card_number is None and _MASKED_CARD_RE.match(cell):
+                summary.card_number = cell
+            if summary.statement_cycle is None and _CYCLE_RE.fullmatch(cell):
+                summary.statement_cycle = cell
+            if cell.startswith("本期应还款额"):
+                awaiting_balance = True
+            elif awaiting_balance and _SUMMARY_AMOUNT_RE.match(cell):
+                summary.statement_balance = Decimal(cell.replace(",", ""))
+                awaiting_balance = False
+    return summary
+
+
+def _pdf_lines(file_path: Path) -> list[list[str]]:
+    """Return the PDF's printed lines, each as its cells read left to right.
+
+    A line is the spans whose tops lie within _PDF_LINE_TOLERANCE of its
+    first span's. PyMuPDF can join neighbouring cells into one span, so a
+    span is cut into cells wherever its characters leave a gap wider than
+    the font size.
+    """
+    import fitz
+
+    lines: list[list[str]] = []
+    with fitz.open(file_path) as doc:
+        for page in doc:
+            layout = cast(dict[str, Any], page.get_text("rawdict"))
+            cells = sorted(
+                cell
+                for block in layout["blocks"]
+                for line in block.get("lines", [])
+                for span in line["spans"]
+                for cell in _span_cells(span)
+            )
+            row: list[tuple[float, float, str]] = []
+            for cell in cells:
+                if row and cell[0] - row[0][0] > _PDF_LINE_TOLERANCE:
+                    lines.append([text for _, _, text in sorted(row, key=_cell_x)])
+                    row = []
+                row.append(cell)
+            if row:
+                lines.append([text for _, _, text in sorted(row, key=_cell_x)])
+    return lines
+
+
+def _span_cells(span: dict[str, Any]) -> list[tuple[float, float, str]]:
+    """Cut a span into (top, x, text) cells at gaps wider than its font size."""
+    runs: list[list[dict[str, Any]]] = [[]]
+    for char in span["chars"]:
+        if runs[-1] and char["bbox"][0] - runs[-1][-1]["bbox"][2] > span["size"]:
+            runs.append([])
+        runs[-1].append(char)
+    top = span["bbox"][1]
+    return [
+        (top, run[0]["bbox"][0], text)
+        for run in runs
+        if run and (text := "".join(char["c"] for char in run).strip())
+    ]
+
+
+def _cell_x(cell: tuple[float, float, str]) -> float:
+    return cell[1]

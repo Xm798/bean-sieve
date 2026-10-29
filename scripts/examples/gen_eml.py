@@ -4,6 +4,7 @@ from pathlib import Path
 
 from _common import generator, write_eml
 from gen_pdf import (
+    abc_credit_reissue,
     ccb_credit_reissue,
     cgb_credit_reissue,
     cmb_credit_reissue,
@@ -14,6 +15,19 @@ from gen_pdf import (
 
 @generator("abc_credit")
 def abc_credit(out_dir: Path) -> None:
+    # A month only the reissue covers.
+    abc_credit_reissue(
+        out_dir / "农业银行信用卡对账单2030年02月（补）.pdf",
+        "2030年02月",
+        "4321",
+        "2030/02/01-2030/02/28",
+        "-144.00",
+        [
+            ("300204", "300204", "4321", "网上消费 支付宝，store-f", "-62.00"),
+            ("300211", "300212", "4321", "消费 store-g", "-82.00"),
+            ("300218", "300218", "", "约定还款", "893.00"),
+        ],
+    )
     # (trans_date, post_date, card, description, bank-signed amount)
     rows = [
         ("300303", "300303", "4321", "网上消费 支付宝，store-a", "-38.00"),

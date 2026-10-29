@@ -405,6 +405,41 @@ def ccb_credit_reissue(
     pdf.save(out)
 
 
+# The abc_credit generator in gen_eml writes this next to its eml.
+def abc_credit_reissue(
+    out: Path,
+    month: str,
+    card: str,
+    cycle: str,
+    balance: str,
+    rows: list[tuple[str, str, str, str, str]],
+) -> None:
+    """Draw an ABC reissue (农业银行信用卡对账单…（补）).
+
+    A row is (trans, post, card cell, description, bank-signed amount), the
+    amount printed as both 交易金额 and 入账金额; an empty card cell prints
+    nothing, as the bank's does.
+    """
+    pdf = PdfPage(font_size=8)
+    pdf.put(198, 259, f"农业银行信用卡对账单{month}（补）", 12)
+    pdf.put(64, 321, "卡号")
+    pdf.put(239, 321, "账单周期")
+    pdf.put(127, 327, f"620000******{card}")
+    pdf.put(310, 327, cycle)
+    pdf.put(35, 366, "本期应还款额(欠款为-) New Balance")
+    pdf.put(36, 394, "人民币(CNY)")
+    pdf.put(240, 394, balance)
+    pdf.put(28, 524, "交易明细")
+    y = 625
+    for trans, post, card_cell, description, amount in rows:
+        cells = [trans, post, card_cell, description, f"{amount}/CNY", f"{amount}/CNY"]
+        for x, cell in zip([38, 89, 140, 200, 360, 470], cells, strict=True):
+            if cell:
+                pdf.put(x, y, cell)
+        y += 21
+    pdf.save(out)
+
+
 # The cgb_credit generator in gen_eml writes this next to its eml.
 def cgb_credit_reissue(
     out: Path, cycle: tuple[str, str], cards: list[tuple[str, list[tuple[str, ...]]]]
@@ -419,7 +454,7 @@ def cgb_credit_reissue(
     pdf.put(46, 314, "账单周期", 10)
     pdf.put(171, 314, f"{cycle[0]} - {cycle[1]}", 10)
     pdf.put(28, 387, "注：您可通过发现精彩、手机银行等官方渠道查询账单详情。")
-    xs = [32, 86, 138, 360, 410, 478, 528]
+    xs = [32, 86, 138, 300, 400, 440, 540]
     for x, label in zip(
         xs,
         [
@@ -441,12 +476,7 @@ def cgb_credit_reissue(
         y += 11
         for row in rows:
             for x, cell in zip(xs, row, strict=True):
-                # A Latin font keeps an amount out of its neighbours' span,
-                # as the bank's separate text objects do.
-                if re.search(r"[\u4e00-\u9fff]", cell):
-                    pdf.put(x, y, cell)
-                else:
-                    pdf.page.insert_text((x, y), cell, fontname="helv", fontsize=9)
+                pdf.put(x, y, cell)
             y += 11
     pdf.put(28, y + 20, "本期账单金额情况", 10)
     pdf.put(290, 814, "1/1", 10)

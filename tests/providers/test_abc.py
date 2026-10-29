@@ -6,16 +6,21 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+import fitz
 import pytest
 
 from bean_sieve.config.schema import Config, ProviderConfig
+from bean_sieve.core.coverage import CoverageEntry, select
+from bean_sieve.core.metadata_keys import STATEMENT_CYCLE
 from bean_sieve.core.types import (
     MatchResult,
     ReconcileContext,
     ReconcileResult,
 )
-from bean_sieve.providers import get_provider
+from bean_sieve.providers import PROVIDERS, get_provider
 from bean_sieve.providers.banks.credit.abc import ABCCreditProvider
+
+EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
 
 def create_abc_eml(html_content: str) -> str:
@@ -803,3 +808,223 @@ class TestABCStatementPeriod:
         assert len(transactions) == 2
         for txn in transactions:
             assert txn.statement_period == (date(2030, 2, 27), date(2030, 3, 31))
+
+
+# (trans date, post date, card cell, description, amount, booked amount)
+Row = tuple[str, str, str, str, str, str]
+
+ROWS: list[Row] = [
+    (
+        "300302",
+        "300302",
+        "2468主",
+        "网上消费 支付宝，payee-a",
+        "-53.00/CNY",
+        "-53.00/CNY",
+    ),
+    ("300305", "300306", "9753附", "消费 shop-b", "-77.00/CNY", "-77.00/CNY"),
+    ("300309", "300310", "2468", "退货 shop-b", "81.00/CNY", "81.00/CNY"),
+    ("300315", "300315", "", "约定还款", "1,093.00/CNY", "1,093.00/CNY"),
+]
+CARD = "620000******2468"
+CYCLE = "2030/03/01-2030/03/31"
+
+
+def write_abc_eml(path: Path, rows: list[Row], cycle: str = CYCLE) -> Path:
+    body = "\n".join(
+        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows
+    )
+    html = f"""<html><body>
+<table>
+<tr><td><span>{CARD}</span></td></tr>
+<tr><td><span>{cycle}</span></td></tr>
+</table>
+<table>
+{body}
+</table>
+</body></html>"""
+    path.write_text(create_abc_eml(html), encoding="utf-8")
+    return path
+
+
+def write_abc_pdf(
+    path: Path,
+    rows: list[Row],
+    cycle: str = CYCLE,
+    balance: str = "-1,186.00",
+    rows_per_page: int = 30,
+) -> Path:
+    """Draw a reissued ABC statement; a blank card cell prints nothing."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    def put(x: float, y: float, text: str) -> None:
+        page.insert_text((x, y), text, fontname="china-s", fontsize=8)
+
+    put(198, 259, "农业银行信用卡对账单2030年03月（补）")
+    put(64, 321, "卡号")
+    put(239, 321, "账单周期")
+    put(127, 327, CARD)
+    put(310, 327, cycle)
+    put(35, 366, "本期应还款额(欠款为-) New Balance")
+    put(325, 366, "最低还款额(欠款为-) Min Payment")
+    put(36, 394, "人民币(CNY)")
+    put(240, 394, balance)
+    put(326, 394, "人民币(CNY)")
+    put(520, 394, "-118.60")
+    put(28, 524, "交易明细")
+    y = 625.0
+    for i, row in enumerate(rows):
+        if i and i % rows_per_page == 0:
+            page = doc.new_page(width=595, height=842)
+            y = 77.0
+        for x, cell in zip([38, 89, 140, 200, 360, 470], row, strict=True):
+            if cell:
+                put(x, y, cell)
+        y += 21
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def shape(txns):
+    return [
+        (
+            t.date,
+            t.amount,
+            t.currency,
+            t.description,
+            t.card_last4,
+            t.statement_period,
+            t.metadata,
+        )
+        for t in txns
+    ]
+
+
+class TestABCReissue:
+    """Tests for the reissued PDF statement."""
+
+    def test_rows(self, tmp_path):
+        txns = ABCCreditProvider().parse(write_abc_pdf(tmp_path / "r.pdf", ROWS))
+
+        assert [(t.date, t.amount, t.card_last4) for t in txns] == [
+            (date(2030, 3, 2), Decimal("53.00"), "2468"),
+            (date(2030, 3, 5), Decimal("77.00"), "9753"),
+            (date(2030, 3, 9), Decimal("-81.00"), "2468"),
+            # A row without a card number belongs to the statement's card.
+            (date(2030, 3, 15), Decimal("-1093.00"), "2468"),
+        ]
+        assert txns[0].description == "网上消费 支付宝，payee-a"
+        assert txns[0].metadata[STATEMENT_CYCLE] == (
+            date(2030, 3, 1),
+            date(2030, 3, 31),
+        )
+
+    def test_same_transactions_as_mail(self, tmp_path):
+        pdf = write_abc_pdf(tmp_path / "r.pdf", ROWS)
+        eml = write_abc_eml(tmp_path / "s.eml", ROWS)
+
+        provider = ABCCreditProvider()
+        assert shape(provider.parse(pdf)) == shape(provider.parse(eml))
+
+    def test_rows_across_pages(self, tmp_path):
+        pdf = write_abc_pdf(tmp_path / "r.pdf", ROWS, rows_per_page=3)
+        assert len(ABCCreditProvider().parse(pdf)) == len(ROWS)
+
+    def test_only_this_provider_claims_it(self, tmp_path):
+        pdf = write_abc_pdf(tmp_path / "statement.pdf", ROWS)
+        assert [p for p, c in PROVIDERS.items() if c.can_handle(pdf)] == ["abc_credit"]
+
+    def test_claims_no_other_example_statement(self):
+        for path in sorted(EXAMPLES.glob("*/*")):
+            if path.parent.name != "abc_credit":
+                assert not ABCCreditProvider.can_handle(path), path
+
+    def test_summary_has_balance_but_no_formula(self, tmp_path):
+        summary = ABCCreditProvider()._extract_summary(
+            write_abc_pdf(tmp_path / "r.pdf", ROWS)
+        )
+
+        assert summary.card_number == CARD
+        assert summary.statement_cycle == CYCLE
+        assert summary.statement_balance == Decimal("-1186.00")
+        assert summary.new_charges is None
+        assert summary.rebate_used == Decimal(0)
+
+    def test_post_output_reports_the_reissue(self, tmp_path):
+        pdf = write_abc_pdf(tmp_path / "r.pdf", ROWS)
+        output = ABCCreditProvider().post_output(
+            "",
+            empty_result(),
+            ReconcileContext(statement_paths=[pdf], provider_ids={pdf: "abc_credit"}),
+        )
+
+        assert f"卡号: {CARD} (尾号 2468)" in output
+        assert "账单应还:            1186.00 CNY" in output
+        assert "账单消费" not in output
+        assert "刷卡金抵扣 ---" not in output
+
+    def test_post_output_skips_a_reissue_the_mail_replaced(self, tmp_path):
+        provider = ABCCreditProvider()
+        eml = write_abc_eml(tmp_path / "s.eml", ROWS)
+        pdf = write_abc_pdf(tmp_path / "r.pdf", ROWS)
+        ranks = {kind: i for i, kind in enumerate(provider.coverage_priority)}
+        entries = [
+            CoverageEntry("abc_credit", path, cov, ranks[cov.source])
+            for path in (eml, pdf)
+            for cov in provider.coverage(path, provider.parse(path))
+        ]
+        result = empty_result()
+        result.coverage = select(entries)
+
+        output = provider.post_output(
+            "",
+            result,
+            ReconcileContext(
+                statement_paths=[eml, pdf],
+                provider_ids={eml: "abc_credit", pdf: "abc_credit"},
+            ),
+        )
+
+        assert output.count(f"卡号: {CARD}") == 1
+        assert "账单应还:            1186.00 CNY" not in output
+
+
+class TestABCCoverage:
+    def test_one_entry_per_card_for_the_printed_cycle(self, tmp_path):
+        provider = ABCCreditProvider()
+        for path, source in (
+            (write_abc_pdf(tmp_path / "r.pdf", ROWS), "reissue"),
+            (write_abc_eml(tmp_path / "s.eml", ROWS), "statement"),
+        ):
+            covs = provider.coverage(path, provider.parse(path))
+            assert [
+                (c.account, c.start, c.end, len(c.rows), c.source) for c in covs
+            ] == [
+                ("2468", date(2030, 3, 1), date(2030, 3, 31), 3, source),
+                ("9753", date(2030, 3, 1), date(2030, 3, 31), 1, source),
+            ]
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_mail_outranks_its_reissue(self, tmp_path, reverse):
+        provider = ABCCreditProvider()
+        paths = [
+            write_abc_pdf(tmp_path / "r.pdf", ROWS),
+            write_abc_eml(tmp_path / "s.eml", ROWS),
+            write_abc_pdf(tmp_path / "next.pdf", ROWS[:1], "2030/04/01-2030/04/30"),
+        ]
+        if reverse:
+            paths.reverse()
+        ranks = {kind: i for i, kind in enumerate(provider.coverage_priority)}
+        parsed = {path: provider.parse(path) for path in paths}
+        entries = [
+            CoverageEntry("abc_credit", path, cov, ranks[cov.source])
+            for path in paths
+            for cov in provider.coverage(path, parsed[path])
+        ]
+        kept = select(entries).keep([t for rows in parsed.values() for t in rows])
+        by_file = {
+            path.name: sum(t.source_file == path for t in kept) for path in paths
+        }
+        assert by_file == {"s.eml": 4, "r.pdf": 0, "next.pdf": 1}

@@ -77,7 +77,7 @@ def test_site_data_carries_category_titles_and_detection_facts(exporter) -> None
     scopes = {p["id"]: p["contentScope"] for p in data["providers"]}
     assert scopes["alipay"] == "header"
     assert scopes["spdb_debit"] == "pdf"
-    for pid in ("icbc_credit", "ccb_credit", "cgb_credit"):
+    for pid in ("icbc_credit", "ccb_credit", "cgb_credit", "abc_credit"):
         assert scopes[pid] == "eml-pdf"
     assert scopes["zabank_debit"] == "custom"
 
