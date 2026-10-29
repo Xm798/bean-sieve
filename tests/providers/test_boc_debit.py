@@ -314,21 +314,45 @@ class TestBOCDebitProvider:
 
         assert not BOCDebitProvider.can_handle(pdf_file)
 
-    def test_parse_utf16_le_export(self, tmp_path: Path) -> None:
-        """Test parsing a UTF-16 LE export with a BOM."""
-        csv_file = tmp_path / "中国银行.csv"
-        content = _make_csv(
+    def test_parse_utf16_tab_export(self, tmp_path: Path) -> None:
+        """Test the downloaded UTF-16 LE export: tab-separated, date-only, 12 columns."""
+        header = "\t".join(
             [
-                '2030/01/02 09:00:00,网上快捷支付,payee-a,X100******999N,人民币元,-,,"20.00","1,000.00",在线交易网关,remark-a',
+                "交易日期",
+                "业务摘要",
+                "对方账户名称",
+                "对方账户账号",
+                "币种",
+                "钞/汇",
+                "收入金额",
+                "支出金额",
+                "余额",
+                "交易渠道",
+                "网点名称",
+                "附言",
             ]
         )
-        csv_file.write_bytes(("﻿" + content).encode("utf-16-le"))
+        rows = [
+            '2030/01/02\t网上快捷支付\tpayee-a\tX100******999N\t人民币元\t-\t\t"1,020.00"\t"4,360.00"\t在线交易网关\tbranch-a\tremark-a',
+            '2030/01/03\t结息\t\t\t港币\t现汇\t"0.70"\t\t"40.00"\t\t\t',
+        ]
+        csv_file = tmp_path / "BOC_debit.csv"
+        content = "\r\n".join([header, *rows]) + "\r\n"
+        csv_file.write_bytes(("\ufeff" + content).encode("utf-16-le"))
 
         provider = BOCDebitProvider()
         assert provider.can_handle(csv_file)
         txns = provider.parse(csv_file)
 
-        assert len(txns) == 1
+        assert len(txns) == 2
         assert txns[0].date.isoformat() == "2030-01-02"
-        assert txns[0].amount == Decimal("20.00")
+        assert txns[0].time is None
+        assert txns[0].amount == Decimal("1020.00")
         assert txns[0].payee == "payee-a"
+        assert txns[0].description == "网上快捷支付 | remark-a"
+        assert txns[0].metadata["channel"] == "在线交易网关"
+        assert txns[0].metadata["balance"] == "4,360.00"
+        assert txns[0].source_line == 2
+        assert txns[1].amount == Decimal("-0.70")
+        assert txns[1].currency == "HKD"
+        assert txns[1].metadata["cash_remit"] == "现汇"

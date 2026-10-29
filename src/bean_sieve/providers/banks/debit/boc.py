@@ -22,14 +22,14 @@ class BOCDebitProvider(BaseProvider):
     Provider for Bank of China (中国银行) debit card CSV statements.
 
     Downloaded from: https://ebsnew.boc.cn/boc15/login.html?locale=zh
-    Path: 使用卡号登录 → 查询 → 复制表格 → 保存为 CSV
 
-    File format:
-    - Encoding: UTF-8, or UTF-16 LE with a BOM
-    - Row 0: column headers
-    - Row 1+: data rows
-    - Columns: 交易时间, 业务摘要, 对方账户名称, 对方账户账号, 币种, 钞/汇,
-               收入金额, 支出金额, 余额, 交易渠道/场所, 附言
+    Two layouts share the same fields, so columns are located by header name:
+    - Copied table (查询 → 复制表格 → 保存为 CSV): UTF-8, comma-separated,
+      columns 交易时间 (date and time), 业务摘要, 对方账户名称, 对方账户账号,
+      币种, 钞/汇, 收入金额, 支出金额, 余额, 交易渠道/场所, 附言
+    - Downloaded export: UTF-16 LE with a BOM, tab-separated, 交易日期 (date
+      only) in place of 交易时间, 交易渠道 in place of 交易渠道/场所, and an
+      extra 网点名称 column
     - Amounts use thousand separators (commas)
     - Multi-currency support (人民币元, 港币, etc.)
     """
@@ -41,20 +41,20 @@ class BOCDebitProvider(BaseProvider):
     content_keywords = ["业务摘要"]
     per_card_statement = True  # BOC exports one statement per card
 
-    COL_TX_TIME = 0  # 交易时间
-    COL_SUMMARY = 1  # 业务摘要
-    COL_COUNTERPARTY = 2  # 对方账户名称
-    COL_COUNTERPARTY_ACCOUNT = 3  # 对方账户账号
-    COL_CURRENCY = 4  # 币种
-    COL_CASH_REMIT = 5  # 钞/汇
-    COL_INCOME = 6  # 收入金额
-    COL_EXPENSE = 7  # 支出金额
-    COL_BALANCE = 8  # 余额
-    COL_CHANNEL = 9  # 交易渠道/场所
-    COL_REMARKS = 10  # 附言
-
-    EXPECTED_COLS = 11
-    HEADER_KEYWORDS = ("交易时间", "业务摘要")
+    COLUMN_NAMES: dict[str, tuple[str, ...]] = {
+        "tx_time": ("交易时间", "交易日期"),
+        "summary": ("业务摘要",),
+        "counterparty": ("对方账户名称",),
+        "counterparty_account": ("对方账户账号",),
+        "currency": ("币种",),
+        "cash_remit": ("钞/汇",),
+        "income": ("收入金额",),
+        "expense": ("支出金额",),
+        "balance": ("余额",),
+        "channel": ("交易渠道/场所", "交易渠道"),
+        "remarks": ("附言",),
+    }
+    HEADER_KEYWORDS = ("业务摘要", "收入金额", "支出金额")
 
     CURRENCY_MAP: dict[str, str] = {
         "人民币元": "CNY",
@@ -99,61 +99,62 @@ class BOCDebitProvider(BaseProvider):
             logger.warning("Cannot find header row in %s", file_path)
             return []
 
-        transactions: list[Transaction] = []
-        data_lines = lines[header_idx:]
-        reader = csv.reader(data_lines)
-        next(reader)  # skip header row
+        delimiter = "\t" if "\t" in lines[header_idx] else ","
+        reader = csv.reader(lines[header_idx:], delimiter=delimiter)
+        header = [c.strip() for c in next(reader)]
+        columns = self._locate_columns(header)
+        if columns is None:
+            logger.warning("Unrecognised header columns in %s", file_path)
+            return []
 
+        transactions: list[Transaction] = []
         for row_num, row in enumerate(reader, header_idx + 2):
             stripped = [c.strip() for c in row]
-            txn = self._parse_row(stripped, row_num, file_path)
+            if len(stripped) < len(header):
+                continue
+            fields = {key: stripped[i] for key, i in columns.items()}
+            txn = self._parse_row(fields, row_num, file_path)
             if txn:
                 transactions.append(txn)
 
         self.assign_statement_periods(transactions)
         return transactions
 
+    def _locate_columns(self, header: list[str]) -> dict[str, int] | None:
+        """Map each field to its column index; None when a column is missing."""
+        columns: dict[str, int] = {}
+        for key, names in self.COLUMN_NAMES.items():
+            index = next((header.index(n) for n in names if n in header), None)
+            if index is None:
+                return None
+            columns[key] = index
+        return columns
+
     def _parse_row(
         self,
-        row: list[str],
+        row: dict[str, str],
         row_num: int,
         file_path: Path,
     ) -> Transaction | None:
         """Parse a single data row."""
-        if len(row) < self.EXPECTED_COLS:
-            return None
-
-        # Parse datetime
-        tx_date, tx_time = self._parse_datetime(row[self.COL_TX_TIME])
+        tx_date, tx_time = self._parse_datetime(row["tx_time"])
         if tx_date is None:
             return None
 
-        # Parse currency
-        currency = self.CURRENCY_MAP.get(row[self.COL_CURRENCY], row[self.COL_CURRENCY])
+        currency = self.CURRENCY_MAP.get(row["currency"], row["currency"])
 
-        # Parse amount
         amount = self._parse_amount(row)
         if amount is None:
             return None
 
-        summary = row[self.COL_SUMMARY]
-        counterparty = row[self.COL_COUNTERPARTY]
-        remarks = row[self.COL_REMARKS] if len(row) > self.COL_REMARKS else ""
-        description = self._build_description(summary, remarks)
+        summary = row["summary"]
+        counterparty = row["counterparty"]
+        description = self._build_description(summary, row["remarks"])
 
         metadata: dict[str, str] = {"summary": summary}
-        counterparty_account = row[self.COL_COUNTERPARTY_ACCOUNT]
-        if counterparty_account:
-            metadata["counterparty_account"] = counterparty_account
-        balance = row[self.COL_BALANCE]
-        if balance:
-            metadata["balance"] = balance
-        cash_remit = row[self.COL_CASH_REMIT]
-        if cash_remit:
-            metadata["cash_remit"] = cash_remit
-        channel = row[self.COL_CHANNEL] if len(row) > self.COL_CHANNEL else ""
-        if channel:
-            metadata["channel"] = channel
+        for key in ("counterparty_account", "balance", "cash_remit", "channel"):
+            if row[key]:
+                metadata[key] = row[key]
 
         return Transaction(
             date=tx_date,
@@ -170,7 +171,7 @@ class BOCDebitProvider(BaseProvider):
 
     @staticmethod
     def _parse_datetime(value: str) -> tuple[date | None, time | None]:
-        """Parse datetime from 'YYYY/MM/DD HH:MM:SS' string."""
+        """Parse 'YYYY/MM/DD' with an optional 'HH:MM:SS' time."""
         if not value or not value[0].isdigit():
             return None, None
         try:
@@ -191,10 +192,10 @@ class BOCDebitProvider(BaseProvider):
         except (ValueError, IndexError):
             return None, None
 
-    def _parse_amount(self, row: list[str]) -> Decimal | None:
+    def _parse_amount(self, row: dict[str, str]) -> Decimal | None:
         """Parse amount. Expense=positive, income=negative."""
-        expense = to_decimal(row[self.COL_EXPENSE])
-        income = to_decimal(row[self.COL_INCOME])
+        expense = to_decimal(row["expense"])
+        income = to_decimal(row["income"])
 
         if expense is not None and income is not None:
             logger.warning(
