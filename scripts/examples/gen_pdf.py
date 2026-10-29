@@ -187,3 +187,43 @@ def zabank_debit(out_dir: Path) -> None:
         ],
     )  # fmt: skip
     pdf.save(out_dir / "zabank_203003.pdf")
+
+
+@generator("spdb_debit")
+def spdb_debit(out_dir: Path) -> None:
+    # Wider than the bank's columns so the built-in font fits each cell; cells
+    # are pre-wrapped the way the bank's PDF wraps them at the column width.
+    cols = [20 + 62 * i for i in range(10)]
+    line_h = 9.0
+    pdf = PdfPage(font_size=5.0)
+    put = pdf.put
+
+    put(138, 50, "上海浦东发展银行个人客户交易流水专用回单")
+    put(126, 70, "Transaction Statement of Shanghai Pudong Development Bank")
+    put(90, 92, "户名: 测试用户  账号: 6200000000001234  起止日期: 20300301-20300331")
+    put(90, 112, "Name: TEST USER  Account No:  Start & End Date")
+    put(90, 132, "币种: 人民币  钞汇标志: 钞户  交易类型: 全部")
+    put(90, 152, "Currency: CNY  Cash/Exchange: Cash  Transaction Type: ALL")
+
+    card = "62000000000\n01234"
+    rows = [
+        ["交易日期\nDate", "交易时间\nTime", "交易账号\nTransaction\nAccount", "交易名称\nTransaction\nName", "交易金额\nTransaction\nAmount", "账户余额\nBalance", "对手姓名\nCounter\nParty", "对手账号\nOpponent\nAccount", "交易摘要\nSummary"],
+        ["20300305", "093000", card, "代发工资\n30030500000\n001", "8000.00", "9000.00", "雇主甲有限\n公司", "100000001", "工资"],
+        ["20300308", "121500", card, "网上支付-渠\n道", "-35.00", "8965.00", "商户乙有限\n公司", "100000002", ""],
+        ["20300312", "190000", card, "网上支付-渠\n道", "-24.00", "8941.00", "餐厅丙", "100000003", ""],
+        ["20300315", "101000", card, "网上支付-渠\n道退款", "15.00", "8956.00", "商户乙有限\n公司", "100000002", ""],
+        ["20300320", "200000", card, "信用卡还款\n5678", "-300.00", "8656.00", "测试用户", "400000000\n0005678", ""],
+        ["20300321", "020000", card, "结息", "1.20", "8657.20", "", "", "利息"],
+    ]  # fmt: skip
+
+    y = 161.0
+    for row in rows:
+        h = line_h * max(c.count("\n") + 1 for c in row) + 6
+        for i, cell in enumerate(row):
+            rect = fitz.Rect(cols[i], y, cols[i + 1], y + h)
+            pdf.page.draw_rect(rect, color=(0, 0, 0), width=0.5)
+            for j, line in enumerate(cell.split("\n")):
+                put(cols[i] + 2, y + 9 + j * line_h, line)
+        y += h
+    put(250, 800, "第1页/共1页，Page 1 of 1")
+    pdf.save(out_dir / "spdb_debit_203003.pdf")

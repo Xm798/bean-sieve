@@ -12,8 +12,9 @@ interface Provider {
   filenamePattern: string | null;
   contentKeywords: string[];
   // header: the first `contentHeaderChars` characters; eml: decoded subject and
-  // body; custom: a provider-specific reader (PDF, XLS, parsed HTML).
-  contentScope: 'header' | 'eml' | 'custom';
+  // body; pdf: the first page's text; custom: a provider-specific reader (PDF,
+  // XLS, parsed HTML), which may check the content without any `contentKeywords`.
+  contentScope: 'header' | 'eml' | 'pdf' | 'custom';
   perCardStatement: boolean;
   presetRules: string[];
   example: { statements: string[] } | null;
@@ -36,6 +37,7 @@ function categoryTitle(key: string): string {
 const contentScopeLabel: Record<Provider['contentScope'], string> = {
   header: `文件前 ${matching.contentHeaderChars} 个字符`,
   eml: '邮件主题或正文',
+  pdf: 'PDF 第一页的文字',
   custom: '文件内容',
 };
 
@@ -86,6 +88,8 @@ function detection(p: Provider): ReactNode {
         {contentScopeLabel[p.contentScope]}含{' '}
         {anyOf(p.contentKeywords)}
       </>
+    ) : p.contentScope === 'custom' ? (
+      '按文件内容识别（规则见下文）'
     ) : null;
 
   if (!byName && !byContent) return <>扩展名为 {ext} 即可</>;

@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - time
+    - reference
+    - source
+  sort_by_time: asc
+
+providers:
+  spdb_debit:
+    # Keys are the last four digits of the account printed in the header.
+    accounts:
+      "1234": Assets:Bank:SPDB
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - description: "结息"
+    contra_account: Income:Bank:Interest
+  - description: "信用卡还款"
+    contra_account: Liabilities:CreditCard:SPDB
+  - payee: "商户乙"
+    contra_account: Expenses:Shopping

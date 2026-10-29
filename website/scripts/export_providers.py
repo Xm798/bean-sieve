@@ -92,15 +92,22 @@ def statement_paths(example_dir: Path) -> list[Path]:
     )
 
 
+def _overrides(cls: type[BaseProvider], name: str) -> bool:
+    return getattr(cls, name).__func__ is not getattr(BaseProvider, name).__func__
+
+
 def content_scope(cls: type[BaseProvider]) -> str:
     """Where ``content_keywords`` are searched, per ``BaseProvider._match_content``.
 
-    ``custom`` marks a provider that overrides it with its own reader (PDF, XLS,
-    parsed HTML), whose scope the generic text cannot describe.
+    ``custom`` marks a provider that overrides ``_match_content`` or
+    ``can_handle`` with its own reader (PDF, XLS, parsed HTML). Its content check
+    may use no keywords at all, and its scope is left to the provider's page.
     """
-    if cls._match_content.__func__ is not BaseProvider._match_content.__func__:
+    if _overrides(cls, "_match_content") or _overrides(cls, "can_handle"):
         return "custom"
-    return "eml" if ".eml" in cls.supported_formats else "header"
+    if ".eml" in cls.supported_formats:
+        return "eml"
+    return "pdf" if ".pdf" in cls.supported_formats else "header"
 
 
 def filename_keywords_ignore_case() -> bool:

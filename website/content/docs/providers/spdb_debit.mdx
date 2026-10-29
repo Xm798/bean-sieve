@@ -1,0 +1,93 @@
+---
+title: 浦发银行借记卡
+description: 解析浦发银行借记卡的交易流水 PDF 回单，与账本对账
+---
+
+## 账单下载方式
+
+在浦发银行手机银行 App 里申请交易流水，导出 PDF 格式的「个人客户交易流水专用回单」。申请入口和导出方式以 App 当前版本为准。
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="spdb_debit" />
+
+文件名可以随意取，Bean-Sieve 读 PDF 第一页的文字，找到标题「上海浦东发展银行个人客户交易流水专用回单」即可识别。
+
+第一页页眉有户名、账号、起止日期和币种。卡号后四位优先取每行「交易账号」的末四位，取不到时用页眉账号的末四位。币种取页眉 `Currency:` 后的三位代码，没有时按人民币处理。
+
+交易在一张带表格线的表里，表头只印在第一页，后面几页的行接着读。单元格内容超出列宽会折行，解析时会重新拼接起来。「交易金额」带正负号，负数是支出。「交易名称」后面单独成行的数字（转账的流水号、信用卡还款的卡号后四位）记为 `reference`，前面的文字作为描述。收款方取「对手姓名」。
+
+页眉的起止日期就是这份流水的对账范围。账本里落在这段日期内、账单里却没有的条目会被列为 Extra，晚于最后一笔交易的也算在内。
+
+## 配置示例
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  spdb_debit:
+    accounts:
+      "1234": Assets:Bank:SPDB
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - description: "信用卡还款"
+    contra_account: Liabilities:CreditCard:SPDB
+```
+
+`accounts` 的键是卡号后四位。一份流水只含一个账号，有几张卡就列几项；对账时只把这份文件那张卡对应的账户纳入 Extra 检查。
+
+## 解析出的元数据字段
+
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `reference` | 交易名称 | 名称后面的数字行，如转账流水号、还款卡号后四位 |
+| `counterparty_account` | 对手账号 | |
+| `balance` | 账户余额 | |
+| `summary` | 交易摘要 | |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.spdb_debit.output_metadata` 列出的字段会追加到全局列表上。
+
+## 已知限制
+
+- 不支持 `balance: true`，输出里不会追加 `balance` 断言。
+- 一份文件只按页眉的一个币种处理。
+- 交易从 PDF 的表格线和文字层里读取，扫描件或图片转成的 PDF 读不出交易。
+
+## 输出样例
+
+仓库的 [`examples/spdb_debit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/spdb_debit) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile spdb_debit_203003.pdf -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+账本里已有的 3 月 12 日晚餐被匹配，不再输出；3 月 5 日代发工资的流水号和 3 月 20 日信用卡还款的卡号后四位写进了 `reference`；账本里 3 月 25 日那笔虽然晚于最后一笔交易，但仍在起止日期内，被列为 Extra。
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+账单文件 `spdb_debit_203003.pdf` 不是纯文本，这里不展开，可在 [`examples/spdb_debit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/spdb_debit) 下载。
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/spdb_debit/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/spdb_debit/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/spdb_debit/expected.bean</include>
+
+</Tab>
+
+</Tabs>

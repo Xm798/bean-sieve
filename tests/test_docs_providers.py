@@ -76,4 +76,18 @@ def test_site_data_carries_category_titles_and_detection_facts(exporter) -> None
     }
     scopes = {p["id"]: p["contentScope"] for p in data["providers"]}
     assert scopes["alipay"] == "header"
+    assert scopes["spdb_debit"] == "pdf"
     assert scopes["zabank_debit"] == "custom"
+
+
+def test_content_scope_is_custom_for_any_provider_specific_content_check(
+    exporter,
+) -> None:
+    data = exporter.site_data(exporter.sorted_providers())
+    by_id = {p["id"]: p for p in data["providers"]}
+
+    # abc_debit overrides _match_content, spdb_credit overrides can_handle;
+    # neither declares content_keywords.
+    for pid in ("abc_debit", "spdb_credit"):
+        assert by_id[pid]["contentKeywords"] == []
+        assert by_id[pid]["contentScope"] == "custom"
