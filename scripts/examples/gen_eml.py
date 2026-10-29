@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from _common import generator, write_eml
+from gen_pdf import cmb_credit_reissue
 
 
 @generator("abc_credit")
@@ -374,12 +375,12 @@ def cib_credit(out_dir: Path) -> None:
 def cmb_credit(out_dir: Path) -> None:
     # (trans_date, post_date, description, amount, card, original_amount, country)
     rows = [
-        ("0303", "0304", "支付宝-store-a", "38.00", "4321", "38.00", "CN"),
-        ("0306", "0307", "财付通-restaurant-b午餐", "56.00", "4321", "56.00", "CN"),
-        ("0309", "0310", "overseas-shop-c", "90.00", "8765", "100.00", "HK"),
-        ("0311", "0312", "store-d", "120.00", "8765", "120.00", "CN"),
-        ("0313", "0314", "退款-store-d", "-120.00", "8765", "-120.00", "CN"),
-        ("", "0318", "银联在线网络还款", "-1,500.00", "4321", "-1,500.00", ""),
+        ("0303", "0304", "支付宝-store-a", "39.30", "4321", "39.30", "CN"),
+        ("0306", "0307", "财付通-restaurant-b午餐", "53.80", "4321", "53.80", "CN"),
+        ("0309", "0310", "overseas-shop-c", "88.80", "8765", "102.10", "HK"),
+        ("0311", "0312", "store-d", "123.10", "8765", "123.10", "CN"),
+        ("0313", "0314", "退款-store-d", "-123.10", "8765", "-123.10", "CN"),
+        ("", "0318", "银联在线网络还款", "-1,502.10", "4321", "-1,502.10", ""),
     ]
     body = "\n".join(
         f"""    <tr>
@@ -410,6 +411,61 @@ def cmb_credit(out_dir: Path) -> None:
         html,
         "招商银行信用卡电子账单",
         encoding="base64",
+    )
+
+    # The reissue of the mailed month loses to the mail; February has no mail.
+    def pdf_row(trans, post, desc, amount, card, original, country):
+        return (
+            f"{trans[:2]}/{trans[2:]}" if trans else "",
+            f"{post[:2]}/{post[2:]}",
+            desc,
+            amount,
+            card,
+            f"{original}({country})" if country else original,
+        )
+
+    cmb_credit_reissue(
+        out_dir / "reissue-2030-03.pdf",
+        2030,
+        3,
+        22,
+        [("消费", [pdf_row(*row) for row in rows])],
+    )
+    cmb_credit_reissue(
+        out_dir / "reissue-2030-02.pdf",
+        2030,
+        2,
+        22,
+        [
+            (
+                "还款",
+                [("", "02/03", "银联在线网络还款", "-1,357.00", "4321", "-1,357.00")],
+            ),
+            (
+                "分期",
+                [
+                    (
+                        "09/18",
+                        "02/05",
+                        "消费分期-store-e 006-012",
+                        "146.50",
+                        "4321",
+                        "146.50",
+                    )
+                ],
+            ),
+            (
+                "消费",
+                [
+                    ("02/08", "02/09", "支付宝-store-a", "57.30", "4321", "57.30(CN)"),
+                    ("02/12", "02/13", "overseas-shop-c", "83.40", "8765", "92.60(HK)"),
+                ],
+            ),
+            (
+                "退款",
+                [("02/18", "02/19", "退款-store-a", "-57.30", "4321", "-57.30(CN)")],
+            ),
+        ],
     )
 
 

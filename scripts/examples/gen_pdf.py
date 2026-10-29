@@ -307,3 +307,42 @@ def spdb_debit(out_dir: Path) -> None:
         y += h
     put(250, 800, "第1页/共1页，Page 1 of 1")
     pdf.save(out_dir / "spdb_debit_203003.pdf")
+
+
+def cmb_credit_reissue(
+    out: Path,
+    year: int,
+    month: int,
+    closing_day: int,
+    sections: list[tuple[str, list[tuple[str, ...]]]],
+) -> None:
+    """Draw a CMB reissued statement (补发账单) at the bank's column positions.
+
+    A section is (label, rows); the label sits in the 交易日 column of its
+    first row, as the bank prints 还款 / 消费 / 退款. A row is (trans, post,
+    description, amount, card, original), "" for an empty cell.
+    """
+    pdf = PdfPage(font_size=8)
+    # The bank's page is wider than A4; the 交易地金额 column needs the room.
+    pdf.page.set_mediabox(fitz.Rect(0, 0, 624, 863))
+    pdf.put(45, 60, "账单日")
+    pdf.put(45, 72, f"{year}年{month:02d}月{closing_day:02d}日")
+    pdf.put(45, 84, "Statement Date")
+    pdf.put(42, 120, "人民币账户 RMB A/C")
+    xs = [43, 92, 140, 369, 455, 542]
+    headers = ["交易日", "记账日", "交易摘要", "人民币金额", "卡号末四位", "交易地金额"]
+    for x, label in zip(xs, headers, strict=True):
+        pdf.put(x, 134, label)
+    y = 150
+    for label, rows in sections:
+        pdf.put(xs[0], y, label)
+        for row in rows:
+            for x, cell in zip(xs, row, strict=True):
+                if cell:
+                    pdf.put(x, y, cell)
+            y += 13
+    pdf.put(
+        40, 820, f"招商银行信用卡对账单（个人消费卡账户 {year}年{month:02d}月）（补）"
+    )
+    pdf.put(40, 832, f"CMB Credit Card Statement ({year}.{month:02d})")
+    pdf.save(out)

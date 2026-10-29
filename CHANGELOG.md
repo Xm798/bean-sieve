@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 浦发银行借记卡 Provider（`spdb_debit`）：解析交易流水 PDF 回单
 - 浦发银行信用卡：解析 PDF 账单；同月传入交易明细和 PDF 时只采用交易明细
 - 交通银行信用卡：同一账期传入正本与补发时只采用一份，不再重复入账
+- 招商银行信用卡：解析 PDF 补发账单；同月邮件与补发同时传入时只采用邮件，美元账户取自补发
 - 配置项 `fee_account`（`defaults` 和 `providers.<id>` 下均可设置）：账单里单列的手续费另记一条 posting，默认记到 `Expenses:FIXME`
 
 ### 修复
