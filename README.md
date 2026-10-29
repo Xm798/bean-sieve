@@ -302,7 +302,7 @@ HKD 腿匹配 `-13.90 HKD` posting、CNY 腿匹配 `12.12 CNY` posting。（若�
 
 全局配置（所有 Provider 生效）：
 
-```yaml
+```yaml config
 defaults:
   output_metadata:
     - time
@@ -310,7 +310,7 @@ defaults:
 
 Provider 级别配置（仅该 Provider 生效，与全局合并）：
 
-```yaml
+```yaml config
 providers:
   cib_debit:
     output_metadata:
@@ -320,7 +320,7 @@ providers:
 
 `output_metadata` 写在交易头下，作用于整笔交易；若要把字段写在 posting 行下（如 `card_last4` 用于区分同一账户下的多张物理卡），使用 `posting_metadata`：
 
-```yaml
+```yaml config
 providers:
   hxb_credit:
     posting_metadata:
@@ -337,7 +337,7 @@ providers:
 
 按 Provider 级别控制，默认关闭：
 
-```yaml
+```yaml config
 providers:
   pab_debit:
     accounts:
@@ -360,7 +360,7 @@ providers:
 
 #### 配置
 
-```yaml
+```yaml config
 providers:
   abc_credit:
     accounts:
@@ -412,7 +412,7 @@ providers:
 
 通过 `diagnostics.meta_check_accounts`（子串匹配）列出需要检查的账户：
 
-```yaml
+```yaml config
 diagnostics:
   meta_check: true
   meta_check_accounts:
@@ -450,7 +450,7 @@ diagnostics:
 
 如需恢复旧的硬过滤行为（冲突即视为不同交易、进 missing），显式关闭：
 
-```yaml
+```yaml config
 diagnostics:
   meta_check: false
 ```

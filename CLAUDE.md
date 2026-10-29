@@ -168,6 +168,7 @@ providers:
 - **Config sync**: When modifying `bean-sieve.example.yaml`, check if user's `bean-sieve.yaml` needs corresponding update. Also update JSON schema `bean-sieve.schema.json` if config structure changes.
 - **Doc sync**: If code changes deviate from this CLAUDE.md, update this file accordingly
 - **User docs**: The docs site lives in `website/` (pages in `website/content/docs/*.mdx`, published to GitHub Pages at `https://xm798.github.io/bean-sieve/` on push to master). When a change alters user-visible behaviour, CLI usage or config, update the matching page; README keeps only a short entry plus sections not yet migrated to the site. `website/` is excluded from the Python sdist/wheel.
+- **Doc YAML snippets**: Every ```` ```yaml ```` fence in README.md and `website/content/**/*.mdx` carries one marker word after the language (other attributes such as `title="..."` may sit alongside): `config` (validated against `bean-sieve.schema.json` and loaded with `Config.from_dict`), `config-partial` (an excerpt: schema-validated with `required` skipped), or `not-config` (unchecked). `tests/test_doc_snippets.py` enforces this. The schema rejects unknown keys everywhere except the `providers` map (custom provider ids), so a new config field must be added to the schema before docs can use it.
 
 ## Test Structure
 
