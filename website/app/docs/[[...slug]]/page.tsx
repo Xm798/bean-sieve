@@ -5,12 +5,14 @@ import {
   DocsPage,
   DocsTitle,
   EditOnGitHub,
+  MarkdownCopyButton,
+  ViewOptionsPopover,
 } from 'fumadocs-ui/layouts/docs/page';
 import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/components/mdx';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
-import { repoPathUrl } from '@/lib/shared';
+import { getPageMarkdownUrl, repoPathUrl } from '@/lib/shared';
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
@@ -18,11 +20,20 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   if (!page) notFound();
 
   const MDX = page.data.body;
+  const githubUrl = repoPathUrl('blob', `website/content/docs/${page.path}`);
+  // The page actions add basePath themselves, from Turbopack's import.meta.env.BASE_URL.
+  const markdownUrl = getPageMarkdownUrl(page).url;
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
       <DocsTitle>{page.data.title}</DocsTitle>
-      <DocsDescription>{page.data.description}</DocsDescription>
+      <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
+      <div className="flex flex-row items-center gap-2 border-b pb-6">
+        <MarkdownCopyButton markdownUrl={markdownUrl} />
+        <ViewOptionsPopover markdownUrl={markdownUrl} githubUrl={githubUrl}>
+          打开方式
+        </ViewOptionsPopover>
+      </div>
       <DocsBody>
         <MDX
           components={getMDXComponents({
@@ -30,9 +41,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
           })}
         />
       </DocsBody>
-      <EditOnGitHub
-        href={repoPathUrl('blob', `website/content/docs/${page.path}`)}
-      />
+      <EditOnGitHub href={githubUrl} />
     </DocsPage>
   );
 }

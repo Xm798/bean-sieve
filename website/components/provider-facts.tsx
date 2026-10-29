@@ -1,7 +1,8 @@
+import { asMarkdown } from 'fumadocs-core/server';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import siteData from '@/generated/providers.json';
-import { repoPathUrl } from '@/lib/shared';
+import { basePath, repoPathUrl } from '@/lib/shared';
 
 interface Provider {
   id: string;
@@ -49,6 +50,8 @@ function getProvider(id: string): Provider {
 }
 
 function Codes({ items }: { items: string[] }) {
+  // Nested components opt in on their own; the Markdown export keeps the rest as JSX tags.
+  asMarkdown();
   return (
     <>
       {items.map((item, i) => (
@@ -103,6 +106,7 @@ function detection(p: Provider): ReactNode {
 }
 
 export function ProviderFacts({ id }: { id: string }) {
+  const markdown = asMarkdown();
   const p = getProvider(id);
   const rows: [string, ReactNode][] = [
     ['Provider ID', <code key="id">{p.id}</code>],
@@ -132,6 +136,15 @@ export function ProviderFacts({ id }: { id: string }) {
 
   return (
     <table>
+      {/* A Markdown table needs a header row, which the HTML table leaves out. */}
+      {markdown && (
+        <thead>
+          <tr>
+            <th>项目</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+      )}
       <tbody>
         {rows.map(([label, value]) => (
           <tr key={label}>
@@ -148,6 +161,8 @@ export function ProviderFacts({ id }: { id: string }) {
 
 export function ProviderList({ category }: { category: string }) {
   categoryTitle(category);
+  // next/link is a client component, which the Markdown export would keep as a JSX tag.
+  const markdown = asMarkdown();
   return (
     <table>
       <thead>
@@ -163,9 +178,15 @@ export function ProviderList({ category }: { category: string }) {
           .map((p) => (
             <tr key={p.id}>
               <td>
-                <Link href={`/docs/providers/${p.id}`}>
-                  <code>{p.id}</code>
-                </Link>
+                {markdown ? (
+                  <a href={`${basePath}/docs/providers/${p.id}`}>
+                    <code>{p.id}</code>
+                  </a>
+                ) : (
+                  <Link href={`/docs/providers/${p.id}`}>
+                    <code>{p.id}</code>
+                  </Link>
+                )}
               </td>
               <td>{p.name}</td>
               <td>
