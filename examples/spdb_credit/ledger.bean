@@ -6,7 +6,7 @@ option "operating_currency" "CNY"
 2030-01-01 open Expenses:Shopping CNY
 
 2030-05-03 * "store-a" "消费"
-  Liabilities:CreditCard:SPDB  -30.00 CNY
+  Liabilities:CreditCard:SPDB  -31.00 CNY
   Expenses:Food:Meal
 
 2030-05-13 * "store-h" "recorded in the ledger, absent from the statement"

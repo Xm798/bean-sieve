@@ -5,6 +5,7 @@ from pathlib import Path
 
 import fitz
 from _common import PdfPage, generator
+from gen_sheets import spdb_credit_xls
 
 
 @generator("boc_credit")
@@ -57,6 +58,85 @@ def boc_credit(out_dir: Path) -> None:
     )
     pdf.put(30, y + 10, "积分奖励计划 Loyalty Plan")
     pdf.save(out_dir / "中国银行信用卡电子合并账单2030年03月账单.pdf")
+
+
+@generator("spdb_credit")
+def spdb_credit(out_dir: Path) -> None:
+    spdb_credit_xls(out_dir)
+
+    # An older template without the original-amount column, its table
+    # running onto a second page, for a month the XLS export does not cover.
+    spdb_credit_pdf(
+        out_dir / "浦发银行信用卡电子账单2030年04月.pdf",
+        "203004",
+        [
+            [
+                ["20300325", "20300325", "消费 store-a", "1234", "￥45.00"],
+                ["20300402", "20300403", "网上消费 shop-b", "1234", "￥260.00"],
+                ["20300406", "20300407", "退货 shop-b", "1234", "￥-260.00"],
+                ["20300410", "20300410", "分期付款-shop-e\n第01期共03期", "5678", "￥120.00"],
+            ],
+            [
+                ["20300415", "20300415", "还款", "1234", "￥-400.00"],
+                ["20300418", "20300419", "消费 cafe-c", "5678", "￥18.00"],
+            ],
+        ],
+    )  # fmt: skip
+    # A reissue of the month the XLS export covers, on the newer template.
+    spdb_credit_pdf(
+        out_dir / "浦发银行信用卡电子账单2030年05月.pdf",
+        "203005",
+        [
+            [
+                ["20300503", "20300504", "消费 store-a", "1234", "￥31.00", "31.00(CNY)"],
+                ["20300505", "20300506", "网上消费 shop-b", "1234", "￥150.00", "150.00(CNY)"],
+                ["20300508", "20300509", "退货 shop-b", "1234", "￥-150.00", "-150.00(CNY)"],
+                ["20300510", "20300512", "境外消费 merchant-x", "5678", "￥36.00", "5.00(USD)"],
+                ["20300515", "20300516", "消费 cafe-c", "5678", "￥22.00", "22.00(CNY)"],
+                ["20300520", "20300520", "还款", "1234", "￥-600.00", "-600.00(CNY)"],
+            ],
+        ],
+    )  # fmt: skip
+
+
+def spdb_credit_pdf(out: Path, month: str, pages: list[list[list[str]]]) -> None:
+    pdf = PdfPage(font_size=6)
+    put = pdf.put
+    put(40, 40, f"{month}信用卡账单", 14)
+    put(40, 70, "您好!感谢您使用本行信用卡，现呈上您浦发个人信用卡对账单。")
+    put(40, 95, "账单日：")
+    put(40, 105, "Statement Due Date")
+    put(40, 115, "20")
+    put(40, 145, "本期账务明细(注：如明细未显示，请于隔天下载)")
+    # The font's digits are full width; these gaps keep every cell its own
+    # text line, as in the bank's PDF, where adjacent cells would merge.
+    xs = [30, 95, 160, 330, 370, 440]
+    headers = [
+        ("交易日期", "Transaction Date"),
+        ("记账日期", "Posting Date"),
+        ("交易摘要", "Description"),
+        ("卡号末四位", "Card No."),
+        ("交易金额", "Amount"),
+        ("原始交易金额&币种", "Original Trans Amount & Currency"),
+    ]
+    for x, (zh, en) in zip(xs, headers[: len(pages[0][0])], strict=False):
+        put(x, 165, zh)
+        put(x, 175, en, 5)
+
+    y = 195.0
+    for number, rows in enumerate(pages, start=1):
+        if number > 1:
+            pdf.page = pdf.doc.new_page(width=595, height=842)
+            put(40, 40, "温馨提示：")
+            y = 70.0
+        for row in rows:
+            for x, cell in zip(xs, row, strict=False):
+                # A long description wraps within its cell.
+                for i, line in enumerate(cell.split("\n")):
+                    put(x, y + i * 8, line)
+            y += 18
+        put(260, 820, f"第 {number} 页 共 {len(pages)} 页")
+    pdf.save(out)
 
 
 @generator("welab_debit")

@@ -2,29 +2,52 @@
 
 from __future__ import annotations
 
+import calendar
 import logging
+import re
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import xlrd
 from xlrd.biffh import XLRDError
 
-from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
+from ....core.coverage import Coverage
+from ....core.metadata_keys import (
+    ORIGINAL_AMOUNT,
+    ORIGINAL_CURRENCY,
+    STATEMENT_CYCLE,
+)
 from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
 
+_PDF_TITLE = "浦发个人信用卡对账单"
+_PDF_DETAIL_MARKER = "本期账务明细"
+_PDF_MONTH_RE = re.compile(r"(\d{4})(\d{2})信用卡账单")
+_PDF_BILLING_DAY_RE = re.compile(
+    r"账单日[：:]\s*\n\s*Statement Due Date\s*\n\s*(\d{1,2})"
+)
+_PDF_DATE_RE = re.compile(r"^\d{8}$")
+_PDF_CARD_RE = re.compile(r"^\d{4}$")
+_PDF_AMOUNT_RE = re.compile(r"^([￥$])\s*(-?[\d,]+\.\d+)$")
+_PDF_ORIGINAL_RE = re.compile(r"^-?[\d,]+\.\d+\([A-Z]{3}\)$")
+# A description wraps onto a few lines at most; a longer run between two
+# dates is page furniture, not a row.
+_PDF_MAX_DESCRIPTION_LINES = 4
+_PDF_CURRENCY_SYMBOLS = {"￥": "CNY", "$": "USD"}
+
 
 @register_provider
 class SPDBCreditProvider(BaseProvider):
     """
-    Provider for SPDB credit card transaction-detail XLS reports.
+    Provider for SPDB credit card transaction-detail XLS reports and PDF
+    statements.
 
-    File format:
+    XLS file format:
     - Format: XLS (BIFF8)
     - Header: first 10 rows, normally row 0
     - Columns: 交易日期, 记账日期, 交易摘要, 卡号末四位, 卡片类型,
@@ -32,13 +55,23 @@ class SPDBCreditProvider(BaseProvider):
     - Amount sign: positive = expense, negative = payment/refund
     - Date format: YYYYMMDD
     - One monthly report may contain transactions from multiple cards
+
+    PDF file format:
+    - Title "YYYYMM信用卡账单", billing day under "账单日"
+    - Detail table: 交易日期, 记账日期, 交易摘要, 卡号末四位, 交易金额
+      (currency symbol prefix), and on newer templates 原始交易金额&币种
+    - Rows continue across pages without repeating the header
     """
 
     provider_id = "spdb_credit"
     provider_name = "浦发银行信用卡"
-    supported_formats = [".xls"]
+    supported_formats = [".xls", ".pdf"]
     filename_keywords = ["浦发", "spdb"]
-    content_keywords: list[str] = []
+    content_keywords = [_PDF_TITLE]
+    # The XLS export is the bank's own record of the cycle; a PDF is
+    # downloaded later as a reissue, and nothing in it tells an original
+    # statement from a reissue.
+    coverage_priority = ("statement", "reissue")
 
     EXPECTED_HEADERS = (
         "交易日期",
@@ -63,8 +96,15 @@ class SPDBCreditProvider(BaseProvider):
 
     @classmethod
     def can_handle(cls, file_path: Path) -> bool:
-        """Detect explicit SPDB filenames or the report's unique XLS header."""
-        if file_path.suffix.lower() not in cls.supported_formats:
+        """Detect explicit SPDB filenames or the report's unique XLS header.
+
+        PDFs are told by their title alone: the filename keywords also match
+        SPDB debit-card statements.
+        """
+        suffix = file_path.suffix.lower()
+        if suffix == ".pdf":
+            return cls._match_content(file_path)
+        if suffix not in cls.supported_formats:
             return False
 
         filename = file_path.name.lower()
@@ -85,7 +125,158 @@ class SPDBCreditProvider(BaseProvider):
             return False
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse an SPDB credit card transaction-detail XLS report."""
+        """Parse an SPDB credit card XLS report or PDF statement."""
+        if file_path.suffix.lower() == ".pdf":
+            return self._parse_pdf(file_path)
+        return self._parse_xls(file_path)
+
+    def coverage(
+        self,
+        file_path: Path,
+        transactions: list[Transaction],
+    ) -> list[Coverage]:
+        """Cover each card for the PDF's cycle or the XLS's booked dates.
+
+        The XLS prints no cycle. Its rows' post dates all fall in the billing
+        cycle while a transaction date can precede it, so the post-date span
+        stays inside the cycle without reaching into the previous one.
+        """
+        source = "reissue" if file_path.suffix.lower() == ".pdf" else "statement"
+        by_card: dict[str, list[Transaction]] = {}
+        for txn in transactions:
+            by_card.setdefault(txn.card_last4 or "", []).append(txn)
+
+        coverages: list[Coverage] = []
+        for card, rows in by_card.items():
+            cycle = rows[0].metadata.get(STATEMENT_CYCLE)
+            if isinstance(cycle, tuple):
+                start, end = cycle
+            else:
+                booked = [txn.post_date or txn.date for txn in rows]
+                start, end = min(booked), max(booked)
+            coverages.append(Coverage(card, start, end, rows=rows, source=source))
+        return coverages
+
+    def _parse_pdf(self, file_path: Path) -> list[Transaction]:
+        import fitz
+
+        with fitz.open(file_path) as doc:
+            pages = [str(page.get_text()) for page in doc]
+        text = "\n".join(pages)
+
+        cycle = self._parse_pdf_cycle(text)
+        if cycle is None:
+            logger.warning("No SPDB statement cycle found")
+
+        transactions: list[Transaction] = []
+        for index, row in enumerate(self._extract_pdf_rows(text, file_path), start=1):
+            transaction = self._parse_row(
+                row, source_line=index, file_path=file_path, datemode=0
+            )
+            if transaction:
+                if cycle:
+                    transaction.metadata[STATEMENT_CYCLE] = cycle
+                transactions.append(transaction)
+
+        self.assign_statement_periods(transactions, cycle)
+        return transactions
+
+    @staticmethod
+    def _parse_pdf_cycle(text: str) -> tuple[date, date] | None:
+        """Return the billing cycle ending on the statement month's billing day.
+
+        The statement prints only its closing day, so the cycle is taken to
+        start the day after the same day of the previous month.
+        """
+        month_match = _PDF_MONTH_RE.search(text)
+        day_match = _PDF_BILLING_DAY_RE.search(text)
+        if not month_match or not day_match:
+            return None
+
+        billing_day = int(day_match.group(1))
+
+        def closing(year: int, month: int) -> date:
+            last_day = calendar.monthrange(year, month)[1]
+            return date(year, month, min(billing_day, last_day))
+
+        end = closing(int(month_match.group(1)), int(month_match.group(2)))
+        previous = end.replace(day=1) - timedelta(days=1)
+        return closing(previous.year, previous.month) + timedelta(days=1), end
+
+    @classmethod
+    def _extract_pdf_rows(cls, text: str, file_path: Path) -> list[list[str]]:
+        """Read the detail table into rows shaped like the XLS report's.
+
+        The text runs one cell per line; a row is two dates, the description,
+        the card suffix and the symbol-prefixed amount, then an original
+        amount on templates that print it. Page footers and notices between
+        rows match none of this and are passed over.
+        """
+        _, marker, details = text.partition(_PDF_DETAIL_MARKER)
+        if not marker:
+            return []
+        lines = [
+            stripped for line in details.splitlines() if (stripped := line.strip())
+        ]
+
+        rows: list[list[str]] = []
+        i = 0
+        while i + 1 < len(lines):
+            if not (_PDF_DATE_RE.match(lines[i]) and _PDF_DATE_RE.match(lines[i + 1])):
+                i += 1
+                continue
+            row = cls._read_pdf_row(lines, i)
+            if row is None:
+                logger.warning(
+                    "%s: skipped an SPDB PDF row at text line %d",
+                    file_path.name,
+                    i + 1,
+                )
+                i += 1
+                continue
+            cells, i = row
+            rows.append(cells)
+        return rows
+
+    @classmethod
+    def _read_pdf_row(
+        cls, lines: list[str], start: int
+    ) -> tuple[list[str], int] | None:
+        """Read the row starting at two date lines; return it and the next index.
+
+        The description ends at the card suffix. A date line before that
+        starts the next row, so this one has no card or amount and is rejected.
+        """
+        stop = min(len(lines) - 1, start + 3 + _PDF_MAX_DESCRIPTION_LINES)
+        for card_at in range(start + 2, stop):
+            if _PDF_DATE_RE.match(lines[card_at]):
+                return None
+            amount = _PDF_AMOUNT_RE.match(lines[card_at + 1])
+            if card_at == start + 2 or not (
+                amount and _PDF_CARD_RE.match(lines[card_at])
+            ):
+                continue
+            end = card_at + 2
+            original = "-"
+            if end < len(lines) and _PDF_ORIGINAL_RE.match(lines[end]):
+                original = lines[end]
+                end += 1
+            # The XLS column layout, so both formats share _parse_row; the PDF
+            # prints no card type.
+            cells = [
+                lines[start],
+                lines[start + 1],
+                "".join(lines[start + 2 : card_at]),
+                lines[card_at],
+                "-",
+                _PDF_CURRENCY_SYMBOLS[amount.group(1)],
+                amount.group(2),
+                original,
+            ]
+            return cells, end
+        return None
+
+    def _parse_xls(self, file_path: Path) -> list[Transaction]:
         try:
             workbook = xlrd.open_workbook(str(file_path))
             sheet = workbook.sheet_by_index(0)

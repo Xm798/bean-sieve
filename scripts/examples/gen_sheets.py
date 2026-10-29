@@ -253,8 +253,8 @@ def cncb_credit(out_dir: Path) -> None:
     wb.save(out_dir / "中信银行信用卡已出账单明细2030年04月.xls")
 
 
-@generator("spdb_credit")
-def spdb_credit(out_dir: Path) -> None:
+# Called by gen_pdf.spdb_credit: one generator per provider writes all of its statements.
+def spdb_credit_xls(out_dir: Path) -> None:
     header = [
         "交易日期",
         "记账日期",
@@ -266,7 +266,7 @@ def spdb_credit(out_dir: Path) -> None:
         "原始交易金额&币种",
     ]
     rows = [
-        ["20300503", "20300504", "消费 store-a", "1234", "主卡", "人民币", "30.00", "-"],
+        ["20300503", "20300504", "消费 store-a", "1234", "主卡", "人民币", "31.00", "-"],
         ["20300505", "20300506", "网上消费 shop-b", "1234", "主卡", "人民币", "150.00", "-"],
         ["20300508", "20300509", "退货 shop-b", "1234", "主卡", "人民币", "-150.00", "-"],
         ["20300510", "20300512", "境外消费 merchant-x", "5678", "附属卡", "人民币", "36.00", "5.00(USD)"],

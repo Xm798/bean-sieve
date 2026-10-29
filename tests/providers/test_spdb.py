@@ -1,13 +1,20 @@
 """Tests for the SPDB credit card transaction-detail provider."""
 
+import logging
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import fitz
 import pytest
 
 from bean_sieve.config import Config
-from bean_sieve.providers import get_provider
+from bean_sieve.core.metadata_keys import (
+    ORIGINAL_AMOUNT,
+    ORIGINAL_CURRENCY,
+    STATEMENT_CYCLE,
+)
+from bean_sieve.providers import auto_detect_provider, get_provider
 from bean_sieve.providers.banks.credit.spdb import SPDBCreditProvider
 
 HEADERS = [
@@ -102,7 +109,7 @@ class TestSPDBCreditProvider:
 
         assert isinstance(provider, SPDBCreditProvider)
         assert provider.provider_name == "浦发银行信用卡"
-        assert provider.supported_formats == [".xls"]
+        assert provider.supported_formats == [".xls", ".pdf"]
 
     def test_can_handle_explicit_filename(self) -> None:
         assert SPDBCreditProvider.can_handle(Path("浦发信用卡交易明细.xls"))
@@ -399,3 +406,237 @@ def test_covered_ranges_keep_each_statement_period(spdb_xls_file: Path) -> None:
             (date(2030, 1, 17), date(2030, 1, 17)),
         ]
     }
+
+
+EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
+
+
+def create_spdb_pdf(path: Path, month: str, pages: list[list[str]]) -> Path:
+    """Write a synthetic SPDB PDF statement, one text line per cell."""
+    doc = fitz.open()
+    for number, cells in enumerate(pages):
+        page = doc.new_page(width=595, height=842)
+        lines = cells
+        if number == 0:
+            lines = [
+                f"{month}信用卡账单",
+                "现呈上您浦发个人信用卡对账单。",
+                "账单日：",
+                "Statement Due Date",
+                "20",
+                "本期账务明细",
+                "交易日期",
+                "记账日期",
+                *cells,
+            ]
+        for i, line in enumerate([*lines, f"第 {number + 1} 页"]):
+            page.insert_text((40, 30 + i * 12), line, fontname="china-s", fontsize=8)
+    doc.save(path)
+    doc.close()
+    return path
+
+
+@pytest.fixture
+def spdb_pdf_file(tmp_path: Path) -> Path:
+    return create_spdb_pdf(
+        tmp_path / "statement.pdf",
+        "203002",
+        [
+            [
+                *("20300125", "20300126", "消费 payee-a", "8888", "￥33.00"),
+                *("20300203", "20300203", "退货 payee-a", "8888", "￥-33.00"),
+                *("20300205", "20300205", "分期付款-payee-b", "第01期共06期"),
+                *("1234", "￥50.00"),
+            ],
+            [
+                *("20300210", "20300210", "还款", "8888", "￥-230.00", "-230.00(CNY)"),
+                *("20300218", "20300219", "境外消费 payee-c", "1234", "￥77.00"),
+                "6.00(USD)",
+            ],
+        ],
+    )
+
+
+class TestSPDBPdf:
+    """Tests for the PDF statement path."""
+
+    def test_detected_by_title(self, spdb_pdf_file: Path) -> None:
+        assert SPDBCreditProvider.can_handle(spdb_pdf_file)
+        assert auto_detect_provider(spdb_pdf_file).provider_id == "spdb_credit"  # type: ignore[union-attr]
+
+    def test_keyword_filename_without_title_is_rejected(self, tmp_path: Path) -> None:
+        other = tmp_path / "浦发借记卡spdb.pdf"
+
+        doc = fitz.open()
+        doc.new_page().insert_text((40, 40), "other statement")
+        doc.save(other)
+        doc.close()
+        assert not SPDBCreditProvider.can_handle(other)
+
+    @pytest.mark.parametrize(
+        ("example", "provider_id"),
+        [("boc_credit", "boc_credit"), ("spdb_debit", "spdb_debit")],
+    )
+    def test_other_bank_pdfs_keep_their_provider(
+        self, example: str, provider_id: str
+    ) -> None:
+        [pdf] = (EXAMPLES / example).glob("*.pdf")
+
+        assert not SPDBCreditProvider.can_handle(pdf)
+        assert auto_detect_provider(pdf).provider_id == provider_id  # type: ignore[union-attr]
+
+    def test_parse_rows_across_pages(self, spdb_pdf_file: Path) -> None:
+        transactions = SPDBCreditProvider().parse(spdb_pdf_file)
+
+        assert [
+            (t.date, t.post_date, t.description, t.card_last4, t.amount, t.currency)
+            for t in transactions
+        ] == [
+            (date(2030, 1, 25), date(2030, 1, 26), "消费 payee-a", "8888", Decimal("33.00"), "CNY"),
+            (date(2030, 2, 3), date(2030, 2, 3), "退货 payee-a", "8888", Decimal("-33.00"), "CNY"),
+            (date(2030, 2, 5), date(2030, 2, 5), "分期付款-payee-b第01期共06期", "1234", Decimal("50.00"), "CNY"),
+            (date(2030, 2, 10), date(2030, 2, 10), "还款", "8888", Decimal("-230.00"), "CNY"),
+            (date(2030, 2, 18), date(2030, 2, 19), "境外消费 payee-c", "1234", Decimal("77.00"), "CNY"),
+        ]  # fmt: skip
+        assert [t.source_line for t in transactions] == [1, 2, 3, 4, 5]
+        assert all(t.provider == "spdb_credit" for t in transactions)
+
+    def test_metadata_matches_xls_shape(self, spdb_pdf_file: Path) -> None:
+        transactions = SPDBCreditProvider().parse(spdb_pdf_file)
+        cycle = (date(2030, 1, 21), date(2030, 2, 20))
+
+        assert transactions[0].metadata == {STATEMENT_CYCLE: cycle}
+        assert transactions[3].metadata == {
+            ORIGINAL_AMOUNT: Decimal("-230.00"),
+            ORIGINAL_CURRENCY: "CNY",
+            STATEMENT_CYCLE: cycle,
+        }
+        assert transactions[4].metadata[ORIGINAL_AMOUNT] == Decimal("6.00")
+        assert transactions[4].metadata[ORIGINAL_CURRENCY] == "USD"
+        assert {t.statement_period for t in transactions} == {cycle}
+
+    @pytest.mark.parametrize(
+        ("month", "day", "cycle"),
+        [
+            ("203001", "20", (date(2029, 12, 21), date(2030, 1, 20))),
+            ("203003", "31", (date(2030, 3, 1), date(2030, 3, 31))),
+        ],
+    )
+    def test_cycle_ends_on_billing_day(
+        self, month: str, day: str, cycle: tuple[date, date]
+    ) -> None:
+        text = f"{month}信用卡账单\n账单日：\nStatement Due Date\n{day}\n"
+
+        assert SPDBCreditProvider._parse_pdf_cycle(text) == cycle
+
+    def test_row_without_card_or_amount_is_skipped_with_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        path = create_spdb_pdf(
+            tmp_path / "s.pdf",
+            "203002",
+            [
+                [
+                    *("20300203", "20300203", "消费 payee-a"),
+                    *("20300204", "20300204", "消费 payee-b", "1234", "￥33.00"),
+                    *("20300205", "20300205", "消费 payee-c", "1234", "HK$6.00"),
+                    *("20300206", "20300206", "消费 payee-d", "8888", "￥47.00"),
+                ]
+            ],
+        )
+
+        with caplog.at_level(logging.WARNING):
+            transactions = SPDBCreditProvider().parse(path)
+
+        assert [(t.date, t.description, t.amount) for t in transactions] == [
+            (date(2030, 2, 4), "消费 payee-b", Decimal("33.00")),
+            (date(2030, 2, 6), "消费 payee-d", Decimal("47.00")),
+        ]
+        skipped = [r for r in caplog.records if "skipped an SPDB PDF row" in r.message]
+        assert len(skipped) == 2
+        assert all("s.pdf" in r.message for r in skipped)
+
+    def test_rows_without_cycle_have_no_cycle_metadata(self, tmp_path: Path) -> None:
+        path = create_spdb_pdf(
+            tmp_path / "s.pdf",
+            "",
+            [["20300125", "20300126", "消费 payee-a", "8888", "￥33.00"]],
+        )
+
+        [transaction] = SPDBCreditProvider().parse(path)
+        assert STATEMENT_CYCLE not in transaction.metadata
+
+
+class TestSPDBCoverage:
+    """An XLS report and a PDF of the same cycle compete; the XLS wins."""
+
+    def test_pdf_covers_cycle_per_card(self, spdb_pdf_file: Path) -> None:
+        provider = SPDBCreditProvider()
+        coverages = provider.coverage(spdb_pdf_file, provider.parse(spdb_pdf_file))
+
+        assert [
+            (c.account, c.start, c.end, len(c.rows), c.source) for c in coverages
+        ] == [
+            ("8888", date(2030, 1, 21), date(2030, 2, 20), 3, "reissue"),
+            ("1234", date(2030, 1, 21), date(2030, 2, 20), 2, "reissue"),
+        ]
+
+    def test_xls_covers_booked_dates(self, spdb_xls_file: Path) -> None:
+        provider = SPDBCreditProvider()
+        coverages = provider.coverage(spdb_xls_file, provider.parse(spdb_xls_file))
+
+        assert [(c.account, c.start, c.end, c.source) for c in coverages] == [
+            ("8888", date(2030, 1, 3), date(2030, 2, 1), "statement"),
+            ("1234", date(2030, 1, 18), date(2030, 1, 18), "statement"),
+        ]
+
+    @pytest.mark.parametrize("pdf_first", [True, False])
+    def test_xls_wins_over_pdf_of_same_month(
+        self, tmp_path: Path, pdf_first: bool
+    ) -> None:
+        from bean_sieve.api import full_reconcile
+
+        xls = create_spdb_xls(
+            [["20300205", "20300206", "消费 payee-a", "8888", "主卡", "人民币", "33.00", "-"]],
+            tmp_path / "report.xls",
+        )  # fmt: skip
+        same_month = create_spdb_pdf(
+            tmp_path / "reissue.pdf",
+            "203002",
+            [["20300205", "20300206", "消费 payee-a", "8888", "￥33.00"]],
+        )
+        pdf_only = create_spdb_pdf(
+            tmp_path / "earlier.pdf",
+            "203001",
+            [["20300110", "20300110", "消费 payee-b", "8888", "￥47.00"]],
+        )
+        (tmp_path / "bean-sieve.yaml").write_text(
+            "providers:\n  spdb_credit:\n    accounts:\n"
+            '      "8888": Liabilities:CreditCard:SPDB\n',
+            encoding="utf-8",
+        )
+        (tmp_path / "main.bean").write_text(
+            "2030-01-01 open Liabilities:CreditCard:SPDB CNY\n", encoding="utf-8"
+        )
+        paths = (
+            [same_month, xls, pdf_only] if pdf_first else [xls, same_month, pdf_only]
+        )
+
+        result = full_reconcile(
+            statement_paths=paths,
+            ledger_path=tmp_path / "main.bean",
+            config_path=tmp_path / "bean-sieve.yaml",
+        )
+
+        selection = result.coverage
+        assert selection is not None
+        assert sorted(e.path.name for e in selection.adopted) == [
+            "earlier.pdf",
+            "report.xls",
+        ]
+        assert [d.entry.path.name for d in selection.drops] == ["reissue.pdf"]
+        assert selection.mismatches == []
+        assert sorted(t.amount for t in result.match_result.missing) == [
+            Decimal("33.00"),
+            Decimal("47.00"),
+        ]

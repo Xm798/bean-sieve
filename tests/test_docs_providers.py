@@ -86,8 +86,9 @@ def test_content_scope_is_custom_for_any_provider_specific_content_check(
     data = exporter.site_data(exporter.sorted_providers())
     by_id = {p["id"]: p for p in data["providers"]}
 
-    # abc_debit overrides _match_content, spdb_credit overrides can_handle;
-    # neither declares content_keywords.
+    # abc_debit overrides _match_content and declares no content_keywords;
+    # spdb_credit overrides can_handle, which reads its keywords for PDFs only.
+    assert by_id["abc_debit"]["contentKeywords"] == []
+    assert by_id["spdb_credit"]["contentKeywords"] == ["浦发个人信用卡对账单"]
     for pid in ("abc_debit", "spdb_credit"):
-        assert by_id[pid]["contentKeywords"] == []
         assert by_id[pid]["contentScope"] == "custom"
