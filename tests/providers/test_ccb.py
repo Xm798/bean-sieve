@@ -5,10 +5,19 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+import fitz
 import pytest
 
-from bean_sieve.providers import get_provider
+from bean_sieve.core.coverage import CoverageEntry, select
+from bean_sieve.core.metadata_keys import (
+    ORIGINAL_AMOUNT,
+    ORIGINAL_CURRENCY,
+    STATEMENT_CYCLE,
+)
+from bean_sieve.providers import PROVIDERS, get_provider
 from bean_sieve.providers.banks.credit.ccb import CCBCreditProvider
+
+EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
 
 def create_ccb_eml(html_content: str) -> str:
@@ -358,3 +367,252 @@ class TestCCBStatementPeriod:
         assert len(transactions) == 2
         for txn in transactions:
             assert txn.statement_period == (date(2030, 2, 27), date(2030, 3, 31))
+
+
+# x of each cell in the reissued PDF, spaced so every cell stays a span of its own.
+_PDF_XS = [30, 85, 153, 192, 400, 430, 495, 525]
+
+# (trans date, post date, card, description, currency, amount, currency, amount)
+PdfRow = tuple[str, str, str, str, str, str, str, str]
+
+ROWS: list[PdfRow] = [
+    (
+        "2030-03-02",
+        "2030-03-02",
+        "4680",
+        "支付宝-payee-a",
+        "CNY",
+        "51.00",
+        "CNY",
+        "51.00",
+    ),
+    ("2030-03-05", "2030-03-06", "4680", "shop-b", "HKD", "62.00", "CNY", "57.00"),
+    (
+        "2030-03-08",
+        "2030-03-08",
+        "4680/扫码",
+        "payee-c",
+        "CNY",
+        "64.00",
+        "CNY",
+        "64.00",
+    ),
+    (
+        "2030-03-12",
+        "2030-03-12",
+        "4680",
+        "退货-shop-b",
+        "CNY",
+        "-57.00",
+        "CNY",
+        "-57.00",
+    ),
+    (
+        "2030-03-20",
+        "2030-03-21",
+        "4680",
+        "银联入账 还款",
+        "CNY",
+        "-1,130.00",
+        "CNY",
+        "-1,130.00",
+    ),
+]
+
+
+def write_ccb_eml(path: Path, rows: list[PdfRow], cycle: str) -> Path:
+    body = "\n".join(
+        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows
+    )
+    html = f"""<html><body>
+<table><tr><td>账单周期Statement Cycle</td><td>{cycle}</td></tr></table>
+<table>
+<tr><td>【交易明细】</td></tr>
+<tr><td>[人民币账户] RMB Account</td><td>上期账单余额(Previous Balance)</td><td>0.00</td></tr>
+{body}
+</table></body></html>"""
+    path.write_text(create_ccb_eml(html), encoding="utf-8")
+    return path
+
+
+def write_ccb_pdf(
+    path: Path, rows: list[PdfRow], cycle: str, rows_per_page: int = 30
+) -> Path:
+    """Draw a reissued CCB statement: summary page, then the detail table."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    def put(x: float, y: float, text: str) -> None:
+        page.insert_text((x, y), text, fontname="china-s", fontsize=8)
+
+    # The notes name the previous cycle with Chinese dates; the summary
+    # prints the cycle as a cell under a row of headers.
+    put(332, 158, "我们已收到您上一账单周期（2030年01月01日-2030年01月31日）的还款。")
+    put(38, 224, "龙卡信用卡对账单")
+    put(41, 383, "本期账单日")
+    put(245, 383, "账单周期")
+    put(423, 383, "本期到期还款日")
+    put(141, 387.5, "2030-03-31")
+    put(310, 387.5, cycle)
+    put(512, 387.5, "2030/04/20")
+    for start in range(0, len(rows), rows_per_page):
+        page = doc.new_page(width=595, height=842)
+        put(27, 104, "【交易明细】")
+        for x, label in zip(
+            [40, 87, 142, 281, 427, 512],
+            [
+                "交易日",
+                "银行记账日",
+                "卡号后四位",
+                "交易描述",
+                "交易币/金额",
+                "结算币/金额",
+            ],
+            strict=True,
+        ):
+            put(x, 117, label)
+        put(27, 139, "[人民币账户] RMB Account")
+        put(537, 139, "0.00")
+        y = 151.0
+        for row in rows[start : start + rows_per_page]:
+            for x, cell in zip(_PDF_XS, row, strict=True):
+                if cell:
+                    put(x, y, cell)
+            y += 12
+        put(252, y, "***　结束　The　End　***")
+        put(551, 785, "0001")
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def shape(txns):
+    return [
+        (
+            t.date,
+            t.post_date,
+            t.amount,
+            t.currency,
+            t.description,
+            t.card_last4,
+            t.statement_period,
+            t.metadata,
+        )
+        for t in txns
+    ]
+
+
+class TestCCBReissue:
+    """Tests for the reissued PDF statement."""
+
+    def test_rows(self, tmp_path):
+        txns = CCBCreditProvider().parse(
+            write_ccb_pdf(tmp_path / "r.pdf", ROWS, "2030/03/01-2030/03/31")
+        )
+
+        assert [(t.date, t.amount, t.card_last4) for t in txns] == [
+            (date(2030, 3, 2), Decimal("51.00"), "4680"),
+            (date(2030, 3, 5), Decimal("57.00"), "4680"),
+            (date(2030, 3, 8), Decimal("64.00"), "4680/扫码"),
+            (date(2030, 3, 12), Decimal("-57.00"), "4680"),
+            (date(2030, 3, 20), Decimal("-1130.00"), "4680"),
+        ]
+        assert txns[1].post_date == date(2030, 3, 6)
+        assert txns[4].description == "银联入账 还款"
+        assert txns[0].statement_period == (date(2030, 3, 1), date(2030, 3, 31))
+        assert txns[0].metadata[STATEMENT_CYCLE] == (
+            date(2030, 3, 1),
+            date(2030, 3, 31),
+        )
+
+    def test_cycle_is_the_cell_under_its_header(self, tmp_path):
+        provider = CCBCreditProvider()
+        pdf = write_ccb_pdf(tmp_path / "r.pdf", ROWS[:1], "2030/03/01-2030/03/31")
+
+        txns = provider.parse(pdf)
+
+        assert txns[0].statement_period == (date(2030, 3, 1), date(2030, 3, 31))
+        [cov] = provider.coverage(pdf, txns)
+        assert (cov.account, cov.start, cov.end) == (
+            "4680",
+            date(2030, 3, 1),
+            date(2030, 3, 31),
+        )
+
+    def test_same_transactions_as_mail(self, tmp_path):
+        cycle = "2030/03/01-2030/03/31"
+        pdf = write_ccb_pdf(tmp_path / "r.pdf", ROWS, cycle)
+        eml = write_ccb_eml(tmp_path / "s.eml", ROWS, cycle)
+
+        provider = CCBCreditProvider()
+        assert shape(provider.parse(pdf)) == shape(provider.parse(eml))
+
+    def test_foreign_currency_books_the_settlement_amount(self, tmp_path):
+        for path in (
+            write_ccb_pdf(tmp_path / "r.pdf", ROWS, "2030/03/01-2030/03/31"),
+            write_ccb_eml(tmp_path / "s.eml", ROWS, "2030/03/01-2030/03/31"),
+        ):
+            txn = CCBCreditProvider().parse(path)[1]
+            assert (txn.amount, txn.currency) == (Decimal("57.00"), "CNY")
+            assert txn.metadata[ORIGINAL_AMOUNT] == Decimal("62.00")
+            assert txn.metadata[ORIGINAL_CURRENCY] == "HKD"
+
+    def test_rows_across_pages(self, tmp_path):
+        pdf = write_ccb_pdf(
+            tmp_path / "r.pdf", ROWS, "2030/03/01-2030/03/31", rows_per_page=2
+        )
+        assert len(CCBCreditProvider().parse(pdf)) == len(ROWS)
+
+    def test_only_this_provider_claims_it(self, tmp_path):
+        pdf = write_ccb_pdf(tmp_path / "statement.pdf", ROWS, "2030/03/01-2030/03/31")
+        assert [p for p, c in PROVIDERS.items() if c.can_handle(pdf)] == ["ccb_credit"]
+
+    def test_claims_no_other_example_statement(self):
+        for path in sorted(EXAMPLES.glob("*/*")):
+            if path.parent.name != "ccb_credit":
+                assert not CCBCreditProvider.can_handle(path), path
+
+
+class TestCCBCoverage:
+    def test_one_entry_per_card_for_the_printed_cycle(self, tmp_path):
+        provider = CCBCreditProvider()
+        for path, source in (
+            (
+                write_ccb_pdf(tmp_path / "r.pdf", ROWS, "2030/03/01-2030/03/31"),
+                "reissue",
+            ),
+            (
+                write_ccb_eml(tmp_path / "s.eml", ROWS, "2030/03/01-2030/03/31"),
+                "statement",
+            ),
+        ):
+            covs = provider.coverage(path, provider.parse(path))
+            assert [
+                (c.account, c.start, c.end, len(c.rows), c.source) for c in covs
+            ] == [
+                ("4680", date(2030, 3, 1), date(2030, 3, 31), 4, source),
+                ("4680/扫码", date(2030, 3, 1), date(2030, 3, 31), 1, source),
+            ]
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_mail_outranks_its_reissue(self, tmp_path, reverse):
+        provider = CCBCreditProvider()
+        paths = [
+            write_ccb_pdf(tmp_path / "r.pdf", ROWS, "2030/03/01-2030/03/31"),
+            write_ccb_eml(tmp_path / "s.eml", ROWS, "2030/03/01-2030/03/31"),
+            write_ccb_pdf(tmp_path / "next.pdf", ROWS[:1], "2030/04/01-2030/04/30"),
+        ]
+        if reverse:
+            paths.reverse()
+        ranks = {kind: i for i, kind in enumerate(provider.coverage_priority)}
+        parsed = {path: provider.parse(path) for path in paths}
+        entries = [
+            CoverageEntry("ccb_credit", path, cov, ranks[cov.source])
+            for path in paths
+            for cov in provider.coverage(path, parsed[path])
+        ]
+        kept = select(entries).keep([t for rows in parsed.values() for t in rows])
+        by_file = {
+            path.name: sum(t.source_file == path for t in kept) for path in paths
+        }
+        assert by_file == {"s.eml": 5, "r.pdf": 0, "next.pdf": 1}

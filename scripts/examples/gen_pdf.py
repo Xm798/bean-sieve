@@ -1,6 +1,7 @@
 """PDF statements drawn with PyMuPDF."""
 
 import re
+from datetime import date, timedelta
 from decimal import Decimal
 from itertools import accumulate
 from pathlib import Path
@@ -347,6 +348,60 @@ def cmb_credit_reissue(
         40, 820, f"招商银行信用卡对账单（个人消费卡账户 {year}年{month:02d}月）（补）"
     )
     pdf.put(40, 832, f"CMB Credit Card Statement ({year}.{month:02d})")
+    pdf.save(out)
+
+
+# The ccb_credit generator in gen_eml writes this next to its eml.
+def ccb_credit_reissue(
+    out: Path, cycle: str, rows: list[tuple[str, str, str, str, str, str]]
+) -> None:
+    """Draw a CCB reissue (龙卡信用卡对账单): a summary page, then the table.
+
+    As on the bank's page, the cycle also appears in the notes with Chinese
+    dates, and the summary prints it as a cell under a header row. A row is
+    (trans, post, card, description, original, settled), each amount as
+    "CUR amount".
+    """
+    start, end = (date.fromisoformat(d.replace("/", "-")) for d in cycle.split("-", 1))
+
+    def cjk(day: date) -> str:
+        return f"{day.year}年{day.month:02d}月{day.day:02d}日"
+
+    pdf = PdfPage(font_size=7.5)
+    pdf.put(332, 147, f"以下为您{cjk(start)}至{cjk(end)}信用卡账户变动情况。")
+    pdf.put(332, 158, f"我们已收到您上一账单周期（{cjk(start)}-{cjk(end)}）的还款。")
+    pdf.put(38, 224, "龙卡信用卡对账单", 14)
+    pdf.put(150, 226, "Credit Card Statement", 11)
+    pdf.put(41, 383, "本期账单日")
+    pdf.put(245, 383, "账单周期")
+    pdf.put(423, 383, "本期到期还款日")
+    pdf.put(141, 387.5, end.isoformat())
+    pdf.put(310, 387.5, cycle)
+    pdf.put(512, 387.5, (end + timedelta(days=20)).strftime("%Y/%m/%d"))
+    pdf.font_size = 8
+    pdf.new_page()
+    pdf.put(27, 104, "【交易明细】", 9.5)
+    for x, label in zip(
+        [40, 87, 142, 281, 427, 512],
+        [
+            "交易日",
+            "银行记账日",
+            "卡号后四位",
+            "交易描述",
+            "交易币/金额",
+            "结算币/金额",
+        ],
+        strict=True,
+    ):
+        pdf.put(x, 117, label)
+    pdf.put(27, 139, "[人民币账户] RMB Account")
+    y = 151
+    for trans, post, card, description, original, settled in rows:
+        cells = [trans, post, card, description, *original.split(), *settled.split()]
+        for x, cell in zip([30, 85, 153, 192, 400, 430, 495, 525], cells, strict=True):
+            pdf.put(x, y, cell)
+        y += 12
+    pdf.put(252, y, "***　结束　The　End　***")
     pdf.save(out)
 
 

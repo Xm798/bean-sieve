@@ -3,7 +3,12 @@
 from pathlib import Path
 
 from _common import generator, write_eml
-from gen_pdf import cmb_credit_reissue, icbc_credit_export, icbc_credit_reissue
+from gen_pdf import (
+    ccb_credit_reissue,
+    cmb_credit_reissue,
+    icbc_credit_export,
+    icbc_credit_reissue,
+)
 
 
 @generator("abc_credit")
@@ -214,6 +219,30 @@ def bosc_credit(out_dir: Path) -> None:
 
 @generator("ccb_credit")
 def ccb_credit(out_dir: Path) -> None:
+    # A month only the reissue covers, with a purchase billed in another currency.
+    ccb_credit_reissue(
+        out_dir / "中国建设银行信用卡对账单2030年02月.pdf",
+        "2030/02/01-2030/02/28",
+        [
+            (
+                "2030-02-04",
+                "2030-02-04",
+                "4321",
+                "支付宝-store-f",
+                "CNY 71.00",
+                "CNY 71.00",
+            ),
+            ("2030-02-09", "2030-02-10", "4321", "shop-g", "HKD 82.00", "CNY 74.00"),
+            (
+                "2030-02-16",
+                "2030-02-17",
+                "4321",
+                "银联入账 还款",
+                "CNY -930.00",
+                "CNY -930.00",
+            ),
+        ],
+    )
     rows = [
         ("2030-03-03", "2030-03-03", "支付宝-store-a", "38.00"),
         ("2030-03-06", "2030-03-07", "财付通-restaurant-b午餐", "56.00"),

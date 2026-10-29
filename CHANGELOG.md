@@ -16,10 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 工商银行信用卡 Provider（`icbc_credit`）：解析电子邮件账单、补发对账单 PDF 和历史明细 PDF，同一账期多份文件只采用一份
 - 交通银行信用卡：同一账期传入正本与补发时只采用一份，不再重复入账
 - 招商银行信用卡：解析 PDF 补发账单；同月邮件与补发同时传入时只采用邮件，美元账户取自补发
+- 建设银行信用卡：解析 PDF 补发账单；同一账单周期邮件与 PDF 同时传入时只采用邮件
 - 配置项 `fee_account`（`defaults` 和 `providers.<id>` 下均可设置）：账单里单列的手续费另记一条 posting，默认记到 `Expenses:FIXME`
 
 ### 修复
 
+- 建设银行信用卡：境外交易按结算币种和金额入账，原币金额记在 `original_amount`，不再按原币记账
 - 中信银行（国际）、汇丰香港储蓄账户：交易记到配置里唯一的账户，不再输出 `Assets:FIXME`，`balance: true` 会生成余额断言
 - 汇丰香港信用卡：文件名不带卡号后缀时，交易记到配置里唯一的账户
 - 中国银行借记卡：`accounts` 唯一的键是 4 位数字时才作为交易的 `card_last4`，其他名称不再出现在卡号元数据里
