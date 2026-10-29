@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - source
+  sort_by_time: asc
+
+providers:
+  cncb_credit:
+    # CITIC exports one file per card.
+    accounts:
+      "1234": Liabilities:CreditCard:CNCB:1234
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+  - description: "store-a"
+    contra_account: Expenses:Food:Meal
+  - description: "shop-b"
+    contra_account: Expenses:Shopping

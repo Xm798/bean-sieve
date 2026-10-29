@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: HKD
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - order_id
+    - source
+
+providers:
+  hsbchk_debit:
+    # The CSV carries no account number.
+    accounts:
+      "default": Assets:Bank:HSBCHK:HKD
+
+rules:
+  - description: "^HC\\d+"
+    target_payee: employer-a
+    contra_account: Income:Salary
+  - description: "^NET-"
+    contra_account: Liabilities:CreditCard:HSBCHK
+  - description: "UTILITY"
+    contra_account: Expenses:Housing:Utilities
+  - description: "ATM WITHDRAWAL"
+    contra_account: Assets:Cash:HKD
+  - description: "SERVICE FEE"
+    contra_account: Expenses:Bank:Fee
+  - description: "CREDIT INTEREST"
+    contra_account: Income:Bank:Interest

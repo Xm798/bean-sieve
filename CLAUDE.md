@@ -34,6 +34,7 @@ uv run pre-commit install
 uv run pytest                      # all tests
 uv run pytest tests/test_rules.py  # single file
 uv run pytest -k "test_name"       # by name pattern
+uv run pytest tests/test_examples.py --update-examples  # rewrite examples/*/expected.bean
 
 # Linting and formatting
 uv run ruff check src/ tests/
@@ -165,3 +166,5 @@ providers:
 ## Test Structure
 
 Tests use pytest with fixtures in `tests/conftest.py`. Sample data for providers is generated programmatically or uses minimal inline fixtures.
+
+`examples/<provider_id>/` holds one golden example per provider: a synthetic statement file (any name, detected as that provider), `bean-sieve.yaml`, `ledger.bean`, and `expected.bean`. `tests/test_examples.py` runs `full_reconcile` on each directory and compares the output with `expected.bean` byte for byte, printing a unified diff on mismatch; the `; Date:` header is frozen to `2000-01-01 00:00:00` and the example directory prefix is stripped from Extra `; Source:` paths. Adding a directory adds a test case. After an intended output change, rerun with `--update-examples` and review the diff. Example values follow the synthetic-fixture rules above.

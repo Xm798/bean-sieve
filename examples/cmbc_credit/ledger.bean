@@ -1,0 +1,17 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Assets:Bank:Checking CNY
+2030-01-01 open Liabilities:CreditCard:CMBC CNY
+2030-01-01 open Expenses:Finance:Fee CNY
+2030-01-01 open Expenses:Food:Meal CNY
+2030-01-01 open Expenses:Shopping CNY
+
+2030-03-03 * "store-a" "消费"
+  Liabilities:CreditCard:CMBC  -38.00 CNY
+    card_last4: "4321"
+  Expenses:Shopping
+
+2030-03-18 * "store-z" "recorded in the ledger, absent from the statement"
+  Liabilities:CreditCard:CMBC  -66.00 CNY
+    card_last4: "8765"
+  Expenses:Shopping

@@ -13,6 +13,10 @@ docs/superpowers/
 bean-sieve.yaml
 bean-sieve.yaml.bak
 
+# Synthetic golden examples (see tests/test_examples.py)
+!examples/*/*.bean
+!examples/*/bean-sieve.yaml
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

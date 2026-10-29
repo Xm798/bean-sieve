@@ -1,0 +1,15 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Liabilities:CreditCard:BOC:1234 CNY
+2030-01-01 open Liabilities:CreditCard:BOC:5678 CNY
+2030-01-01 open Assets:Bank:Checking CNY
+2030-01-01 open Expenses:Food:Meal CNY
+2030-01-01 open Expenses:Shopping CNY
+
+2030-02-06 * "store-a" "消费"
+  Liabilities:CreditCard:BOC:1234  -35.00 CNY
+  Expenses:Food:Meal
+
+2030-02-18 * "store-h" "recorded in the ledger, absent from the statement"
+  Liabilities:CreditCard:BOC:1234  -42.00 CNY
+  Expenses:Shopping

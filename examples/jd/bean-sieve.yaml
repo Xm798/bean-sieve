@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - time
+    - order_id
+    - source
+  sort_by_time: asc
+
+account_mappings:
+  - pattern: "招商银行信用卡"
+    account: Liabilities:CreditCard:CMB
+
+providers:
+  jd:
+    accounts:
+      "京东白条": Liabilities:JD:Baitiao
+
+rules:
+  - payee: "store-a"
+    contra_account: Expenses:Daily
+  - payee: "shop-b"
+    contra_account: Expenses:Shopping
+  - description: "图书"
+    contra_account: Expenses:Education:Books

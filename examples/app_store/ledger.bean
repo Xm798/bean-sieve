@@ -1,0 +1,14 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Assets:AppleID:Balance CNY
+2030-01-01 open Expenses:Digital:App CNY
+2030-01-01 open Expenses:Digital:Games CNY
+2030-01-01 open Expenses:Digital:Subscription CNY
+
+2030-07-02 * "app-a" "app-a"
+  Assets:AppleID:Balance  -12.00 CNY
+  Expenses:Digital:App
+
+2030-07-06 * "app-e" "recorded in the ledger, absent from the statement"
+  Assets:AppleID:Balance  -30.00 CNY
+  Expenses:Digital:Subscription

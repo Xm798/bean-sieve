@@ -1,0 +1,16 @@
+option "operating_currency" "HKD"
+
+2030-01-01 open Assets:Bank:ZABank HKD,CNY
+2030-01-01 open Expenses:Food:Meal HKD
+2030-01-01 open Expenses:Housing:Rent HKD
+2030-01-01 open Expenses:Shopping
+2030-01-01 open Income:Salary HKD
+2030-01-01 open Income:Bank:Interest HKD
+
+2030-03-18 * "shop-d" "晚餐"
+  Assets:Bank:ZABank  -85.00 HKD
+  Expenses:Food:Meal
+
+2030-03-25 * "store-h" "recorded in the ledger, absent from the statement"
+  Assets:Bank:ZABank  -42.00 CNY
+  Expenses:Shopping

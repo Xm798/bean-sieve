@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - time
+    - order_id
+    - source
+  sort_by_time: asc
+
+account_mappings:
+  - pattern: "零钱"
+    account: Assets:WeChat:Balance
+  - pattern: "零钱通"
+    account: Assets:WeChat:LingQianTong
+  - pattern: "招商银行信用卡"
+    account: Liabilities:CreditCard:CMB
+    rebate_account: Income:Rebate:CMB
+  - pattern: "招商银行储蓄卡(5678)"
+    account: Assets:Bank:CMB
+
+providers:
+  wechat:
+    accounts:
+      "零钱": Assets:WeChat:Balance
+      "零钱通": Assets:WeChat:LingQianTong
+
+rules:
+  - description: "(早餐|午餐|晚餐)"
+    contra_account: Expenses:Food:Meal
+  - description: "房租"
+    contra_account: Expenses:Housing:Rent

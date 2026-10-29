@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - time
+    - order_id
+    - source
+  sort_by_time: asc
+
+providers:
+  app_store:
+    # The export names no payment method, so new entries keep Assets:FIXME.
+    # This account scopes the Extra check instead: the export has no period,
+    # so every unmatched ledger posting on it is reported, whatever its date.
+    accounts:
+      "Apple ID": Assets:AppleID:Balance
+
+rules:
+  - payee: "app-b"
+    contra_account: Expenses:Digital:Games
+  - payee: "app-d"
+    contra_account: Expenses:Digital:Subscription

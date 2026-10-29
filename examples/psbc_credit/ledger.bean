@@ -1,0 +1,14 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Assets:Bank:Checking CNY
+2030-01-01 open Liabilities:CreditCard:PSBC:4321 CNY
+2030-01-01 open Expenses:Food:Meal CNY
+2030-01-01 open Expenses:Shopping CNY
+
+2030-03-03 * "store-a" "消费"
+  Liabilities:CreditCard:PSBC:4321  -38.00 CNY
+  Expenses:Shopping
+
+2030-03-25 * "store-z" "recorded in the ledger, absent from the statement"
+  Liabilities:CreditCard:PSBC:4321  -66.00 CNY
+  Expenses:Shopping

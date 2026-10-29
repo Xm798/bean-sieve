@@ -1,0 +1,14 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Liabilities:Meituan:YueFu CNY
+2030-01-01 open Liabilities:CreditCard:CMB CNY
+2030-01-01 open Expenses:Food:Meal CNY
+2030-01-01 open Expenses:Shopping CNY
+
+2030-08-02 * "餐厅甲" "午餐套餐"
+  Liabilities:Meituan:YueFu  -35.00 CNY
+  Expenses:Food:Meal
+
+2030-08-12 * "store-h" "recorded in the ledger, absent from the statement"
+  Liabilities:Meituan:YueFu  -42.00 CNY
+  Expenses:Shopping

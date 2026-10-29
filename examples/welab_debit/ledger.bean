@@ -1,0 +1,20 @@
+option "operating_currency" "HKD"
+
+2030-01-01 open Assets:Bank:WeLab:HKD HKD
+2030-01-01 open Assets:Bank:WeLab:CNY CNY
+2030-01-01 open Expenses:Bank:Fee HKD
+2030-01-01 open Expenses:Food:Meal CNY
+2030-01-01 open Expenses:Housing:Rent HKD
+2030-01-01 open Expenses:Shopping
+2030-01-01 open Income:Salary HKD
+2030-01-01 open Income:Bank:Interest HKD
+
+; Both legs of the exchange sit on WeLab accounts, so each statement row
+; matches one posting.
+2030-02-10 * "Foreign currency exchange"
+  Assets:Bank:WeLab:HKD  -1100.00 HKD
+  Assets:Bank:WeLab:CNY   1000.00 CNY @@ 1100.00 HKD
+
+2030-02-20 * "store-h" "recorded in the ledger, absent from the statement"
+  Assets:Bank:WeLab:CNY  -42.00 CNY
+  Expenses:Shopping

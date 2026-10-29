@@ -1,0 +1,17 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Assets:Bank:BOCOM CNY
+2030-01-01 open Assets:Bank:CMB CNY
+2030-01-01 open Assets:WeChat:Balance CNY
+2030-01-01 open Expenses:Food:Meal CNY
+2030-01-01 open Expenses:Shopping CNY
+2030-01-01 open Income:Salary CNY
+2030-01-01 open Income:Bank:Interest CNY
+
+2030-05-26 * "shop-d" "晚餐"
+  Assets:Bank:BOCOM  -26.00 CNY
+  Expenses:Food:Meal
+
+2030-05-18 * "store-h" "recorded in the ledger, absent from the statement"
+  Assets:Bank:BOCOM  -42.00 CNY
+  Expenses:Shopping

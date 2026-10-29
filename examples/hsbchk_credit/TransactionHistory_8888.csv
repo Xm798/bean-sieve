@@ -1,0 +1,7 @@
+Transaction date,Post date,Description,Billing amount,Billing currency,Transaction status,Merchant name,Country / region,Area / district,Credit / Debit
+02/06/2030,03/06/2030,CAFE-A                   HONG KONG    HK,"-38.00"	,HKD,POSTED,cafe-a,HONG KONG,HKG,DEBIT
+04/06/2030,05/06/2030,SHOP-B                   HONG KONG    HK,"-260.00"	,HKD,POSTED,shop-b,HONG KONG,HKG,DEBIT
+07/06/2030,08/06/2030,RETURN:  SHOP-B          HONG KONG    HK,"260.00"	,HKD,POSTED,shop-b,HONG KONG,HKG,CREDIT
+09/06/2030,10/06/2030,QR       merchant-c                CHN          CN,"-50.00"	,CNY,POSTED,merchant-c,CHINA,CHN,DEBIT
+15/06/2030,15/06/2030,PAYMENT - THANK YOU,"1,000.00"	,HKD,POSTED,,,,CREDIT
+20/06/2030,,MARKET-D                 HONG KONG    HK,"-75.00"	,HKD,PENDING,market-d,HONG KONG,HKG,DEBIT

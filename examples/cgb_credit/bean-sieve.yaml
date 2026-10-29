@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+
+providers:
+  cgb_credit:
+    accounts:
+      "4321": Liabilities:CreditCard:CGB:4321
+      "8765": Liabilities:CreditCard:CGB:8765
+
+rules:
+  - description: "午餐"
+    contra_account: Expenses:Food:Meal
+  - description: "赠送"
+    contra_account: Income:Rebate:CGB
+  - description: "网银还款"
+    contra_account: Assets:Bank:Checking

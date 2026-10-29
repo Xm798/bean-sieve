@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+
+providers:
+  cib_credit:
+    accounts:
+      "4321": Liabilities:CreditCard:CIB:4321
+
+rules:
+  - description: "午餐"
+    contra_account: Expenses:Food:Meal
+  - description: "充电"
+    contra_account: Expenses:Transport:Charging
+  - description: "刷卡金"
+    contra_account: Income:Rebate:CIB
+  - description: "还款"
+    contra_account: Assets:Bank:Checking

@@ -1,0 +1,14 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Liabilities:JD:Baitiao CNY
+2030-01-01 open Liabilities:CreditCard:CMB CNY
+2030-01-01 open Expenses:Daily CNY
+2030-01-01 open Expenses:Shopping CNY
+
+2030-06-02 * "store-a" "日用品"
+  Liabilities:JD:Baitiao  -59.00 CNY
+  Expenses:Daily
+
+2030-06-07 * "store-h" "recorded in the ledger, absent from the statement"
+  Liabilities:JD:Baitiao  -42.00 CNY
+  Expenses:Shopping

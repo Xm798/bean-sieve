@@ -16,6 +16,14 @@ from bean_sieve.config.schema import (
 from bean_sieve.core.types import Transaction
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--update-examples",
+        action="store_true",
+        help="Rewrite examples/*/expected.bean from the current output",
+    )
+
+
 @pytest.fixture
 def sample_transaction():
     """Create a sample transaction for testing."""

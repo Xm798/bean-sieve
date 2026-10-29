@@ -1,0 +1,17 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Assets:Alipay:Balance CNY
+2030-01-01 open Assets:Alipay:YuEBao CNY
+2030-01-01 open Assets:Bank:CMB CNY
+2030-01-01 open Liabilities:Alipay:Huabei CNY
+2030-01-01 open Liabilities:CreditCard:CMB CNY
+2030-01-01 open Expenses:Food:Meal CNY
+2030-01-01 open Expenses:Shopping CNY
+
+2030-03-12 * "restaurant-h" "晚餐"
+  Assets:Alipay:Balance  -30.00 CNY
+  Expenses:Food:Meal
+
+2030-03-14 * "store-j" "recorded in the ledger, absent from the statement"
+  Assets:Alipay:Balance  -66.00 CNY
+  Expenses:Shopping

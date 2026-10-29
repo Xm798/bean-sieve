@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: HKD
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - order_id
+    - source
+
+providers:
+  cncbi_debit:
+    accounts:
+      "default": Assets:Bank:CNCBI:HKD
+
+rules:
+  - payee: "employer-a"
+    contra_account: Income:Salary
+  - payee: "landlord-b"
+    contra_account: Expenses:Housing:Rent
+  - description: "本行内部转账"
+    contra_account: Assets:Bank:CNCBI:Savings
+  - description: "利息存入"
+    contra_account: Income:Bank:Interest

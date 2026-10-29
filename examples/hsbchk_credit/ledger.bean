@@ -1,0 +1,14 @@
+option "operating_currency" "HKD"
+
+2030-01-01 open Liabilities:CreditCard:HSBCHK:8888
+2030-01-01 open Assets:Bank:HSBCHK HKD
+2030-01-01 open Expenses:Food:Meal
+2030-01-01 open Expenses:Shopping
+
+2030-06-02 * "cafe-a" "coffee"
+  Liabilities:CreditCard:HSBCHK:8888  -38.00 HKD
+  Expenses:Food:Meal
+
+2030-06-12 * "store-h" "recorded in the ledger, absent from the statement"
+  Liabilities:CreditCard:HSBCHK:8888  -42.00 HKD
+  Expenses:Shopping

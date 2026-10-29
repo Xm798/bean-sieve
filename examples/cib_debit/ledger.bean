@@ -1,0 +1,17 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Assets:Bank:CIB CNY
+2030-01-01 open Assets:Bank:CMB CNY
+2030-01-01 open Assets:Receivables:Friend CNY
+2030-01-01 open Expenses:Food:Meal CNY
+2030-01-01 open Expenses:Shopping CNY
+2030-01-01 open Income:Salary CNY
+2030-01-01 open Income:Bank:Interest CNY
+
+2030-07-27 * "shop-d" "晚餐"
+  Assets:Bank:CIB  -33.00 CNY
+  Expenses:Food:Meal
+
+2030-07-18 * "store-h" "recorded in the ledger, absent from the statement"
+  Assets:Bank:CIB  -42.00 CNY
+  Expenses:Shopping

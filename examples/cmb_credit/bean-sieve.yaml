@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+
+providers:
+  cmb_credit:
+    # One account per customer: both cards bill to the same liability.
+    accounts:
+      "4321": Liabilities:CreditCard:CMB
+      "8765": Liabilities:CreditCard:CMB
+    posting_metadata:
+      - card_last4
+
+rules:
+  - description: "午餐"
+    contra_account: Expenses:Food:Meal
+  - description: "还款"
+    contra_account: Assets:Bank:Checking

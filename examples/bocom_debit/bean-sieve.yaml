@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - time
+    - order_id
+    - source
+  sort_by_time: asc
+
+providers:
+  bocom_debit:
+    accounts:
+      "1234": Assets:Bank:BOCOM
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - description: "存款利息"
+    contra_account: Income:Bank:Interest
+  - description: "(午餐|晚餐)"
+    contra_account: Expenses:Food:Meal
+  - description: "零钱提现"
+    contra_account: Assets:WeChat:Balance
+  - description: "跨行转出"
+    contra_account: Assets:Bank:CMB

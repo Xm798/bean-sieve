@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - time
+    - order_id
+    - source
+  sort_by_time: asc
+
+account_mappings:
+  - pattern: "余额"
+    account: Assets:Alipay:Balance
+  - pattern: "余额宝"
+    account: Assets:Alipay:YuEBao
+  - pattern: "花呗"
+    account: Liabilities:Alipay:Huabei
+  - pattern: "招商银行信用卡"
+    account: Liabilities:CreditCard:CMB
+  - pattern: "招商银行储蓄卡"
+    account: Assets:Bank:CMB
+
+providers:
+  alipay:
+    accounts:
+      "余额": Assets:Alipay:Balance
+      "余额宝": Assets:Alipay:YuEBao
+      "花呗": Liabilities:Alipay:Huabei
+
+rules:
+  - description: "拿铁"
+    target_payee: 咖啡店
+    contra_account: Expenses:Food:Coffee
+  - description: "(午餐|晚餐)"
+    contra_account: Expenses:Food:Meal
+  - description: "打车"
+    contra_account: Expenses:Transport:Taxi
+  - description: "余额宝.*转入"
+    contra_account: Assets:Alipay:Balance
+  - description: "花呗.*还款"
+    contra_account: Assets:Bank:CMB

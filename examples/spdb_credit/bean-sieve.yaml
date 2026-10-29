@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - source
+  sort_by_time: asc
+
+providers:
+  spdb_credit:
+    # SPDB bills primary and supplementary cards on one account.
+    accounts:
+      "1234": Liabilities:CreditCard:SPDB
+      "5678": Liabilities:CreditCard:SPDB
+    posting_metadata:
+      - card_last4
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+  - description: "(store-a|cafe-c)"
+    contra_account: Expenses:Food:Meal
+  - description: "shop-b"
+    contra_account: Expenses:Shopping

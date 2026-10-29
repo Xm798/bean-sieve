@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: HKD
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - source
+  sort_by_time: asc
+
+providers:
+  hsbchk_credit:
+    # The CSV carries no card number: the "_8888" filename suffix supplies it.
+    accounts:
+      "8888": Liabilities:CreditCard:HSBCHK:8888
+
+rules:
+  - description: "PAYMENT - THANK YOU"
+    contra_account: Assets:Bank:HSBCHK
+  - payee: "cafe-a"
+    contra_account: Expenses:Food:Meal
+  - payee: "shop-b"
+    contra_account: Expenses:Shopping

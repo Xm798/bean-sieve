@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - time
+    - order_id
+    - source
+  sort_by_time: asc
+
+account_mappings:
+  - pattern: "招商银行信用卡"
+    account: Liabilities:CreditCard:CMB
+
+providers:
+  meituan:
+    accounts:
+      "美团月付": Liabilities:Meituan:YueFu
+
+rules:
+  - payee: "餐厅"
+    contra_account: Expenses:Food:Meal
+  - payee: "酒店丙"
+    contra_account: Expenses:Travel:Hotel
+  - description: "电费"
+    contra_account: Expenses:Housing:Utilities
