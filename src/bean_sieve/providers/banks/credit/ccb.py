@@ -102,7 +102,7 @@ class CCBCreditProvider(BaseProvider):
         try:
             trans_date_str = cells[0]  # YYYY-MM-DD
             post_date_str = cells[1]  # YYYY-MM-DD
-            card_last4 = cells[2]  # e.g., "0800"
+            card_last4 = cells[2]  # e.g., "4680"
             description = cells[3]
 
             # Parse dates

@@ -28,7 +28,7 @@ HEADERS = [
 def create_bocom_xls(
     tmp_path: Path,
     transactions: list[dict],
-    card_number: str = "6222 8888 8888 8888 888",
+    card_number: str = "6222 6000 1234 5678",
     filename: str = "交通银行_交易明细.xls",
 ) -> Path:
     """Create a BOCOM debit card XLS file with mock data."""
@@ -107,7 +107,7 @@ def bocom_xls_file(tmp_path: Path) -> Path:
             "income": "--",
             "balance": "186.45",
             "counterparty_name": "支付宝-消费",
-            "summary": "|交易类型:快捷支付|交易说明:生活服务消费|交易商户:测试商户A|订单编号:0226b82501059190|流水号:0226b82501059190|交易渠道:支付宝|",
+            "summary": "|交易类型:快捷支付|交易说明:生活服务消费|交易商户:测试商户A|订单编号:2030010100000001|流水号:2030010100000001|交易渠道:支付宝|",
         },
         {
             "date": "2026-01-10",
@@ -120,7 +120,7 @@ def bocom_xls_file(tmp_path: Path) -> Path:
             "counterparty_name": "测试用户",
             "counterparty_account": "1234567890",
             "counterparty_bank": "财付通支付科技有限公司",
-            "summary": "微信零钱提现 交易流水号20260110651659460265643S0100302",
+            "summary": "微信零钱提现 交易流水号4200000000203001010000000001",
         },
     ]
     return create_bocom_xls(tmp_path, transactions)
@@ -157,7 +157,7 @@ class TestBOCOMDebitProvider:
         assert txn1.time == time(21, 23, 33)
         assert txn1.amount == Decimal("10000")
         assert txn1.currency == "CNY"
-        assert txn1.card_last4 == "8888"
+        assert txn1.card_last4 == "5678"
         assert txn1.provider == "bocom_debit"
         assert txn1.is_expense
 
@@ -171,13 +171,13 @@ class TestBOCOMDebitProvider:
         # Expense with order_id from structured summary
         txn3 = transactions[2]
         assert txn3.amount == Decimal("19.15")
-        assert txn3.order_id == "0226b82501059190"
+        assert txn3.order_id == "2030010100000001"
         assert "生活服务消费" in txn3.description
 
         # Income: WeChat withdrawal with order_id
         txn4 = transactions[3]
         assert txn4.amount == Decimal("-540")
-        assert txn4.order_id == "20260110651659460265643S0100302"
+        assert txn4.order_id == "4200000000203001010000000001"
         assert txn4.is_income
 
     def test_card_last4_extraction(self, bocom_xls_file: Path) -> None:
@@ -185,7 +185,7 @@ class TestBOCOMDebitProvider:
         provider = BOCOMDebitProvider()
         transactions = provider.parse(bocom_xls_file)
         for txn in transactions:
-            assert txn.card_last4 == "8888"
+            assert txn.card_last4 == "5678"
 
     def test_empty_statement(self, tmp_path: Path) -> None:
         """Test handling of statement with no transactions."""

@@ -120,7 +120,7 @@ def test_account_mapping_generic_method_not_matched_to_specific_pattern():
     """A generic payment channel must NOT match a card-specific pattern.
 
     Regression: bidirectional substring matching let method='云闪付' match
-    pattern='云闪付-交通银行(5871)' (method ⊂ pattern) and wrongly resolve to a
+    pattern='云闪付-交通银行(6420)' (method ⊂ pattern) and wrongly resolve to a
     specific card account. Generic channels with no card info must stay
     unresolved (-> FIXME) rather than guessing a card.
     """
@@ -134,8 +134,8 @@ def test_account_mapping_generic_method_not_matched_to_specific_pattern():
     cfg = Config(
         account_mappings=[
             AccountMapping(
-                pattern="云闪付-交通银行(5871)",
-                account="Liabilities:Credit:BOCOM:5871",
+                pattern="云闪付-交通银行(6420)",
+                account="Liabilities:Credit:BOCOM:6420",
             ),
         ]
     )
@@ -165,7 +165,7 @@ def test_account_mapping_pattern_contained_in_method_still_matches():
         account_mappings=[
             AccountMapping(
                 pattern="交通银行信用卡",
-                account="Liabilities:Credit:BOCOM:5871",
+                account="Liabilities:Credit:BOCOM:6420",
             ),
         ]
     )
@@ -175,11 +175,11 @@ def test_account_mapping_pattern_contained_in_method_still_matches():
         currency="CNY",
         description="测试消费",
         provider="alipay",
-        metadata={"method": "交通银行信用卡(5871)"},
+        metadata={"method": "交通银行信用卡(6420)"},
     )
-    assert _resolve_target_account(txn, cfg, {}) == "Liabilities:Credit:BOCOM:5871"
+    assert _resolve_target_account(txn, cfg, {}) == "Liabilities:Credit:BOCOM:6420"
     [result] = _set_target_accounts([txn], cfg)
-    assert result.account == "Liabilities:Credit:BOCOM:5871"
+    assert result.account == "Liabilities:Credit:BOCOM:6420"
 
 
 def test_generate_balance_directives_golden():

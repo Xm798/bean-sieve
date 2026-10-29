@@ -171,14 +171,14 @@ class JDProvider(BaseProvider):
         """Extract card last 4 digits from payment method string.
 
         Examples:
-        - "数字人民币-中国银行钱包(0637)" -> "0637"
-        - "中国银行信用卡(0731)" -> "0731"
+        - "数字人民币-中国银行钱包(3746)" -> "3746"
+        - "中国银行信用卡(7319)" -> "7319"
         - "京东白条" -> None
         """
         if not payment_method:
             return None
 
-        # Match pattern like "(0637)" or "(1234)"
+        # Match pattern like "(3746)" or "(1234)"
         match = re.search(r"\((\d{4})\)", payment_method)
         if match:
             return match.group(1)

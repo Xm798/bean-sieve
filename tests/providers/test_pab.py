@@ -12,7 +12,7 @@ from bean_sieve.providers.banks.debit.pab import PABDebitProvider
 
 
 def create_pab_xlsx(
-    tmp_path: Path, transactions: list[dict], card_suffix: str = "6666"
+    tmp_path: Path, transactions: list[dict], card_suffix: str = "1029"
 ) -> Path:
     """Create a PAB debit card Excel file.
 
@@ -184,7 +184,7 @@ class TestPABDebitProvider:
         assert txn1.time == time(9, 15, 30)
         assert txn1.amount == Decimal("45.50")
         assert txn1.currency == "CNY"
-        assert txn1.card_last4 == "6666"
+        assert txn1.card_last4 == "1029"
         assert "McDonald's" in txn1.description or "McDonald's" in (txn1.payee or "")
         assert txn1.provider == "pab_debit"
         assert txn1.is_expense
@@ -213,7 +213,7 @@ class TestPABDebitProvider:
         transactions = provider.parse(pab_xlsx_file)
 
         for txn in transactions:
-            assert txn.card_last4 == "6666"
+            assert txn.card_last4 == "1029"
 
     def test_order_id_extraction(self, pab_xlsx_file):
         """Test that order_id is properly extracted."""

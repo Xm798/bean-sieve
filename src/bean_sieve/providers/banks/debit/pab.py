@@ -71,7 +71,7 @@ class PABDebitProvider(BaseProvider):
         """Extract card suffix from the first row account info."""
         first_row = sheet.cell(1, 1).value
         if first_row:
-            # Match pattern like "6230****6666"
+            # Match pattern like "6230****1029"
             match = re.search(r"\d{4}\*+(\d{4})", first_row)
             if match:
                 return match.group(1)

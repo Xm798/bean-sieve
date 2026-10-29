@@ -117,7 +117,7 @@ class ProviderConfig(BaseModel):
 
     # Pattern -> account mapping for this provider
     # - Payment platforms: pattern matches metadata['method'] (e.g., "余额" -> Assets:Wallet:Alipay:Balance)
-    # - Bank cards: pattern matches card_last4 (e.g., "6666" -> Assets:Bank:PAB:6666)
+    # - Bank cards: pattern matches card_last4 (e.g., "1029" -> Assets:Bank:PAB:1029)
     # These accounts also define the coverage scope for Extra calculation during reconciliation
     accounts: dict[str, str] = Field(default_factory=dict)
     # Additional entry-level metadata fields to output (appended to global output_metadata)

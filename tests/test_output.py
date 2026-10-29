@@ -37,7 +37,7 @@ def test_non_shared_account_omits_card_last4_posting_meta():
         description="拿铁",
         payee="瑞幸咖啡",
         card_last4="1234",
-        account="Assets:Bank:CCB:1386",
+        account="Assets:Bank:CCB:9753",
         contra_account="Expenses:Food:Coffee",
         provider="alipay",
     )
@@ -254,7 +254,7 @@ def test_non_shared_account_keeps_txn_level_card_last4():
         description="拿铁",
         payee="瑞幸咖啡",
         card_last4="1234",
-        account="Assets:Bank:CCB:1386",
+        account="Assets:Bank:CCB:9753",
         contra_account="Expenses:Food:Coffee",
         provider="alipay",
     )

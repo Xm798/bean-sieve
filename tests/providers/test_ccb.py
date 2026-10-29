@@ -52,7 +52,7 @@ def ccb_html_content():
     <tr>
         <td>2025-11-25</td>
         <td>2025-11-25</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>支付宝-测试商户</td>
         <td>CNY</td>
         <td>3,874.90</td>
@@ -62,7 +62,7 @@ def ccb_html_content():
     <tr>
         <td>2025-11-27</td>
         <td>2025-11-27</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>积分兑换年费</td>
         <td>CNY</td>
         <td>-1,800.00</td>
@@ -72,7 +72,7 @@ def ccb_html_content():
     <tr>
         <td>2025-12-04</td>
         <td>2025-12-05</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>银联入账 还款</td>
         <td>CNY</td>
         <td>-12,252.90</td>
@@ -82,7 +82,7 @@ def ccb_html_content():
     <tr>
         <td>2025-12-09</td>
         <td>2025-12-09</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>财付通-餐饮消费</td>
         <td>CNY</td>
         <td>99.00</td>
@@ -139,7 +139,7 @@ class TestCCBCreditProvider:
         assert txn1.post_date == date(2025, 11, 25)
         assert txn1.amount == Decimal("3874.90")
         assert txn1.currency == "CNY"
-        assert txn1.card_last4 == "0800"
+        assert txn1.card_last4 == "4680"
         assert "支付宝" in txn1.description
         assert txn1.provider == "ccb_credit"
         assert txn1.is_expense
@@ -208,7 +208,7 @@ class TestCCBAmountParsing:
     <tr>
         <td>2025-11-25</td>
         <td>2025-11-25</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>大额消费</td>
         <td>CNY</td>
         <td>12,345.67</td>
@@ -236,7 +236,7 @@ class TestCCBAmountParsing:
     <tr>
         <td>2025-12-26</td>
         <td>2025-12-26</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>消费测试</td>
         <td>CNY</td>
         <td>100.00</td>
@@ -246,7 +246,7 @@ class TestCCBAmountParsing:
     <tr>
         <td>2026-01-06</td>
         <td>2026-01-07</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>还款测试</td>
         <td>CNY</td>
         <td>-500.00</td>
@@ -284,7 +284,7 @@ class TestCCBCrossYearDates:
     <tr>
         <td>2025-12-31</td>
         <td>2025-12-31</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>跨年消费</td>
         <td>CNY</td>
         <td>888.00</td>
@@ -294,7 +294,7 @@ class TestCCBCrossYearDates:
     <tr>
         <td>2026-01-01</td>
         <td>2026-01-01</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>新年消费</td>
         <td>CNY</td>
         <td>666.00</td>
@@ -330,7 +330,7 @@ class TestCCBStatementPeriod:
     <tr>
         <td>2030-02-27</td>
         <td>2030-03-02</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>merchant-a</td>
         <td>CNY</td>
         <td>10.00</td>
@@ -340,7 +340,7 @@ class TestCCBStatementPeriod:
     <tr>
         <td>2030-03-10</td>
         <td>2030-03-10</td>
-        <td>0800</td>
+        <td>4680</td>
         <td>merchant-b</td>
         <td>CNY</td>
         <td>20.00</td>

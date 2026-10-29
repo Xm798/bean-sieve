@@ -593,8 +593,8 @@ def test_card_last4_extracted_from_method_with_suffix():
     from bean_sieve.providers.payment.wechat import WechatProvider
 
     provider = WechatProvider()
-    assert provider._extract_card_last4("招商银行信用卡(5531)") == "5531"
-    assert provider._extract_card_last4("建设银行信用卡(0800)") == "0800"
+    assert provider._extract_card_last4("招商银行信用卡(2046)") == "2046"
+    assert provider._extract_card_last4("建设银行信用卡(4680)") == "4680"
 
 
 def test_card_last4_none_for_wallet_methods():

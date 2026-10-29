@@ -16,7 +16,7 @@ BOM = "\ufeff"
 def create_icbc_csv(
     tmp_path: Path,
     rows: list[dict],
-    card_suffix: str = "9999",
+    card_suffix: str = "2468",
     filename: str = "hisdetail_test.csv",
 ) -> Path:
     """Create a sample ICBC debit card CSV file.
@@ -90,7 +90,7 @@ def icbc_csv_file(tmp_path: Path) -> Path:
             "detail": "转账",
             "income": "60,000.00",
             "counterparty": "用户B",
-            "counter_account": "6229****3114",
+            "counter_account": "6229****8642",
         },
         {
             "date": "2026-02-25",
@@ -186,7 +186,7 @@ class TestICBCDebitProvider:
         transactions = provider.parse(icbc_csv_file)
 
         for txn in transactions:
-            assert txn.card_last4 == "9999"
+            assert txn.card_last4 == "2468"
 
     def test_source_info(self, icbc_csv_file: Path) -> None:
         """Test source file and line tracking."""

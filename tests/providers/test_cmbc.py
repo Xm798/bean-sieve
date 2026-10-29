@@ -75,21 +75,21 @@ def cmbc_html_content():
             "post_date": "11/21",
             "description": "银联入账还款",
             "amount": "-1,182.17",
-            "card_last4": "5515",
+            "card_last4": "3579",
         },
         {
             "trans_date": "12/04",
             "post_date": "12/04",
             "description": "支付宝-沃尔玛",
             "amount": "60.90",
-            "card_last4": "5515",
+            "card_last4": "3579",
         },
         {
             "trans_date": "12/04",
             "post_date": "12/04",
             "description": "支付宝退款",
             "amount": "-60.90",
-            "card_last4": "5515",
+            "card_last4": "3579",
         },
     ]
     return create_cmbc_html_with_transactions(transactions)
@@ -134,7 +134,7 @@ class TestCMBCCreditProvider:
         assert txn1.date == date(2025, 11, 21)
         assert txn1.amount == Decimal("-1182.17")
         assert txn1.currency == "CNY"
-        assert txn1.card_last4 == "5515"
+        assert txn1.card_last4 == "3579"
         assert "还款" in txn1.description
         assert txn1.provider == "cmbc_credit"
         assert txn1.is_income
@@ -173,7 +173,7 @@ class TestCMBCDateParsing:
                 "post_date": "01/02",
                 "description": "新年消费",
                 "amount": "100.00",
-                "card_last4": "5515",
+                "card_last4": "3579",
             },
         ]
         html = create_cmbc_html_with_transactions(transactions)
@@ -195,7 +195,7 @@ class TestCMBCDateParsing:
                 "post_date": "11/29",
                 "description": "消费",
                 "amount": "100.00",
-                "card_last4": "5515",
+                "card_last4": "3579",
             },
         ]
         html = create_cmbc_html_with_transactions(transactions)
@@ -220,7 +220,7 @@ class TestCMBCAmountParsing:
                 "post_date": "12/11",
                 "description": "大额消费",
                 "amount": "12,345.67",
-                "card_last4": "5515",
+                "card_last4": "3579",
             },
         ]
         html = create_cmbc_html_with_transactions(transactions)
@@ -241,7 +241,7 @@ class TestCMBCAmountParsing:
                 "post_date": "12/11",
                 "description": "退款",
                 "amount": "-999.99",
-                "card_last4": "5515",
+                "card_last4": "3579",
             },
         ]
         html = create_cmbc_html_with_transactions(transactions)
@@ -307,7 +307,7 @@ class TestCMBCStatementPeriod:
                 "post_date": "03/02",
                 "description": "merchant-a",
                 "amount": "10.00",
-                "card_last4": "5515",
+                "card_last4": "3579",
             },
             {
                 "trans_date": "03/10",
@@ -326,7 +326,7 @@ class TestCMBCStatementPeriod:
         txns = CMBCCreditProvider().parse(file_path)
 
         periods = {txn.card_last4: txn.statement_period for txn in txns}
-        assert periods["5515"] == (date(2030, 2, 27), date(2030, 3, 28))
+        assert periods["3579"] == (date(2030, 2, 27), date(2030, 3, 28))
         assert periods["6626"] == (date(2030, 3, 1), date(2030, 3, 28))
 
 

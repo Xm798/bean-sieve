@@ -308,7 +308,7 @@ class BaseProvider(ABC):
             config: Bean-Sieve configuration
 
         Returns:
-            List of account names (e.g., ["Assets:Bank:PAB:6666"])
+            List of account names (e.g., ["Assets:Bank:PAB:1029"])
         """
         # Sieve leaves a covered account without a range unfiltered by date, so
         # the two answers have to agree on which accounts are covered.

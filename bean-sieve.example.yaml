@@ -74,7 +74,7 @@ account_mappings:
 # Provider 特定配置
 # accounts 用于：
 # - 支付平台：匹配 metadata['method']，如 "余额" -> Assets:Wallet:Alipay:Balance
-# - 银行卡：匹配 card_last4，如 "6666" -> Assets:Bank:PAB:6666
+# - 银行卡：匹配 card_last4，如 "1029" -> Assets:Bank:PAB:1029
 # 这些账户也定义了对账时 Extra 的计算范围
 providers:
   alipay:
@@ -122,7 +122,7 @@ providers:
 
   cmb_credit:
     accounts:
-      "6666": Liabilities:CreditCard:CMB
+      "3141": Liabilities:CreditCard:CMB
 
   abc_credit:
     accounts:
@@ -179,7 +179,7 @@ providers:
 
   cmb_debit:
     accounts:
-      "5555": Assets:Bank:CMB:5555
+      "4321": Assets:Bank:CMB:4321
 
   cib_debit:
     accounts:
@@ -187,7 +187,7 @@ providers:
 
   pab_debit:
     accounts:
-      "6666": Assets:Bank:PAB:6666
+      "1029": Assets:Bank:PAB:1029
     # 对账后生成 balance 指令（日期为账单最后一天的次日）
     balance: true
 

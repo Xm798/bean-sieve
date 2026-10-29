@@ -29,7 +29,7 @@ def cib_html_content():
 <body>
 <table>
     <tr><td>卡片名称：<span id="card_name">测试白金卡</span></td></tr>
-    <tr><td>卡号末四位：<span id="cardno_last4">1983</span></td></tr>
+    <tr><td>卡号末四位：<span id="cardno_last4">7531</span></td></tr>
     <tr><td>账单月份：<span id="period">2026年01月</span></td></tr>
 </table>
 <table id="detail_table_156" width="100%">
@@ -41,7 +41,7 @@ def cib_html_content():
             <td>交易地金额<br>Trans Amount</td>
             <td>记账币金额<br>Amount(RMB)</td>
         </tr>
-        <td colspan="20" name="masterMsg">**** 本卡明细(卡号末四位 1983) ****</td>
+        <td colspan="20" name="masterMsg">**** 本卡明细(卡号末四位 7531) ****</td>
         <tr id="detail_tr_156">
             <td>&nbsp;<span id="detail_tdate_156">2025-12-18</span></td>
             <td><span id="detail_adate_156">2025-12-18</span></td>
@@ -117,7 +117,7 @@ class TestCIBCreditProvider:
         assert expense1.date == date(2025, 12, 18)
         assert expense1.amount == Decimal("15.84")
         assert expense1.currency == "CNY"
-        assert expense1.card_last4 == "1983"
+        assert expense1.card_last4 == "7531"
         assert "支付宝" in expense1.description
         assert expense1.provider == "cib_credit"
         assert expense1.is_expense
@@ -148,7 +148,7 @@ class TestCIBCreditProvider:
         transactions = provider.parse(cib_eml_file)
 
         for txn in transactions:
-            assert txn.card_last4 == "1983"
+            assert txn.card_last4 == "7531"
 
     def test_post_date_extraction(self, cib_eml_file):
         """Test that post_date is properly extracted."""

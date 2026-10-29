@@ -530,7 +530,7 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
     """
     Extract payment methods and generate account mappings interactively.
 
-    Parses statement files, extracts unique payment methods (e.g., "建设银行信用卡(0800)"),
+    Parses statement files, extracts unique payment methods (e.g., "建设银行信用卡(4680)"),
     and lets you select corresponding accounts using fzf fuzzy search.
     """
     try:

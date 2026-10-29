@@ -15,7 +15,7 @@ BOM = "\ufeff"
 def create_cmb_debit_csv(
     tmp_path: Path,
     rows: list[dict],
-    card_suffix: str = "5555",
+    card_suffix: str = "4321",
     filename: str = "CMB_test.csv",
 ) -> Path:
     """Create a sample CMB debit card CSV file.
@@ -163,7 +163,7 @@ class TestCMBDebitProvider:
         transactions = provider.parse(cmb_debit_csv)
 
         for txn in transactions:
-            assert txn.card_last4 == "5555"
+            assert txn.card_last4 == "4321"
 
     def test_source_info(self, cmb_debit_csv: Path) -> None:
         """Test source file and line tracking."""
