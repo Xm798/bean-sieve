@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Sequence
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -48,20 +47,22 @@ class CCBDebitProvider(BaseProvider):
     filename_pattern = re.compile(r"交易明细_\d{4}_\d{8}_\d{8}")
     per_card_statement = True  # CCB exports one statement per card
 
-    # Field -> header texts naming it, across both layouts.
-    COLUMN_HEADERS: dict[str, tuple[str, ...]] = {
-        "date": ("交易日期",),
-        "time": ("交易时间",),
-        "expense": ("支出",),
-        "income": ("收入",),
-        "signed_amount": ("交易金额",),
-        "balance": ("账户余额",),
-        "summary": ("摘要",),
-        "counterparty_account": ("对方账号",),
-        "counterparty_name": ("对方户名",),
-        "counterparty": ("对方账号与户名",),
-        "location": ("交易地点", "交易地点/附言"),
+    # Header text -> field, across both layouts.
+    COLUMN_FIELDS: dict[str, str] = {
+        "交易日期": "date",
+        "交易时间": "time",
+        "支出": "expense",
+        "收入": "income",
+        "交易金额": "signed_amount",
+        "账户余额": "balance",
+        "摘要": "summary",
+        "对方账号": "counterparty_account",
+        "对方户名": "counterparty_name",
+        "对方账号与户名": "counterparty",
+        "交易地点": "location",
+        "交易地点/附言": "location",
     }
+    AMOUNT_FIELDS = frozenset({"signed_amount", "expense", "income"})
 
     HEADER_KEYWORD = "交易日期"
     # The two layouts title the sheet in English and in Chinese respectively.
@@ -80,16 +81,8 @@ class CCBDebitProvider(BaseProvider):
         sheet = wb.sheet_by_index(0)
 
         card_last4 = self._extract_card_last4(sheet, file_path)
-        header_row = self._find_header_row(sheet, file_path)
-        columns = self._map_columns(sheet.row_values(header_row))
-        if "date" not in columns or not columns.keys() & {
-            "signed_amount",
-            "expense",
-            "income",
-        }:
-            raise ValueError(
-                f"Unrecognised column layout in {file_path}: {sheet.row_values(header_row)}"
-            )
+        header_row, header = self._find_header_row(sheet, file_path)
+        columns = self._map_columns(header, file_path)
 
         transactions = []
         for row_idx in range(header_row + 1, sheet.nrows):
@@ -98,10 +91,10 @@ class CCBDebitProvider(BaseProvider):
             if self._is_footer(row):
                 break
 
-            cells = {
-                field: normalize_cell_str(row[col]) if col < len(row) else ""
-                for field, col in columns.items()
-            }
+            cells = dict.fromkeys(self.COLUMN_FIELDS.values(), "")
+            cells.update(
+                (field, normalize_cell_str(row[col])) for field, col in columns.items()
+            )
             txn = self._parse_row(cells, row_idx + 1, card_last4, file_path)
             if txn:
                 transactions.append(txn)
@@ -116,21 +109,21 @@ class CCBDebitProvider(BaseProvider):
             for title in cls.TITLE_MARKERS
         )
 
-    def _find_header_row(self, sheet, file_path: Path) -> int:
+    def _find_header_row(self, sheet, file_path: Path) -> tuple[int, list[str]]:
         for row_idx in range(min(10, sheet.nrows)):
             cells = [str(v).strip() for v in sheet.row_values(row_idx)]
             if self.HEADER_KEYWORD in cells:
-                return row_idx
+                return row_idx, cells
         raise ValueError(f"No column header row found in {file_path}")
 
-    def _map_columns(self, header: Sequence[object]) -> dict[str, int]:
-        cells = [str(v).strip() for v in header]
+    def _map_columns(self, header: list[str], file_path: Path) -> dict[str, int]:
         columns: dict[str, int] = {}
-        for field, names in self.COLUMN_HEADERS.items():
-            for col, cell in enumerate(cells):
-                if cell in names:
-                    columns[field] = col
-                    break
+        for col, cell in enumerate(header):
+            field = self.COLUMN_FIELDS.get(cell)
+            if field and field not in columns:
+                columns[field] = col
+        if "date" not in columns or not self.AMOUNT_FIELDS & columns.keys():
+            raise ValueError(f"Unrecognised column layout in {file_path}: {header}")
         return columns
 
     def _extract_card_last4(self, sheet, file_path: Path) -> str | None:
@@ -163,25 +156,25 @@ class CCBDebitProvider(BaseProvider):
         file_path: Path,
     ) -> Transaction | None:
         """Parse a single data row, given its cells keyed by field."""
-        match = self.DATE_PATTERN.match(cells.get("date", ""))
+        match = self.DATE_PATTERN.match(cells["date"])
         if not match:
             return None
 
         tx_date = date(int(match[1]), int(match[2]), int(match[3]))
 
-        tx_time = self._parse_time(cells.get("time", ""))
+        tx_time = self._parse_time(cells["time"])
 
         amount = self._parse_amount(cells)
         if amount is None:
             return None
 
-        summary = cells.get("summary", "")
-        location = cells.get("location", "")
+        summary = cells["summary"]
+        location = cells["location"]
         counterparty_account, counterparty = self._counterparty(cells)
         description = join_description(summary, location)
 
         metadata: dict[str, str] = {"summary": summary}
-        balance = cells.get("balance", "")
+        balance = cells["balance"]
         if balance and balance != "0":
             metadata["balance"] = balance
         if counterparty_account:
@@ -205,16 +198,11 @@ class CCBDebitProvider(BaseProvider):
 
     def _counterparty(self, cells: dict[str, str]) -> tuple[str, str]:
         """Return (account, name), with "0" placeholders read as empty."""
-        account = cells.get("counterparty_account", "")
-        name = cells.get("counterparty_name", "")
-        combined = cells.get("counterparty", "")
-        if combined:
+        account, name = cells["counterparty_account"], cells["counterparty_name"]
+        if combined := cells["counterparty"]:
             match = self.COMBINED_COUNTERPARTY.fullmatch(combined)
             account, name = (match[1], match[2]) if match else ("", combined)
-        return (
-            "" if account == "0" else account,
-            "" if name == "0" else name,
-        )
+        return ("" if account == "0" else account, "" if name == "0" else name)
 
     def _parse_time(self, value) -> time | None:
         """Parse time from HH:MM:SS string."""
@@ -229,12 +217,12 @@ class CCBDebitProvider(BaseProvider):
 
     def _parse_amount(self, cells: dict[str, str]) -> Decimal | None:
         """Parse amount. Expense=positive, income=negative."""
-        if "signed_amount" in cells:
+        if cells["signed_amount"]:
             signed = to_decimal(cells["signed_amount"])
             return -signed if signed is not None else None
 
-        expense = to_decimal(cells.get("expense", ""))
-        income = to_decimal(cells.get("income", ""))
+        expense = to_decimal(cells["expense"])
+        income = to_decimal(cells["income"])
 
         if expense is not None and income is not None:
             logger.warning(

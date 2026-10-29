@@ -421,13 +421,15 @@ SIGNED_HEADERS = [
 ]
 
 
-def create_ccb_signed_xls(tmp_path: Path, rows: list[list]) -> Path:
+def create_ccb_signed_xls(
+    tmp_path: Path, rows: list[list], headers: list[str] = SIGNED_HEADERS
+) -> Path:
     """Create a CCB debit XLS in the 9-column single signed-amount layout."""
     wb = xlwt.Workbook()
     ws = wb.add_sheet("Sheet1")
     ws.write(0, 0, "China Construction Bank")
     ws.write(1, 1, "卡号/账号:6222000000000004321")
-    for col, header in enumerate(SIGNED_HEADERS):
+    for col, header in enumerate(headers):
         ws.write(3, col, header)
     for i, row in enumerate(rows):
         for col, value in enumerate(row):
@@ -514,23 +516,16 @@ class TestCCBSignedAmountLayout:
         assert "counterparty_account" not in txn3.metadata
 
     def test_missing_header_row_raises(self, tmp_path):
-        wb = xlwt.Workbook()
-        ws = wb.add_sheet("Sheet1")
-        ws.write(0, 0, "China Construction Bank")
-        file_path = tmp_path / "交易明细_4321_20300101_20300131.xls"
-        wb.save(str(file_path))
+        file_path = create_ccb_signed_xls(tmp_path, [], headers=[])
         with pytest.raises(ValueError, match="header"):
             CCBDebitProvider().parse(file_path)
 
     def test_unrecognised_amount_header_raises(self, tmp_path):
-        wb = xlwt.Workbook()
-        ws = wb.add_sheet("Sheet1")
-        for col, header in enumerate(["序号", "摘要", "交易日期", "发生额"]):
-            ws.write(0, col, header)
-        ws.write(1, 2, "20300102")
-        ws.write(1, 3, "-13.57")
-        file_path = tmp_path / "交易明细_4321_20300101_20300131.xls"
-        wb.save(str(file_path))
+        file_path = create_ccb_signed_xls(
+            tmp_path,
+            [[1, "消费", "20300102", "-13.57"]],
+            headers=["序号", "摘要", "交易日期", "发生额"],
+        )
         with pytest.raises(ValueError, match="column layout"):
             CCBDebitProvider().parse(file_path)
 
