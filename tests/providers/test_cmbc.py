@@ -328,3 +328,78 @@ class TestCMBCStatementPeriod:
         periods = {txn.card_last4: txn.statement_period for txn in txns}
         assert periods["5515"] == (date(2030, 2, 27), date(2030, 3, 28))
         assert periods["6626"] == (date(2030, 3, 1), date(2030, 3, 28))
+
+
+# Section loop id -> (row, date wrapper, summary, amount, card) span ids.
+_SECTIONED_IDS = {
+    "loopBand7": ("fixBand39", "fixBand40", "fixBand65", "fixBand64", "fixBand41"),
+    "loopBand5": ("fixBand15", "fixBand16", "fixBand19", "fixBand18", "fixBand17"),
+}
+
+
+def create_sectioned_html(sections: dict[str, list[tuple[str, ...]]]) -> str:
+    """Build a sectioned statement whose non-purchase sections hold the rows.
+
+    Each row is (trans_date, post_date, summary, amount, card_last4).
+    """
+    blocks = []
+    for loop_id, rows in sections.items():
+        row_id, wrap_id, desc_id, amt_id, card_id = _SECTIONED_IDS[loop_id]
+        spans = "".join(
+            f"""<span id='{row_id}'><span id='{wrap_id}'>
+                <font>{t}</font><font>{p}</font>
+                <span id='{desc_id}'><font>{d}</font></span>
+                <span id='{amt_id}'><font>{a}</font></span>
+                <span id='{card_id}'><font>{c}</font></span>
+            </span></span>"""
+            for t, p, d, a, c in rows
+        )
+        blocks.append(f"<span id='{loop_id}'>{spans}</span>")
+    return f"""<!DOCTYPE HTML>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<div>Statement Date</div><div>2030/03/20</div>
+<span id='loopBand3'>{"".join(blocks)}</span>
+</body>
+</html>"""
+
+
+class TestCMBCSectionedTemplate:
+    """Tests for the refund and payment sections of the sectioned template."""
+
+    def _parse(self, tmp_path, sections):
+        file_path = tmp_path / "民生信用卡2030年03月电子对账单.eml"
+        file_path.write_text(
+            create_cmbc_eml(create_sectioned_html(sections)), encoding="utf-8"
+        )
+        return CMBCCreditProvider().parse(file_path)
+
+    def test_every_refund_and_payment_row_is_parsed(self, tmp_path):
+        txns = self._parse(
+            tmp_path,
+            {
+                "loopBand7": [
+                    ("03/04", "03/05", "退货-payee-a", "-37.00", "1111"),
+                    ("03/08", "03/08", "退货-payee-b", "-43.00", "2222"),
+                ],
+                "loopBand5": [
+                    ("03/10", "03/10", "还款-a", "-500.00", "1111"),
+                    ("03/12", "03/13", "还款-b", "-700.00", "1111"),
+                ],
+            },
+        )
+
+        assert [(t.description, t.amount, t.card_last4) for t in txns] == [
+            ("退货-payee-a", Decimal("-37.00"), "1111"),
+            ("退货-payee-b", Decimal("-43.00"), "2222"),
+            ("还款-a", Decimal("-500.00"), "1111"),
+            ("还款-b", Decimal("-700.00"), "1111"),
+        ]
+        assert [t.date for t in txns] == [
+            date(2030, 3, 4),
+            date(2030, 3, 8),
+            date(2030, 3, 10),
+            date(2030, 3, 12),
+        ]
+        assert [t.source_line for t in txns] == [1, 2, 3, 4]

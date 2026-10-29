@@ -68,7 +68,6 @@ diagnostics:
 
 ## 已知限制
 
-- 退货和还款区段各只解析第一行。一期里有多笔退货或多笔还款时，只有第一笔出现在输出里，其余几笔对应的账本条目会被报为 Extra。
 - 退货和还款行不读记账日，没有 `posting_date`。
 - 金额一律按人民币处理。
 - 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
@@ -81,7 +80,7 @@ diagnostics:
 bean-sieve reconcile 民生信用卡2030年03月电子对账单.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
 
-账单里有两张卡，配置把它们都指向 `Liabilities:CreditCard:CMBC`，信用卡 posting 下写了 `card_last4`。账本里已有的 3 月 3 日消费被匹配，不再输出；退货和还款区段各有一行，都被解析出来；账本里 3 月 18 日那笔在账单里找不到，被列为 Extra。
+账单里有两张卡，配置把它们都指向 `Liabilities:CreditCard:CMBC`，信用卡 posting 下写了 `card_last4`。账本里已有的 3 月 3 日消费被匹配，不再输出；退货和还款区段各有两行，全部被解析出来；账本里 3 月 18 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

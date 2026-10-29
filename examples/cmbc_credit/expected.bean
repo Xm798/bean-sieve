@@ -36,6 +36,13 @@
         card_last4: "8765"
     Income:FIXME  -120.00 CNY
 
+2030-03-14 ! "退货-store-d"
+    card_last4: "4321"
+    source: "cmbc_credit"
+    Liabilities:CreditCard:CMBC  25.00 CNY
+        card_last4: "4321"
+    Income:FIXME  -25.00 CNY
+
 2030-03-15 * "银联入账还款"
     card_last4: "4321"
     source: "cmbc_credit"
@@ -44,8 +51,16 @@
         card_last4: "4321"
     Assets:Bank:Checking  -1500.00 CNY
 
+2030-03-17 * "网银还款"
+    card_last4: "4321"
+    source: "cmbc_credit"
+    matched_rule: "还款"
+    Liabilities:CreditCard:CMBC  200.00 CNY
+        card_last4: "4321"
+    Assets:Bank:Checking  -200.00 CNY
+
 ; --- Summary ---
-; Matched: 1, Missing: 5, Extra: 1
+; Matched: 1, Missing: 7, Extra: 1
 
 ; ============================================================
 ; Extra entries in ledger (1)

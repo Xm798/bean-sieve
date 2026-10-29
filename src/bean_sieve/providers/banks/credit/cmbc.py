@@ -23,8 +23,8 @@ class CMBCCreditProvider(BaseProvider):
     - Encoding: gb18030
     - Three transaction sections inside loopBand3:
       - loopBand1: purchases (消费) in fixBand1 rows
-      - loopBand7: refunds (退货)
-      - loopBand5: payments (还款)
+      - loopBand7: refunds (退货) in fixBand39 rows
+      - loopBand5: payments (还款) in fixBand15 rows
     - Date format: MM/DD (concatenated in fixBand8 full text for purchases)
     - Columns: 交易日, 记账日, 交易摘要, 交易金额, 卡号末四位
 
@@ -63,14 +63,16 @@ class CMBCCreditProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
-        for loop_id, desc_band, amt_band, card_band, date_band in [
-            ("loopBand7", "fixBand65", "fixBand64", "fixBand41", "fixBand39"),
-            ("loopBand5", "fixBand19", "fixBand18", "fixBand17", "fixBand15"),
+        for loop_id, row_band, desc_band, amt_band, card_band in [
+            ("loopBand7", "fixBand39", "fixBand65", "fixBand64", "fixBand41"),
+            ("loopBand5", "fixBand15", "fixBand19", "fixBand18", "fixBand17"),
         ]:
-            loop_span = soup.find("span", id=loop_id)
-            if loop_span:
+            loop_span = loop_band.find("span", id=loop_id)
+            if not loop_span:
+                continue
+            for row_span in loop_span.find_all("span", id=row_band):
                 txn = self._parse_refund_payment_row(
-                    loop_span,
+                    row_span,
                     statement_year,
                     statement_month,
                     file_path,
@@ -78,7 +80,6 @@ class CMBCCreditProvider(BaseProvider):
                     desc_band=desc_band,
                     amt_band=amt_band,
                     card_band=card_band,
-                    date_band=date_band,
                 )
                 if txn:
                     transactions.append(txn)
@@ -179,15 +180,12 @@ class CMBCCreditProvider(BaseProvider):
         desc_band: str,
         amt_band: str,
         card_band: str,
-        date_band: str,
     ) -> Transaction | None:
         """Parse a refund (退货) or payment (还款) row."""
         try:
-            date_text = self._extract_text(row_span, date_band)
-            if not date_text:
-                return None
-
-            date_match = re.match(r"(\d{2}/\d{2})", date_text)
+            date_match = re.match(
+                r"(\d{2}/\d{2})", self.clean_text(row_span.get_text())
+            )
             if not date_match:
                 return None
 

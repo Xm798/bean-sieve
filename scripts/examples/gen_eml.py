@@ -413,6 +413,22 @@ def cmb_credit(out_dir: Path) -> None:
     )
 
 
+def _cmbc_section(
+    loop_id: str, band_ids: tuple[str, ...], rows: list[tuple[str, ...]]
+) -> str:
+    row_id, wrap_id, desc_id, amt_id, card_id = band_ids
+    spans = "\n".join(
+        f"""        <span id='{row_id}'><span id='{wrap_id}'>
+            <font>{t}</font><font>{p}</font>
+            <span id='{desc_id}'><font>{d}</font></span>
+            <span id='{amt_id}'><font>{a}</font></span>
+            <span id='{card_id}'><font>{c}</font></span>
+        </span></span>"""
+        for t, p, d, a, c in rows
+    )
+    return f"    <span id='{loop_id}'>\n{spans}\n    </span>"
+
+
 @generator("cmbc_credit")
 def cmbc_credit(out_dir: Path) -> None:
     purchases = [
@@ -421,8 +437,14 @@ def cmbc_credit(out_dir: Path) -> None:
         ("03/09", "03/10", "store-c", "120.00", "8765"),
         ("03/11", "03/11", "分期手续费", "6.00", "4321"),
     ]
-    refund = ("03/13", "退货-store-c", "-120.00", "8765")
-    payment = ("03/15", "银联入账还款", "-1,500.00", "4321")
+    refunds = [
+        ("03/13", "03/13", "退货-store-c", "-120.00", "8765"),
+        ("03/14", "03/16", "退货-store-d", "-25.00", "4321"),
+    ]
+    payments = [
+        ("03/15", "03/15", "银联入账还款", "-1,500.00", "4321"),
+        ("03/17", "03/17", "网银还款", "-200.00", "4321"),
+    ]
     purchase_spans = "\n".join(
         f"""        <span id='fixBand1'>
             <span id='fixBand8'>{t}{p}{d}{a}{c}</span>
@@ -431,6 +453,16 @@ def cmbc_credit(out_dir: Path) -> None:
             <span id='fixBand9'>{c}</span>
         </span>"""
         for t, p, d, a, c in purchases
+    )
+    refund_section = _cmbc_section(
+        "loopBand7",
+        ("fixBand39", "fixBand40", "fixBand65", "fixBand64", "fixBand41"),
+        refunds,
+    )
+    payment_section = _cmbc_section(
+        "loopBand5",
+        ("fixBand15", "fixBand16", "fixBand19", "fixBand18", "fixBand17"),
+        payments,
     )
     html = f"""<!DOCTYPE HTML>
 <html>
@@ -442,18 +474,8 @@ def cmbc_credit(out_dir: Path) -> None:
     <span id='loopBand1'>
 {purchase_spans}
     </span>
-    <span id='loopBand7'>
-        <span id='fixBand39'>{refund[0]}</span>
-        <span id='fixBand65'>{refund[1]}</span>
-        <span id='fixBand64'>{refund[2]}</span>
-        <span id='fixBand41'>{refund[3]}</span>
-    </span>
-    <span id='loopBand5'>
-        <span id='fixBand15'>{payment[0]}</span>
-        <span id='fixBand19'>{payment[1]}</span>
-        <span id='fixBand18'>{payment[2]}</span>
-        <span id='fixBand17'>{payment[3]}</span>
-    </span>
+{refund_section}
+{payment_section}
 </span>
 </body>
 </html>"""
