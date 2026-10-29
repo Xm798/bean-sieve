@@ -17,6 +17,7 @@ from ..._tabular import (
     join_description,
     masked_card_last4,
     normalize_cell_str,
+    sheet_head_contains,
     to_decimal,
 )
 from ...base import BaseProvider
@@ -45,7 +46,6 @@ class CCBDebitProvider(BaseProvider):
     provider_name = "建设银行借记卡"
     supported_formats = [".xls"]
     filename_pattern = re.compile(r"交易明细_\d{4}_\d{8}_\d{8}")
-    content_keywords = []  # Binary XLS (BIFF8), content detection not possible
     per_card_statement = True  # CCB exports one statement per card
 
     # Field -> header texts naming it, across both layouts.
@@ -64,6 +64,8 @@ class CCBDebitProvider(BaseProvider):
     }
 
     HEADER_KEYWORD = "交易日期"
+    # The two layouts title the sheet in English and in Chinese respectively.
+    TITLE_MARKERS = ("China Construction Bank", "中国建设银行个人活期账户")
     FOOTER_MARKER = "以上数据仅供参考"
     DATE_PATTERN = re.compile(r"(\d{4})[-/]?(\d{2})[-/]?(\d{2})(?:\s|$)")
     # The single-amount layout prints the account in full: "卡号/账号:<digits>".
@@ -106,6 +108,13 @@ class CCBDebitProvider(BaseProvider):
 
         self.assign_statement_periods(transactions)
         return transactions
+
+    @classmethod
+    def _match_content(cls, file_path: Path) -> bool:
+        return any(
+            sheet_head_contains(file_path, (title, cls.HEADER_KEYWORD), nrows=10)
+            for title in cls.TITLE_MARKERS
+        )
 
     def _find_header_row(self, sheet, file_path: Path) -> int:
         for row_idx in range(min(10, sheet.nrows)):
