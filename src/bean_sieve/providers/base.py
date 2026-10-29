@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 
 from ..config import Config
 from ..core.types import ReconcileContext, ReconcileResult, Transaction
+from ._tabular import with_bom_encoding
 
 if TYPE_CHECKING:
     from ..core.preset_rules import PresetRule
@@ -124,8 +125,8 @@ class BaseProvider(ABC):
     @classmethod
     def _read_file_header(cls, file_path: Path, size: int = 500) -> str:
         """Read file header with encoding detection."""
-        # Try common encodings
-        for encoding in ["utf-8", "gbk", "gb2312", "utf-16"]:
+        encodings = ("utf-8", "gbk", "gb2312", "utf-16")
+        for encoding in with_bom_encoding(file_path, encodings):
             try:
                 with open(file_path, encoding=encoding) as f:
                     return f.read(size)

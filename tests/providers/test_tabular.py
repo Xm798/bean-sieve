@@ -163,6 +163,12 @@ class TestReadCsvRows:
 
         assert read_csv_rows(path) == [["a", "b"]]
 
+    def test_utf16_bom_selects_utf16(self, tmp_path: Path) -> None:
+        path = tmp_path / "utf16.csv"
+        path.write_bytes("\ufeff日期,金额\r\n".encode("utf-16-le"))
+
+        assert read_csv_rows(path) == [["日期", "金额"]]
+
     def test_raw_cells_are_kept_when_asked(self, tmp_path: Path) -> None:
         path = tmp_path / "padded.csv"
         path.write_text("a ,\tb\n", encoding="utf-8")

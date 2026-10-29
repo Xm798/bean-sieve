@@ -55,32 +55,25 @@ def normalize_cell_str(value: object) -> str:
 CJK_ENCODINGS: tuple[str, ...] = ("utf-8-sig", "utf-8", "gbk")
 
 
-_BOM_ENCODINGS: tuple[tuple[bytes, str], ...] = (
-    (codecs.BOM_UTF8, "utf-8-sig"),
-    (codecs.BOM_UTF16_LE, "utf-16"),
-    (codecs.BOM_UTF16_BE, "utf-16"),
-)
+def with_bom_encoding(path: Path, encodings: Sequence[str]) -> tuple[str, ...]:
+    """Prepend the encoding a byte-order mark names to ``encodings``.
 
-
-def _bom_encoding(path: Path) -> str | None:
+    A BOM names the encoding outright; some banks export UTF-16, which no CJK
+    fallback decodes, and a CJK codec can misread UTF-16 bytes without error.
+    """
     with open(path, "rb") as f:
-        head = f.read(3)
-    for bom, encoding in _BOM_ENCODINGS:
-        if head.startswith(bom):
-            return encoding
-    return None
+        head = f.read(len(codecs.BOM_UTF8))
+    if head.startswith(codecs.BOM_UTF8):
+        return ("utf-8-sig", *encodings)
+    # The utf-16 codec reads the byte order from the BOM and strips it.
+    if head.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return ("utf-16", *encodings)
+    return tuple(encodings)
 
 
 def read_text_lines(path: Path, encodings: Sequence[str] = CJK_ENCODINGS) -> list[str]:
-    """Read a text statement, trying each encoding in turn.
-
-    A byte-order mark names the encoding outright, so it is tried before
-    ``encodings``; some banks export UTF-16, which no CJK fallback can decode.
-    """
-    bom_encoding = _bom_encoding(path)
-    if bom_encoding:
-        encodings = (bom_encoding, *encodings)
-    for encoding in encodings:
+    """Read a text statement, trying a BOM's encoding and then each of ``encodings``."""
+    for encoding in with_bom_encoding(path, encodings):
         try:
             with open(path, encoding=encoding) as f:
                 return f.readlines()
@@ -113,7 +106,7 @@ def read_csv_rows(
     ``strip_cells`` also trims each cell, which banks that pad exports with tabs
     need before the header row can be matched.
     """
-    for encoding in encodings:
+    for encoding in with_bom_encoding(path, encodings):
         try:
             with open(path, encoding=encoding, newline="") as f:
                 return [
