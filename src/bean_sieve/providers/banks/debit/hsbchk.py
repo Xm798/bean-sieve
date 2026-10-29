@@ -39,6 +39,7 @@ class HSBCHKDebitProvider(BaseProvider):
     provider_id = "hsbchk_debit"
     provider_name = "汇丰香港储蓄账户"
     supported_formats = [".csv"]
+    statement_names_account = False
     # Distinguishes from hsbchk_credit by the presence of the Balance column.
     content_keywords = ["Date,Description,Billing amount,Billing currency,Balance"]
 

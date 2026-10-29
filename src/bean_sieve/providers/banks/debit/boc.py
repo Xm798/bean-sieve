@@ -8,7 +8,7 @@ from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
 
-from ....core.types import ReconcileContext, Transaction
+from ....core.types import Transaction
 from ... import register_provider
 from ..._tabular import find_header_line, join_description, read_text_lines, to_decimal
 from ...base import BaseProvider
@@ -40,6 +40,7 @@ class BOCDebitProvider(BaseProvider):
     filename_keywords = ["中国银行"]
     content_keywords = ["业务摘要"]
     per_card_statement = True  # BOC exports one statement per card
+    statement_names_account = False
 
     COLUMN_NAMES: dict[str, tuple[str, ...]] = {
         "tx_time": ("交易时间", "交易日期"),
@@ -69,27 +70,6 @@ class BOCDebitProvider(BaseProvider):
         "新西兰元": "NZD",
         "新加坡元": "SGD",
     }
-
-    def pre_reconcile(
-        self,
-        transactions: list[Transaction],
-        context: ReconcileContext,
-    ) -> list[Transaction]:
-        """Set card_last4 from config (CSV has no card number field)."""
-        if not context.config:
-            return transactions
-        provider_config = context.config.get_provider_config(self.provider_id)
-        accounts = provider_config.accounts
-        if len(accounts) == 1:
-            card_key = next(iter(accounts))
-            return [t.model_copy(update={"card_last4": card_key}) for t in transactions]
-        if len(accounts) > 1:
-            logger.warning(
-                "boc_debit has %d accounts configured but CSV has no card number. "
-                "Please use a single account entry or set card_last4 via rules.",
-                len(accounts),
-            )
-        return transactions
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse BOC debit card CSV statement."""

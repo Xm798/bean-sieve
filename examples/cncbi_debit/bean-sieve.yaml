@@ -12,6 +12,7 @@ providers:
   cncbi_debit:
     accounts:
       "default": Assets:Bank:CNCBI:HKD
+    balance: true
 
 rules:
   - payee: "employer-a"

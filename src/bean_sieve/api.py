@@ -7,7 +7,7 @@ This module provides the public API for CLI and GUI frontends.
 import logging
 from collections import defaultdict
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -324,6 +324,9 @@ def full_reconcile(
     # Pre-reconcile hook: call for each provider's transactions
     transactions = _apply_pre_reconcile_hooks(transactions, context, pset)
 
+    sole_accounts = _sole_accounts(transactions, pset, config)
+    transactions = _carry_sole_card_key(transactions, config, sole_accounts)
+
     # Apply provider output metadata config (posting_metadata, output_metadata)
     transactions = _apply_provider_output_config(transactions, config)
 
@@ -335,12 +338,14 @@ def full_reconcile(
 
     # Deduplicate cross-statement transactions (e.g., same payment in both
     # Alipay and bank card statements)
-    transactions = _deduplicate_cross_statements(transactions, config)
+    transactions = _deduplicate_cross_statements(transactions, config, sole_accounts)
 
     # Set target account for transactions based on provider config and preset rules
     # Preset rules with account_keyword have highest priority
     # This constrains matching to only consider the correct ledger account
-    transactions = _set_target_accounts(transactions, config, preset_rules)
+    transactions = _set_target_accounts(
+        transactions, config, preset_rules, sole_accounts
+    )
 
     # Collect covered accounts and ranges from providers
     covered_groups = _collect_covered_groups(transactions, pset, config)
@@ -507,17 +512,76 @@ def _apply_negate_rules(
     return result
 
 
+def _sole_accounts(
+    transactions: list[Transaction],
+    pset: ProviderSet,
+    config: Config,
+) -> dict[str, str]:
+    """Map each provider whose statements name no account to its only account."""
+    result: dict[str, str] = {}
+    for provider, batch in pset.group(transactions):
+        if provider.statement_names_account:
+            continue
+        if account := provider.sole_account(config):
+            result[provider.provider_id] = account
+            continue
+        configured = len(config.get_provider_config(provider.provider_id).accounts)
+        unkeyed = sum(1 for txn in batch if not txn.card_last4)
+        if unkeyed and configured > 1:
+            logger.warning(
+                "%d %s rows name no account and %d accounts are configured; "
+                "configure a single account to assign them.",
+                unkeyed,
+                provider.provider_id,
+                configured,
+            )
+    return result
+
+
+def _carry_sole_card_key(
+    transactions: list[Transaction],
+    config: Config,
+    sole_accounts: dict[str, str],
+) -> list[Transaction]:
+    """
+    Give unkeyed rows the sole account's key as card_last4 when it is a suffix.
+
+    A four-digit key names the card, so rules, the card check in Sieve and the
+    output see the rows as if the statement printed it. Any other key, such as
+    "default", is only a label and stays out of them.
+    """
+    result: list[Transaction] = []
+    for txn in transactions:
+        if not txn.card_last4 and txn.provider in sole_accounts:
+            key = next(iter(config.get_provider_config(txn.provider).accounts))
+            if len(key) == 4 and key.isdigit():
+                txn = txn.model_copy(update={"card_last4": key})
+        result.append(txn)
+    return result
+
+
+def _provider_account(
+    txn: Transaction, config: Config, sole_accounts: dict[str, str]
+) -> str | None:
+    """Return the account the row's own statement places it on, if any."""
+    if txn.card_last4:
+        return config.get_provider_config(txn.provider).accounts.get(txn.card_last4)
+    return sole_accounts.get(txn.provider)
+
+
 def _set_target_accounts(
     transactions: list[Transaction],
     config: Config,
     preset_rules: list[PresetRule] | None = None,
+    sole_accounts: dict[str, str] | None = None,
 ) -> list[Transaction]:
     """
     Set target account for transactions based on provider config and preset rules.
 
     Priority order:
     1. Preset rules with account_keyword (highest priority)
-    2. card_last4 lookup in provider.accounts
+    2. card_last4 lookup in provider.accounts, or the provider's sole account
+       for a row from a statement that names none (see _sole_accounts)
     3. method lookup in provider.accounts
 
     For bank card providers: use card_last4 to look up in providers.xxx.accounts
@@ -525,6 +589,7 @@ def _set_target_accounts(
     This constrains matching to only consider the correct ledger account.
     """
     preset_rules = preset_rules or []
+    sole_accounts = sole_accounts or {}
     result = []
 
     for txn in transactions:
@@ -560,10 +625,8 @@ def _set_target_accounts(
         provider_config = config.get_provider_config(txn.provider)
 
         # Try card_last4 first (for bank card providers)
-        if txn.card_last4 and txn.card_last4 in provider_config.accounts:
-            txn = txn.model_copy(
-                update={"account": provider_config.accounts[txn.card_last4]}
-            )
+        if account := _provider_account(txn, config, sole_accounts):
+            txn = txn.model_copy(update={"account": account})
         # Try method (for payment platform providers like Alipay/WeChat)
         elif (
             method := txn.metadata.get("method")
@@ -587,6 +650,7 @@ def _set_target_accounts(
 def _deduplicate_cross_statements(
     transactions: list[Transaction],
     config: Config,
+    sole_accounts: dict[str, str] | None = None,
 ) -> list[Transaction]:
     """
     Deduplicate transactions that appear in multiple statements.
@@ -606,15 +670,16 @@ def _deduplicate_cross_statements(
     """
     if len(transactions) <= 1:
         return transactions
+    sole_accounts = sole_accounts or {}
 
     # Separate direct and indirect records
     direct_records: list[Transaction] = []
     indirect_records: list[Transaction] = []
 
     for txn in transactions:
-        priority = _get_dedup_priority(txn, config)
+        priority = _get_dedup_priority(txn, config, sole_accounts)
         if priority >= 100:
-            # Direct record: card_last4 matches provider's accounts
+            # Direct record: its own statement places it on an account
             direct_records.append(txn)
         elif priority <= 10:
             # Indirect record: payment platform using external method
@@ -624,7 +689,7 @@ def _deduplicate_cross_statements(
             direct_records.append(txn)
 
     accounts = {
-        id(t): _resolve_target_account(t, config)
+        id(t): _resolve_target_account(t, config, sole_accounts)
         for t in (*direct_records, *indirect_records)
     }
     used_direct: set[int] = set()
@@ -679,7 +744,9 @@ def _deduplicate_cross_statements(
     return result
 
 
-def _resolve_target_account(txn: Transaction, config: Config) -> str | None:
+def _resolve_target_account(
+    txn: Transaction, config: Config, sole_accounts: dict[str, str]
+) -> str | None:
     """
     Resolve the target account for a transaction.
 
@@ -687,9 +754,8 @@ def _resolve_target_account(txn: Transaction, config: Config) -> str | None:
     For payment platforms: use metadata['method'] to look up in account_mappings
     """
     # First try provider's accounts (for bank card providers)
-    provider_config = config.get_provider_config(txn.provider)
-    if txn.card_last4 and txn.card_last4 in provider_config.accounts:
-        return provider_config.accounts[txn.card_last4]
+    if account := _provider_account(txn, config, sole_accounts):
+        return account
 
     # Try metadata['method'] in account_mappings (for payment platforms)
     method = txn.metadata.get("method", "")
@@ -707,17 +773,18 @@ def _resolve_target_account(txn: Transaction, config: Config) -> str | None:
     return None
 
 
-def _get_dedup_priority(txn: Transaction, config: Config) -> int:
+def _get_dedup_priority(
+    txn: Transaction, config: Config, sole_accounts: dict[str, str]
+) -> int:
     """
     Get deduplication priority for a transaction.
 
     Higher priority = more likely to be kept.
-    Direct records (card_last4 matches provider's accounts) have higher priority.
+    Direct records (their own statement places them on an account) have higher
+    priority.
     """
-    provider_config = config.get_provider_config(txn.provider)
-
-    # Direct record: card_last4 is in this provider's accounts
-    if txn.card_last4 and txn.card_last4 in provider_config.accounts:
+    # Direct record: the row's own statement places it on an account
+    if _provider_account(txn, config, sole_accounts):
         return 100
 
     # Indirect record: method points to another account (via account_mappings)
@@ -794,21 +861,24 @@ def _generate_balance_directives(
     Returns:
         Balance directives as a string, or empty string if none.
     """
-    # Group transactions by (provider, account, currency)
+    # A row billed in a foreign currency still reports the account's balance
+    # in balance_currency, so it belongs with that currency's rows.
     account_txns: dict[tuple[str, str, str], list[Transaction]] = defaultdict(list)
     for txn in transactions:
         if txn.account and txn.provider:
             provider_config = config.get_provider_config(txn.provider)
             if provider_config.balance:
-                account_txns[(txn.provider, txn.account, txn.currency)].append(txn)
+                currency = txn.metadata.get("balance_currency", txn.currency)
+                account_txns[(txn.provider, txn.account, currency)].append(txn)
 
     if not account_txns:
         return ""
 
     lines: list[str] = []
-    for (_provider_id, account, _currency), txns in sorted(account_txns.items()):
-        # Sort by date (then time) to find the last transaction
-        txns.sort(key=lambda t: (t.date, t.time or __import__("datetime").time.min))
+    for (_provider_id, account, currency), txns in sorted(account_txns.items()):
+        # The balance column runs in booking order; the stable sort keeps file
+        # order among rows booked at the same moment.
+        txns.sort(key=lambda t: (t.post_date or t.date, t.time or time.min))
         last_txn = txns[-1]
 
         # Get balance from metadata
@@ -825,15 +895,16 @@ def _generate_balance_directives(
             )
             continue
 
-        # Determine date: statement_period end + 1 day, or last transaction date + 1 day
+        # Without a statement period, the day after the last booking: no row is
+        # booked before it trades, so every row's trade date falls before it.
         if last_txn.statement_period:
             balance_date = last_txn.statement_period[1] + timedelta(days=1)
         else:
-            balance_date = last_txn.date + timedelta(days=1)
+            balance_date = (last_txn.post_date or last_txn.date) + timedelta(days=1)
 
         lines.append(
             BeancountWriter.format_balance(
-                balance_date, account, balance_amount, last_txn.currency
+                balance_date, account, balance_amount, currency
             )
         )
 

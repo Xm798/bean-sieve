@@ -317,3 +317,20 @@ def test_missing_cycle_falls_back_to_each_card_row_span() -> None:
     assert first.statement_period == span
     assert last.statement_period == span
     assert other.statement_period == (date(2030, 2, 14), date(2030, 2, 14))
+
+
+class FakeUnnamedPerCardBank(FakePerCardBank):
+    """Per-card provider whose file names no card."""
+
+    provider_id = "fake_unnamed_per_card_bank"
+    statement_names_account = False
+
+
+def test_unkeyed_rows_of_an_unnamed_statement_cover_the_sole_account() -> None:
+    provider = FakeUnnamedPerCardBank()
+    config = make_config({"default": ACCOUNT_A}, provider.provider_id)
+    transactions = [make_txn(date(2030, 1, 5), None, PERIOD_JAN)]
+
+    assert provider.get_covered_ranges(transactions, config) == {
+        ACCOUNT_A: [PERIOD_JAN],
+    }

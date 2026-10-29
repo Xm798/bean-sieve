@@ -43,6 +43,8 @@ class HSBCHKCreditProvider(BaseProvider):
     provider_id = "hsbchk_credit"
     provider_name = "汇丰香港信用卡"
     supported_formats = [".csv"]
+    # Only a renamed file names its card; the CSV itself never does.
+    statement_names_account = False
     # Use content_keywords (not filename_pattern) — credit and debit exports
     # share the same default filename, so we differentiate by header columns.
     content_keywords = [

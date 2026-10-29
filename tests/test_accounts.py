@@ -305,7 +305,7 @@ class TestApiCallSites:
         )
         txn = _txn(metadata={"method": "cardx(0001)"})
 
-        assert _resolve_target_account(txn, cfg) is None
+        assert _resolve_target_account(txn, cfg, {}) is None
         [result] = _set_target_accounts([txn], cfg)
         assert result.account is None
 
@@ -315,7 +315,7 @@ class TestApiCallSites:
         )
         txn = _txn(metadata={"method": "CardX(0001)"})
 
-        assert _resolve_target_account(txn, cfg) == "Assets:X"
+        assert _resolve_target_account(txn, cfg, {}) == "Assets:X"
         [result] = _set_target_accounts([txn], cfg)
         assert result.account == "Assets:X"
 

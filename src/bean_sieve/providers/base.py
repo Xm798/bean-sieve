@@ -65,6 +65,10 @@ class BaseProvider(ABC):
     # this statement (True) or on it, covered by the file's periods (False).
     per_card_statement: bool = False
 
+    # False when the file carries no account or card number, so rows without a
+    # card_last4 belong to sole_account().
+    statement_names_account: bool = True
+
     # Source kinds of coverage() in descending precedence; an unlisted kind
     # ranks below every listed one.
     coverage_priority: tuple[str, ...] = ()
@@ -265,6 +269,20 @@ class BaseProvider(ABC):
             for txn in card_txns:
                 txn.statement_period = (first, last)
 
+    def sole_account(self, config: Config) -> str | None:
+        """
+        Return the account of every unkeyed row, for a statement naming none.
+
+        The config key selects nothing: with one account there is nothing to
+        choose, and with several there is nothing to choose by.
+        """
+        if self.statement_names_account:
+            return None
+        accounts = config.get_provider_config(self.provider_id).accounts
+        if len(accounts) != 1:
+            return None
+        return next(iter(accounts.values()))
+
     # === Coverage Scope ===
 
     def get_covered_accounts(
@@ -329,6 +347,7 @@ class BaseProvider(ABC):
             or None if no range filtering should be applied
         """
         card_to_account = config.get_provider_config(self.provider_id).accounts
+        sole_account = self.sole_account(config)
 
         # Every statement period stays a range of its own: merging them into one
         # span would cover the gap between two statements, where the ledger has
@@ -350,7 +369,9 @@ class BaseProvider(ABC):
             # Payment platforms key their config on the wallet while card_last4
             # holds a bank card suffix, so a row whose card is not a key says
             # nothing about which account it belongs to.
-            account = card_to_account.get(txn.card_last4 or "")
+            account = (
+                card_to_account.get(txn.card_last4) if txn.card_last4 else sole_account
+            )
             if account is not None:
                 attributed.add(account)
                 cover(account, period)

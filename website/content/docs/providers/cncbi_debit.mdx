@@ -30,6 +30,7 @@ providers:
   cncbi_debit:
     accounts:
       "default": Assets:Bank:CNCBI:HKD
+    balance: true
 
 rules:
   - payee: "employer-a"
@@ -38,7 +39,9 @@ rules:
     contra_account: Income:Bank:Interest
 ```
 
-`accounts` 里列出的账户是 Extra 的检查范围。CSV 里没有账号，键写什么都不会被读取，见下面的已知限制。
+CSV 里没有账号，所以 `accounts` 只写一项，所有交易都记到这个账户，它也是 Extra 的检查范围。键可以随意取，示例用的是 `"default"`；写成 4 位数字时，它会作为每行的 `card_last4`。
+
+加 `balance: true` 会在输出末尾追加一条 `balance` 断言，金额取过账日最晚的那一行的「结余」，日期是该行过账日的次日。
 
 ## 解析出的元数据字段
 
@@ -51,8 +54,7 @@ rules:
 
 ## 已知限制
 
-- 交易行没有卡号，`accounts` 的键（包括 `"default"`）不会被用来查账户，银行一侧的 posting 输出为 `Assets:FIXME`，需要手工改成实际账户。匹配和 Extra 检查不受影响。
-- 同样因为行没有账户，`balance: true` 不会生成余额断言。
+- `accounts` 写了多项时，Bean-Sieve 分不出交易属于哪个账户，只打印一条警告，银行一侧的 posting 输出为 `Assets:FIXME`，也不生成余额断言。
 - 金额一律按港币处理。
 - 「过账日」会被读取，但不写进输出。
 - 对账范围是第一笔到最后一笔交易的日期，前后各放宽 `date_tolerance` 天。
@@ -65,7 +67,7 @@ rules:
 bean-sieve reconcile CNCBI_2030_09.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
 
-银行一侧的 posting 都是 `Assets:FIXME`，配置里的 `"default"` 键没有被用上。账本里已有的 9 月 15 日晚餐被匹配，不再输出；转数快交易带出了 `order_id` 和收款方；「承上结余」「转承结余」两行被跳过；账本里 9 月 20 日那笔在账单里找不到，被列为 Extra。
+配置里唯一的 `accounts` 项让所有行都记到 `Assets:Bank:CNCBI:HKD`，输出末尾按 9 月 30 日的结余生成了 10 月 1 日的余额断言。账本里已有的 9 月 15 日晚餐被匹配，不再输出；转数快交易带出了 `order_id` 和收款方；「承上结余」「转承结余」两行被跳过；账本里 9 月 20 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

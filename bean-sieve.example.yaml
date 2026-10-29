@@ -202,14 +202,16 @@ providers:
     balance: true
 
   cncbi_debit:
-    # 中信银行（国际） account
+    # CSV 不含账号，只配一个账户，所有交易都记到这个账户（键名随意，写 4 位数字时作为 card_last4）
     accounts:
       "default": Assets:Bank:CNCBI:HKD
+    balance: true
 
   hsbchk_debit:
-    # 汇丰香港 储蓄账户（CSV 不含账号，配置单一账户即可）
+    # 汇丰香港 储蓄账户（CSV 不含账号，只配一个账户，键名随意）
     accounts:
       "default": Assets:Bank:HSBCHK:HKD
+    balance: true
 
 # 规则匹配
 rules:

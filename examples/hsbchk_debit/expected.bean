@@ -7,33 +7,33 @@
 2030-10-01 * "employer-a" "HC10000000000001 01OCT"
     order_id: "HC10000000000001"
     source: "hsbchk_debit"
-    Assets:FIXME  25000.00 HKD
+    Assets:Bank:HSBCHK:HKD  25000.00 HKD
     Income:Salary  -25000.00 HKD
 
 2030-10-03 * "NET- 2000000000000002"
     order_id: "NET- 2000000000000002"
     source: "hsbchk_debit"
-    Assets:FIXME  -9000.00 HKD
+    Assets:Bank:HSBCHK:HKD  -9000.00 HKD
     Liabilities:CreditCard:HSBCHK  9000.00 HKD
 
 2030-10-08 * "PPS PAYMENT TO UTILITY-A"
     source: "hsbchk_debit"
-    Assets:FIXME  -450.00 HKD
+    Assets:Bank:HSBCHK:HKD  -450.00 HKD
     Expenses:Housing:Utilities  450.00 HKD
 
 2030-10-12 * "ATM WITHDRAWAL PLACEHOLDER"
     source: "hsbchk_debit"
-    Assets:FIXME  -1000.00 HKD
+    Assets:Bank:HSBCHK:HKD  -1000.00 HKD
     Assets:Cash:HKD  1000.00 HKD
 
 2030-10-25 * "SERVICE FEE"
     source: "hsbchk_debit"
-    Assets:FIXME  -30.00 HKD
+    Assets:Bank:HSBCHK:HKD  -30.00 HKD
     Expenses:Bank:Fee  30.00 HKD
 
 2030-10-31 * "CREDIT INTEREST"
     source: "hsbchk_debit"
-    Assets:FIXME  4.50 HKD
+    Assets:Bank:HSBCHK:HKD  4.50 HKD
     Income:Bank:Interest  -4.50 HKD
 
 ; --- Summary ---
@@ -49,3 +49,5 @@
   Assets:Bank:HSBCHK:HKD  -42.00 HKD
   Expenses:Shopping
 
+
+2030-11-01 balance Assets:Bank:HSBCHK:HKD  24404.50 HKD

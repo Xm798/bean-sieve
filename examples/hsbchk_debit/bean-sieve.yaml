@@ -13,6 +13,7 @@ providers:
     # The CSV carries no account number.
     accounts:
       "default": Assets:Bank:HSBCHK:HKD
+    balance: true
 
 rules:
   - description: "^HC\\d+"

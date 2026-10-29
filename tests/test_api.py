@@ -141,7 +141,7 @@ def test_account_mapping_generic_method_not_matched_to_specific_pattern():
         provider="meituan",
         metadata={"method": "云闪付"},
     )
-    assert _resolve_target_account(txn, cfg) is None
+    assert _resolve_target_account(txn, cfg, {}) is None
     [result] = _set_target_accounts([txn], cfg)
     assert result.account is None
 
@@ -171,7 +171,7 @@ def test_account_mapping_pattern_contained_in_method_still_matches():
         provider="alipay",
         metadata={"method": "交通银行信用卡(5871)"},
     )
-    assert _resolve_target_account(txn, cfg) == "Liabilities:Credit:BOCOM:5871"
+    assert _resolve_target_account(txn, cfg, {}) == "Liabilities:Credit:BOCOM:5871"
     [result] = _set_target_accounts([txn], cfg)
     assert result.account == "Liabilities:Credit:BOCOM:5871"
 
@@ -221,6 +221,67 @@ def test_generate_balance_directives_golden():
         "\n"
         "2030-02-01 balance Assets:Bank:A  1000.00 CNY\n"
         "2030-01-03 balance Assets:Bank:B  20 CNY\n"
+    )
+
+
+def _balance_row(
+    trade_day: int,
+    balance: str,
+    post_day: int | None = None,
+    currency: str = "HKD",
+    metadata: dict[str, str] | None = None,
+):
+    from datetime import date
+    from decimal import Decimal
+
+    from bean_sieve.core.types import Transaction
+
+    return Transaction(
+        date=date(2030, 9, trade_day),
+        post_date=date(2030, 9, post_day) if post_day else None,
+        amount=Decimal("10.00"),
+        currency=currency,
+        description=f"row-{balance}",
+        provider="fake_debit",
+        account="Assets:Bank:A",
+        metadata={"balance": balance, **(metadata or {})},
+    )
+
+
+def test_balance_follows_the_last_posted_row():
+    """The balance column runs in posting order, so a late-posted row is last."""
+    from bean_sieve.api import _generate_balance_directives
+    from bean_sieve.config.schema import Config, ProviderConfig
+
+    cfg = Config(providers={"fake_debit": ProviderConfig(balance=True)})
+    transactions = [
+        _balance_row(trade_day=15, post_day=15, balance="100.00"),
+        _balance_row(trade_day=14, post_day=16, balance="90.00"),
+    ]
+
+    assert _generate_balance_directives(transactions, cfg) == (
+        "\n2030-09-17 balance Assets:Bank:A  90.00 HKD\n"
+    )
+
+
+def test_balance_uses_the_balance_currency():
+    """A row billed in another currency still reports the account's balance."""
+    from bean_sieve.api import _generate_balance_directives
+    from bean_sieve.config.schema import Config, ProviderConfig
+
+    cfg = Config(providers={"fake_debit": ProviderConfig(balance=True)})
+    transactions = [
+        _balance_row(trade_day=1, balance="100.00"),
+        _balance_row(
+            trade_day=2,
+            balance="80.00",
+            currency="USD",
+            metadata={"balance_currency": "HKD"},
+        ),
+    ]
+
+    assert _generate_balance_directives(transactions, cfg) == (
+        "\n2030-09-03 balance Assets:Bank:A  80.00 HKD\n"
     )
 
 
