@@ -109,6 +109,13 @@ class FormatConfig(BaseModel):
         return kwargs
 
 
+class CardFilter(BaseModel):
+    """Whitelist/blacklist of card_last4 values taking part in reconciliation."""
+
+    include: list[str] | None = None
+    exclude: list[str] | None = None
+
+
 class ProviderConfig(BaseModel):
     """Provider-specific configuration."""
 
@@ -117,6 +124,9 @@ class ProviderConfig(BaseModel):
     # - Bank cards: pattern matches card_last4 (e.g., "6666" -> Assets:Bank:PAB:6666)
     # These accounts also define the coverage scope for Extra calculation during reconciliation
     accounts: dict[str, str] = Field(default_factory=dict)
+    # Drop statement rows outside this card_last4 whitelist/blacklist before
+    # matching, so they produce no Missing/Extra and never constrain matching.
+    card_filter: CardFilter | None = None
     # Additional entry-level metadata fields to output (appended to global output_metadata)
     output_metadata: list[str] = Field(default_factory=list)
     # Posting-level metadata fields to output (only at provider level)

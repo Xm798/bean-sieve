@@ -278,6 +278,7 @@ def full_reconcile(
     )
 
     transactions = [txn for path, _ in pset.files for txn in context.parsed[path]]
+    transactions = _filter_provider_cards(transactions, config)
 
     # Infer date range from transactions if not explicitly provided
     # This ensures Extra calculation only considers ledger entries within statement scope
@@ -475,6 +476,32 @@ def _apply_negate_rules(
         result.append(txn)
 
     return result
+
+
+def _filter_provider_cards(
+    transactions: list[Transaction],
+    config: Config,
+) -> list[Transaction]:
+    """Drop statement rows outside each provider's card_filter.
+
+    Filtering happens before matching, so a dropped row produces no Missing
+    entry and never constrains which ledger account another row may match.
+    """
+    kept: list[Transaction] = []
+    for txn in transactions:
+        card_filter = config.get_provider_config(txn.provider).card_filter
+        if card_filter is None:
+            kept.append(txn)
+            continue
+        if (
+            card_filter.include is not None
+            and txn.card_last4 not in card_filter.include
+        ):
+            continue
+        if card_filter.exclude and txn.card_last4 in card_filter.exclude:
+            continue
+        kept.append(txn)
+    return kept
 
 
 def _set_target_accounts(

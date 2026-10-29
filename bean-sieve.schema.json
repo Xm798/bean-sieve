@@ -432,6 +432,15 @@
           "description": "Pattern to account mapping. For payment platforms: pattern matches metadata['method']. For bank cards: pattern matches card_last4. These accounts also define the coverage scope for Extra calculation.",
           "additionalProperties": { "type": "string" }
         },
+        "card_filter": {
+          "type": "object",
+          "description": "Filter statement rows by card_last4 before reconciliation. include is a whitelist; exclude is a blacklist. Filtered rows do not participate in matching, Missing or Extra.",
+          "properties": {
+            "include": { "type": "array", "items": { "type": "string" } },
+            "exclude": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        },
         "output_metadata": {
           "type": "array",
           "description": "Additional entry-level metadata fields to output (appended to global output_metadata)",

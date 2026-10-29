@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Release workflow 升级到 `softprops/action-gh-release@v3`
 - PyPI 发布改用 Trusted Publishing
 
+### 新增
+
+- **按卡号筛选**：新增 `providers.<id>.card_filter.include` / `.exclude`，在解析后、匹配前按 `card_last4` 丢弃账单行。被过滤的行不产生 Missing/pending，不参与匹配与 Extra 判定，也不会再被无约束地配到其他账户；`include` 是白名单（无卡号的行也丢弃），`exclude` 是黑名单（无卡号的行保留），两者同时配置时 `exclude` 优先。`context.parsed` 仍保留整份账单的解析结果
+
 ## [0.7.0] - 2026-09-04
 
 ### 新增

@@ -73,6 +73,11 @@ account_mappings:
 # - 支付平台：匹配 metadata['method']，如 "余额" -> Assets:Wallet:Alipay:Balance
 # - 银行卡：匹配 card_last4，如 "6666" -> Assets:Bank:PAB:6666
 # 这些账户也定义了对账时 Extra 的计算范围
+#
+# card_filter 可按 card_last4 只对账部分卡（解析后、匹配前丢弃其他卡的行）：
+#   card_filter:
+#     include: ["1234"]    # 白名单：只保留这些卡
+#     # exclude: ["5678"]  # 黑名单：排除这些卡（与 include 同时配置时 exclude 优先）
 providers:
   alipay:
     accounts:
