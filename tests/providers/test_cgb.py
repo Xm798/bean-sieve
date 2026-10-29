@@ -15,11 +15,12 @@ from bean_sieve.providers.banks.credit.cgb import (
 )
 
 
-def create_cgb_eml(html_content: str) -> str:
+def create_cgb_eml(html_content: str, subject: str = "statement-subject") -> str:
     """Create an EML file content with the given HTML."""
     encoded = base64.b64encode(html_content.encode("gbk")).decode("ascii")
+    encoded_subject = base64.b64encode(subject.encode("utf-8")).decode("ascii")
     return f"""From: billing@example.com
-Subject: statement-subject
+Subject: =?utf-8?B?{encoded_subject}?=
 To: test@example.com
 MIME-Version: 1.0
 Content-Type: text/html; charset="gbk"
@@ -91,6 +92,29 @@ class TestCGBCreditProvider:
         assert CGBCreditProvider.can_handle(Path(f"{_ISSUER}信用卡电子账单.eml"))
         assert not CGBCreditProvider.can_handle(Path("cgb_statement.csv"))
         assert not CGBCreditProvider.can_handle(Path("statement.eml"))
+
+    def test_can_handle_by_short_name_subject(self, tmp_path):
+        """Older statements name the issuer only by its short name."""
+        path = tmp_path / "2030-01_statement.eml"
+        path.write_text(
+            create_cgb_eml(
+                "<html><body>账单周期:2030/01/01-2030/01/31</body></html>",
+                subject=f"{_ISSUER_SHORT}信用卡 2030年01月电子账单",
+            ),
+            encoding="utf-8",
+        )
+        assert CGBCreditProvider.can_handle(path)
+
+    def test_rejects_other_bank_credit_card_eml(self, tmp_path):
+        path = tmp_path / "2030-01_statement.eml"
+        path.write_text(
+            create_cgb_eml(
+                "<html><body>招商银行信用卡电子账单</body></html>",
+                subject="招商银行信用卡 2030年01月电子账单",
+            ),
+            encoding="utf-8",
+        )
+        assert not CGBCreditProvider.can_handle(path)
 
     def test_parse_transactions(self, cgb_eml_file):
         """Test parsing transactions from EML file."""

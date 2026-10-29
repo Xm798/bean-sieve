@@ -33,7 +33,7 @@ class BOCCreditProvider(BaseProvider):
     provider_name = "中国银行信用卡"
     supported_formats = [".pdf"]
     filename_keywords = ["中国银行"]
-    content_keywords = ["中国银行信用卡账单", "信用卡账单"]
+    content_keywords = ["中国银行信用卡账单"]
     per_card_statement = True  # BOC manages cards separately
 
     def parse(self, file_path: Path) -> list[Transaction]:

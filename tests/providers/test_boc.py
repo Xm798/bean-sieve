@@ -29,6 +29,27 @@ class TestBOCCreditProvider:
         assert not BOCCreditProvider.can_handle(Path("boc_statement.csv"))
         assert not BOCCreditProvider.can_handle(Path("statement.pdf"))
 
+    @staticmethod
+    def _can_handle_first_page(tmp_path: Path, text: str) -> bool:
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = text
+        mock_doc = MagicMock()
+        mock_doc.page_count = 1
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
+
+        file_path = tmp_path / "2030-01_statement.pdf"
+        file_path.write_bytes(b"%PDF-1.4")
+        with patch("fitz.open", return_value=mock_doc):
+            return BOCCreditProvider.can_handle(file_path)
+
+    def test_can_handle_by_first_page_title(self, tmp_path):
+        assert self._can_handle_first_page(tmp_path, "中国银行信用卡账单\n2030-01-02")
+
+    def test_rejects_other_bank_credit_card_statement(self, tmp_path):
+        assert not self._can_handle_first_page(
+            tmp_path, "浦发银行信用卡账单\n2030-01-02"
+        )
+
     def test_per_card_statement_flag(self):
         """Test that per_card_statement is set correctly."""
         provider = BOCCreditProvider()

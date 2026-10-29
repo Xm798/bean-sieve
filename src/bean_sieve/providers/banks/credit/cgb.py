@@ -59,7 +59,7 @@ class CGBCreditProvider(BaseProvider):
     provider_name = f"{_ISSUER}信用卡"
     supported_formats = [".eml"]
     filename_keywords = [f"{_ISSUER_SHORT}信用卡", _ISSUER]
-    content_keywords = [f"{_ISSUER}信用卡"]
+    content_keywords = [f"{_ISSUER}信用卡", f"{_ISSUER_SHORT}信用卡"]
     per_card_statement = (
         True  # CGB sends combined statement but needs per-card tracking
     )

@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import xlrd
+from xlrd.biffh import XLRDError
 
 from ....core.types import Transaction
 from ... import register_provider
@@ -38,8 +39,9 @@ class CNCBCreditProvider(BaseProvider):
     provider_id = "cncb_credit"
     provider_name = "中信银行信用卡"
     supported_formats = [".xls"]
-    filename_keywords = ["中信", "cncb", "已出账单明细"]
-    content_keywords = []  # Binary XLS (BIFF8), content detection not possible
+    # The bank code alone also names CITIC debit exports, so detection relies on
+    # the credit export's own filename and column layout.
+    filename_keywords = ["中信信用卡", "已出账单明细"]
     per_card_statement = True  # CNCB sends separate statements per card
 
     COL_TRANS_DATE = 0  # 交易日期
@@ -52,6 +54,38 @@ class CNCBCreditProvider(BaseProvider):
     COL_SETTLE_AMOUNT = 7  # 结算金额
 
     HEADER_KEYWORDS = ("交易日期", "入账日期")
+    EXPECTED_HEADERS = (
+        "交易日期",
+        "入账日期",
+        "交易描述",
+        "卡末四位",
+        "交易币种",
+        "结算币种",
+        "交易金额",
+        "结算金额",
+    )
+
+    @classmethod
+    def _match_content(cls, file_path: Path) -> bool:
+        """Match the credit export's exact column header within the first 10 rows."""
+        try:
+            workbook = xlrd.open_workbook(str(file_path), on_demand=True)
+        except (OSError, XLRDError):
+            return False
+        try:
+            sheet = workbook.sheet_by_index(0)
+            if sheet.ncols < len(cls.EXPECTED_HEADERS):
+                return False
+            return any(
+                tuple(
+                    normalize_cell_str(sheet.cell_value(row_idx, col))
+                    for col in range(len(cls.EXPECTED_HEADERS))
+                )
+                == cls.EXPECTED_HEADERS
+                for row_idx in range(min(10, sheet.nrows))
+            )
+        finally:
+            workbook.release_resources()
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse CNCB credit card XLS statement."""
