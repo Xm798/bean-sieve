@@ -1,0 +1,109 @@
+---
+title: 快速开始
+description: 用命令行对账、解析和导出账单，或在 Python 中调用解析器
+icon: Rocket
+---
+
+## 第一次对账
+
+<Steps>
+<Step>
+
+### 安装
+
+需要 Python 3.11 或更高版本。
+
+<Tabs items={['uv', 'pipx']}>
+<Tab value="uv">
+
+```bash
+uv tool install beancount-sieve
+```
+
+</Tab>
+<Tab value="pipx">
+
+```bash
+pipx install beancount-sieve
+```
+
+</Tab>
+</Tabs>
+
+其他安装方式见[安装](./installation.mdx)。
+
+</Step>
+<Step>
+
+### 准备配置
+
+把仓库里的 [`bean-sieve.example.yaml`](https://github.com/Xm798/bean-sieve/blob/master/bean-sieve.example.yaml) 复制为当前目录下的 `bean-sieve.yaml`，按需修改。字段写法见[配置总览](./configuration.mdx)。
+
+</Step>
+<Step>
+
+### 对账
+
+```bash
+bean-sieve reconcile data/statement/*.csv -l books/ -o pending.bean
+```
+
+`reconcile` 解析账单、比对账本，只把账本里缺失的交易写进 `pending.bean`。
+
+<Callout title="先看结果再写文件">
+  `bean-sieve check data/statement/*.csv -l books/` 只显示对账结果，不生成文件。
+</Callout>
+
+</Step>
+<Step>
+
+### 并入账本
+
+核对 `pending.bean` 无误后，再把其中的条目并入账本。
+
+</Step>
+</Steps>
+
+## 其他命令
+
+```bash
+# 仅解析：输出标准化交易
+bean-sieve parse data/statement/*.csv
+
+# 导出：将解析结果导出为 CSV 或 XLSX
+bean-sieve export data/statement/*.csv -f csv -o output/
+
+# 提取账单中的支付方式并交互式映射到账本账户
+bean-sieve extract-accounts data/statement/*.csv -l books/
+
+# 从账本历史记录中自动生成规则建议
+bean-sieve suggest-rules -l books/
+
+# 列出支持的数据源
+bean-sieve providers
+
+# 生成 Shell 自动补全脚本
+bean-sieve completion bash
+```
+
+## Python API
+
+```python
+from pathlib import Path
+from bean_sieve.providers import get_provider, list_providers
+
+# 查看所有可用的 Provider
+for p in list_providers():
+    print(f"{p['id']}: {p['name']} ({p['formats']})")
+
+# 解析支付宝账单
+alipay = get_provider("alipay")
+transactions = alipay.parse(Path("data/statement/支付宝交易明细.csv"))
+
+for txn in transactions[:5]:
+    print(f"{txn.date} | {txn.payee:20s} | {txn.amount:>10} CNY | {txn.description}")
+
+# 解析微信账单
+wechat = get_provider("wechat")
+transactions = wechat.parse(Path("data/statement/微信支付账单.xlsx"))
+```

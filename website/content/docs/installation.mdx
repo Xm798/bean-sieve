@@ -1,0 +1,55 @@
+---
+title: 安装
+description: 安装 bean-sieve 命令行工具，或把它作为依赖引入其他项目
+icon: Download
+---
+
+需要 Python 3.11 或更高版本。
+
+## 作为 CLI 工具安装（推荐）
+
+```bash
+# 使用 uv（推荐）
+uv tool install beancount-sieve
+
+# 使用 pipx
+pipx install beancount-sieve
+
+# 或从源码安装
+uv tool install git+https://github.com/Xm798/bean-sieve.git
+```
+
+以上命令会把 `bean-sieve` 安装到 `~/.local/bin`（Linux/macOS）或用户 PATH（Windows），请确认该目录在 PATH 中。
+
+## 开发安装
+
+```bash
+# 本地开发
+uv sync
+
+# 包含开发依赖
+uv sync --extra dev
+```
+
+## 在其他项目中引入
+
+```bash
+# 从 Git 安装
+uv add git+https://github.com/Xm798/bean-sieve.git
+
+# 从本地路径安装
+uv add --editable ../bean-sieve
+```
+
+## Shell 自动补全
+
+```bash
+# Bash - 添加到 ~/.bashrc
+eval "$(bean-sieve completion bash)"
+
+# Zsh - 添加到 ~/.zshrc
+eval "$(bean-sieve completion zsh)"
+
+# Fish
+bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
+```

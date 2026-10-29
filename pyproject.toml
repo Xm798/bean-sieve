@@ -58,6 +58,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/bean_sieve"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["website/"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 88

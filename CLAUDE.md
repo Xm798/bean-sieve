@@ -48,6 +48,12 @@ uv run bean-sieve reconcile <files> -l <ledger> -o pending.bean
 uv run bean-sieve parse <files> -f table
 uv run bean-sieve suggest-rules -l <ledger>
 uv run bean-sieve providers
+
+# Docs site (Fumadocs + Next.js static export, run inside website/)
+pnpm install
+pnpm dev           # http://localhost:3000/bean-sieve
+pnpm types:check
+pnpm build         # static export to website/out/
 ```
 
 ## Architecture
@@ -161,7 +167,7 @@ providers:
 - **Formatting and linting**: MUST run `uv run ruff format`, `uv run ruff check`, and `uv run pyright src/` after modifying code, and fix all issues
 - **Config sync**: When modifying `bean-sieve.example.yaml`, check if user's `bean-sieve.yaml` needs corresponding update. Also update JSON schema `bean-sieve.schema.json` if config structure changes.
 - **Doc sync**: If code changes deviate from this CLAUDE.md, update this file accordingly
-- **Design docs**: If design changes, update corresponding docs in `external/docs/`
+- **User docs**: The docs site lives in `website/` (pages in `website/content/docs/*.mdx`, published to GitHub Pages at `https://xm798.github.io/bean-sieve/` on push to master). When a change alters user-visible behaviour, CLI usage or config, update the matching page; README keeps only a short entry plus sections not yet migrated to the site. `website/` is excluded from the Python sdist/wheel.
 
 ## Test Structure
 

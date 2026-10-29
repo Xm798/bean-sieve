@@ -1,0 +1,32 @@
+---
+title: 简介
+description: 基于规则的 Beancount 账单导入与对账工具
+icon: BookOpen
+---
+
+import { Download, FileCog, Rocket } from 'lucide-react';
+
+Bean-Sieve 是一个基于规则的 [Beancount](https://github.com/beancount/beancount) 账单导入与对账工具。
+
+传统导入器只做「解析 → 导入」。Bean-Sieve 还会把账单和已有账本对账：识别已经手动记过的交易，只为缺失的交易生成条目，避免重复入账。它也可以单独当账单解析器用，把各类账单统一导出为 CSV/XLSX。
+
+## 功能
+
+- **解析**：支付宝、微信支付、银行信用卡/借记卡等账单
+- **对账**：与已有 Beancount 账本比对，识别已记录的交易，补上未记录的
+- **生成**：只输出缺失的待录入条目，可用规则映射账户
+- **导出**：作为纯账单解析器，把账单统一导出为 CSV/XLSX
+
+## 下一步
+
+<Cards>
+  <Card icon={<Download />} title="安装" href="/docs/installation">
+    用 uv 或 pipx 安装 `bean-sieve` 命令
+  </Card>
+  <Card icon={<Rocket />} title="快速开始" href="/docs/quick-start">
+    跑通第一次对账，或在 Python 中调用解析器
+  </Card>
+  <Card icon={<FileCog />} title="配置总览" href="/docs/configuration">
+    配置文件位置、默认值、账户映射与规则
+  </Card>
+</Cards>

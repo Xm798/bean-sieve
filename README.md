@@ -13,57 +13,14 @@ Bean-Sieve 是一个基于规则的 [Beancount](https://github.com/beancount/bea
 - **生成** 仅输出缺失的待录入条目，支持规则映射账户
 - **导出** 可作为纯账单解析器，将账单统一导出为 CSV/XLSX
 
-## 安装
-
-需要 Python 3.11 或更高版本。
-
-### 作为 CLI 工具安装（推荐）
+## 安装与使用
 
 ```bash
-# 使用 uv（推荐）
-uv tool install beancount-sieve
-
-# 使用 pipx
-pipx install beancount-sieve
-
-# 或从源码安装
-uv tool install git+https://github.com/Xm798/bean-sieve.git
+uv tool install beancount-sieve   # 或 pipx install beancount-sieve
+bean-sieve reconcile data/statement/*.csv -l books/ -o pending.bean
 ```
 
-以上命令会将 `bean-sieve` 安装到 `~/.local/bin`（Linux/macOS）或用户 PATH（Windows）。请确保该目录在 PATH 中。
-
-### 开发安装
-
-```bash
-# 本地开发
-uv sync
-
-# 包含开发依赖
-uv sync --extra dev
-```
-
-### 在其他项目中引入
-
-```bash
-# 从 Git 安装
-uv add git+https://github.com/Xm798/bean-sieve.git
-
-# 从本地路径安装
-uv add --editable ../bean-sieve
-```
-
-### Shell 自动补全
-
-```bash
-# Bash - 添加到 ~/.bashrc
-eval "$(bean-sieve completion bash)"
-
-# Zsh - 添加到 ~/.zshrc
-eval "$(bean-sieve completion zsh)"
-
-# Fish
-bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
-```
+安装方式、命令行与 Python API 用法、配置文件写法见文档站：<https://xm798.github.io/bean-sieve/>
 
 ## 支持的数据源
 
@@ -115,117 +72,6 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `welab_debit`  | 汇立银行       | PDF       | 多币种综合月结单   |
 
 更多 Provider 正在开发中。
-
-## 使用方法
-
-### 命令行
-
-```bash
-# 对账：解析账单 + 比对账本 + 生成缺失条目
-bean-sieve reconcile data/statement/*.csv -l books/ -o pending.bean
-
-# 仅解析：输出标准化交易
-bean-sieve parse data/statement/*.csv
-
-# 导出：将解析结果导出为 CSV 或 XLSX
-bean-sieve export data/statement/*.csv -f csv -o output/
-
-# 仅检查：显示对账结果，不生成文件
-bean-sieve check data/statement/*.csv -l books/
-
-# 提取账单中的支付方式并交互式映射到账本账户
-bean-sieve extract-accounts data/statement/*.csv -l books/
-
-# 从账本历史记录中自动生成规则建议
-bean-sieve suggest-rules -l books/
-
-# 列出支持的数据源
-bean-sieve providers
-
-# 生成 Shell 自动补全脚本
-bean-sieve completion bash
-```
-
-### Python API
-
-```python
-from pathlib import Path
-from bean_sieve.providers import get_provider, list_providers
-
-# 查看所有可用的 Provider
-for p in list_providers():
-    print(f"{p['id']}: {p['name']} ({p['formats']})")
-
-# 解析支付宝账单
-alipay = get_provider("alipay")
-transactions = alipay.parse(Path("data/statement/支付宝交易明细.csv"))
-
-for txn in transactions[:5]:
-    print(f"{txn.date} | {txn.payee:20s} | {txn.amount:>10} CNY | {txn.description}")
-
-# 解析微信账单
-wechat = get_provider("wechat")
-transactions = wechat.parse(Path("data/statement/微信支付账单.xlsx"))
-```
-
-## 配置
-
-配置文件搜索顺序：
-
-1. 命令行 `-c/--config` 指定的路径
-2. 当前目录 `./bean-sieve.yaml`
-3. 系统配置目录：
-   - Linux/macOS: `$XDG_CONFIG_HOME/bean-sieve/config.yaml` 或 `~/.config/bean-sieve/config.yaml`
-   - Windows: `%APPDATA%\bean-sieve\config.yaml`
-
-复制 `bean-sieve.example.yaml` 为 `bean-sieve.yaml`（当前目录）或 `config.yaml`（系统配置目录）并根据需要修改：
-
-```yaml
-# 默认设置
-defaults:
-  currency: CNY
-  expense_account: Expenses:FIXME
-  income_account: Income:FIXME
-  date_tolerance: 0  # 日期模糊匹配容差（天）
-  # rebate_account_prefixes: ["Income:Rebate:"]  # 返利收入账户（含子账户），用于红包抵扣还款的总额匹配
-
-# 账户映射（按 provider）
-accounts:
-  alipay:
-    default: Assets:Current:Alipay
-
-  wechat:
-    default: Assets:Current:Wechat
-
-# 规则匹配（优先级最高，按顺序匹配）
-rules:
-  # 正则匹配 description
-  - description: ".*瑞幸.*"
-    payee: 瑞幸咖啡
-    contra_account: Expenses:Food:Coffee
-
-  - description: ".*美团.*外卖.*"
-    payee: 美团外卖
-    contra_account: Expenses:Food:Delivery
-
-  # 多关键词匹配（OR 逻辑）
-  - description: "(滴滴|高德|T3出行)"
-    payee: 打车
-    contra_account: Expenses:Transport:Taxi
-
-  # 时间范围
-  - description: ".*食堂.*"
-    time: "11:00-14:00"
-    contra_account: Expenses:Food:Lunch
-
-  - description: ".*食堂.*"
-    time: "17:00-20:00"
-    contra_account: Expenses:Food:Dinner
-
-  # 忽略某些交易
-  - description: ".*还款.*"
-    ignore: true
-```
 
 ## 账单下载方式
 

@@ -1,0 +1,11 @@
+{
+  "title": "文档",
+  "pages": [
+    "---[Rocket]入门---",
+    "index",
+    "installation",
+    "quick-start",
+    "---[Settings2]配置---",
+    "configuration"
+  ]
+}

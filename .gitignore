@@ -233,3 +233,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Docs site (website/): dependencies and generated output
+website/node_modules/
+website/.next/
+website/.source/
+website/out/
+website/next-env.d.ts
+website/*.tsbuildinfo
+# Re-include the site source modules that the Python `lib/` pattern above hides.
+!website/lib/

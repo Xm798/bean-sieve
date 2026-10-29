@@ -1,0 +1,70 @@
+---
+title: 配置总览
+description: 配置文件的查找顺序，以及默认值、账户映射和规则的基本写法
+icon: FileCog
+---
+
+## 配置文件位置
+
+Bean-Sieve 按以下顺序查找配置文件，用第一个找到的：
+
+1. 命令行 `-c/--config` 指定的路径
+2. 当前目录 `./bean-sieve.yaml`
+3. 系统配置目录：
+   - Linux/macOS：`$XDG_CONFIG_HOME/bean-sieve/config.yaml` 或 `~/.config/bean-sieve/config.yaml`
+   - Windows：`%APPDATA%\bean-sieve\config.yaml`
+
+把仓库里的 [`bean-sieve.example.yaml`](https://github.com/Xm798/bean-sieve/blob/master/bean-sieve.example.yaml) 复制为 `bean-sieve.yaml`（当前目录）或 `config.yaml`（系统配置目录），再按需修改。完整字段定义见 [`bean-sieve.schema.json`](https://github.com/Xm798/bean-sieve/blob/master/bean-sieve.schema.json)。
+
+## 示例
+
+```yaml
+# 默认设置
+defaults:
+  currency: CNY
+  expense_account: Expenses:FIXME
+  income_account: Income:FIXME
+  date_tolerance: 0  # 日期模糊匹配容差（天）
+  # rebate_account_prefixes: ["Income:Rebate:"]  # 返利收入账户（含子账户），用于红包抵扣还款的总额匹配
+
+# 账户映射（按 provider；支付平台按支付方式匹配，银行卡按卡号后四位匹配）
+providers:
+  alipay:
+    accounts:
+      "余额": Assets:Current:Alipay
+
+  wechat:
+    accounts:
+      "零钱": Assets:Current:Wechat
+
+# 规则匹配（按顺序匹配，靠前的规则优先）
+rules:
+  # 正则匹配 description
+  - description: ".*瑞幸.*"
+    target_payee: 瑞幸咖啡
+    contra_account: Expenses:Food:Coffee
+
+  - description: ".*美团.*外卖.*"
+    target_payee: 美团外卖
+    contra_account: Expenses:Food:Delivery
+
+  # 多关键词匹配（OR 逻辑）
+  - description: "(滴滴|高德|T3出行)"
+    target_payee: 打车
+    contra_account: Expenses:Transport:Taxi
+
+  # 时间范围
+  - description: ".*食堂.*"
+    time: "11:00-14:00"
+    contra_account: Expenses:Food:Lunch
+
+  - description: ".*食堂.*"
+    time: "17:00-20:00"
+    contra_account: Expenses:Food:Dinner
+
+  # 忽略某些交易
+  - description: ".*还款.*"
+    ignore: true
+```
+
+规则里的 `description`、`payee` 是匹配条件（正则）；`target_payee` 是写进输出的收款方。
