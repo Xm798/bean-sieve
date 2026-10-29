@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - time
+    - source
+  sort_by_time: asc
+
+providers:
+  cncb_debit:
+    # Keys are the last four digits of the account printed in the first row.
+    accounts:
+      "1234": Assets:Bank:CNCB
+    balance: true
+
+rules:
+  - description: "跨行转入"
+    payee: "employer-a"
+    contra_account: Income:Salary
+  - description: "结息"
+    contra_account: Income:Bank:Interest
+  - description: "信用卡还款"
+    contra_account: Liabilities:CreditCard:CNCB
+  - description: "restaurant-b"
+    contra_account: Expenses:Food:Meal

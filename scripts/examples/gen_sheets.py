@@ -253,6 +253,46 @@ def cncb_credit(out_dir: Path) -> None:
     wb.save(out_dir / "中信银行信用卡已出账单明细2030年04月.xls")
 
 
+@generator("cncb_debit")
+def cncb_debit(out_dir: Path) -> None:
+    header = [
+        "交易日期",
+        "交易时间",
+        "收入金额",
+        "支出金额",
+        "账户余额",
+        "对方名称",
+        "对方账号",
+        "受理机构",
+        "摘要",
+        "交易流水号",
+        "交易卡号",
+        "状态",
+    ]
+    card = "90000                   01"
+    # Newest first, as the bank exports them.
+    rows = [
+        ["20300326", "19:00:00", "__", "57.00", "3,954.10", "shop-d", "", "inst-d",
+         "银联二维码支付-shop-d", "REF0306", card, "完成"],
+        ["20300321", "02:00:00", "3.10", "__", "4,011.10", "", "", "",
+         "批量结息", "", "--", "完成"],
+        ["20300315", "10:30:00", "__", "800.00", "4,008.00", "friend-c", "600001 **** ** 0004",
+         "", "转账", "REF0304", "--", "完成"],
+        ["20300310", "20:00:00", "__", "1,650.00", "4,808.00", "credit-center-a",
+         "600002 **** **** * 0003", "", "信用卡还款", "REF0303", "--", "完成"],
+        ["20300305", "12:10:00", "__", "42.00", "6,458.00", "restaurant-b", "", "inst-b",
+         "银联二维码支付-restaurant-b", "REF0302", card, "完成"],
+        ["20300302", "09:00:00", "6,000.00", "__", "6,500.00", "employer-a",
+         "600001 **** ** 0001", "", "跨行转入", "REF0301", "--", "完成"],
+    ]  # fmt: skip
+    wb, ws = new_xls("Sheet1", encoding="utf-8")
+    ws.write(
+        0, 0, "账号：600000 **** ** 1234 人民币 起始日期:20300301 截止日期:20300331"
+    )
+    put_rows(ws, 1, [header, *rows])
+    wb.save(out_dir / "中信银行借记卡交易明细2030年03月.xls")
+
+
 # Called by gen_pdf.spdb_credit: one generator per provider writes all of its statements.
 def spdb_credit_xls(out_dir: Path) -> None:
     header = [

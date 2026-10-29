@@ -1,0 +1,161 @@
+"""Tests for China CITIC Bank (中信银行) debit card statement provider."""
+
+from datetime import date, time
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+import xlwt
+
+from bean_sieve.providers import auto_detect_provider, get_provider
+from bean_sieve.providers.banks.debit.cncb import CNCBDebitProvider
+
+HEADERS = [
+    "交易日期",
+    "交易时间",
+    "收入金额",
+    "支出金额",
+    "账户余额",
+    "对方名称",
+    "对方账号",
+    "受理机构",
+    "摘要",
+    "交易流水号",
+    "交易卡号",
+    "状态",
+]
+
+TITLE = "账号：600000 **** ** 1111 人民币 起始日期:20300101 截止日期:20300131"
+
+# Newest first, as the bank exports them.
+ROWS = [
+    ["20300120", "18:00:00", "__", "1,300.00", "710.00", "payee-c",
+     "600001 **** **** * 3333", "inst-c", "转账", "REF0003", "--", "完成"],
+    ["20300110", "09:30:00", "__", "30.00", "2,010.00", "payee-b",
+     "", "inst-b", "银联二维码支付-shop-b", "REF0002", "90000                   01", "完成"],
+    ["20300105", "12:00:00", "2,040.00", "__", "2,040.00", "payee-a",
+     "600001 **** ** 2222", "", "跨行转入", "REF0001", "--", "完成"],
+]  # fmt: skip
+
+
+def create_xls(
+    tmp_path: Path,
+    rows: list[list] | None = None,
+    title: str = TITLE,
+    headers: list[str] = HEADERS,
+    filename: str = "statement.xls",
+) -> Path:
+    wb = xlwt.Workbook(encoding="utf-8")
+    ws = wb.add_sheet("Sheet1")
+    ws.write(0, 0, title)
+    for col, header in enumerate(headers):
+        ws.write(1, col, header)
+    for r, row in enumerate(ROWS if rows is None else rows, 2):
+        for c, value in enumerate(row):
+            ws.write(r, c, value)
+    path = tmp_path / filename
+    wb.save(str(path))
+    return path
+
+
+@pytest.fixture
+def provider() -> CNCBDebitProvider:
+    return CNCBDebitProvider()
+
+
+class TestParse:
+    def test_rows_in_booking_order(self, tmp_path, provider):
+        txns = provider.parse(create_xls(tmp_path))
+        assert [t.date for t in txns] == [
+            date(2030, 1, 5),
+            date(2030, 1, 10),
+            date(2030, 1, 20),
+        ]
+        assert [t.source_line for t in txns] == [5, 4, 3]
+
+    def test_sign_convention(self, tmp_path, provider):
+        income, expense, transfer = provider.parse(create_xls(tmp_path))
+        assert income.amount == Decimal("-2040.00")
+        assert expense.amount == Decimal("30.00")
+        assert transfer.amount == Decimal("1300.00")
+
+    def test_fields(self, tmp_path, provider):
+        _, expense, transfer = provider.parse(create_xls(tmp_path))
+        assert expense.time == time(9, 30)
+        assert expense.currency == "CNY"
+        assert expense.card_last4 == "1111"
+        assert expense.payee == "payee-b"
+        assert expense.description == "银联二维码支付-shop-b"
+        assert expense.order_id is None
+        assert expense.metadata == {
+            "summary": "银联二维码支付-shop-b",
+            "balance": "2,010.00",
+            "institution": "inst-b",
+            "reference": "REF0002",
+            "card_number": "90000 01",
+            "status": "完成",
+        }
+        assert transfer.metadata["counterparty_account"] == "600001 **** **** * 3333"
+        assert "card_number" not in transfer.metadata
+
+    def test_statement_period_from_title(self, tmp_path, provider):
+        txns = provider.parse(create_xls(tmp_path))
+        assert {t.statement_period for t in txns} == {
+            (date(2030, 1, 1), date(2030, 1, 31))
+        }
+
+    def test_empty_statement(self, tmp_path, provider):
+        assert provider.parse(create_xls(tmp_path, rows=[])) == []
+
+    def test_skips_rows_without_amount_or_date(self, tmp_path, provider):
+        rows = [
+            ["20300102", "10:00:00", "__", "__", "7.00", "", "", "", "x", "", "--", "完成"],
+            ["", "", "", "", "", "", "", "", "", "", "", ""],
+            ROWS[0],
+        ]  # fmt: skip
+        txns = provider.parse(create_xls(tmp_path, rows=rows))
+        assert [t.amount for t in txns] == [Decimal("1300.00")]
+
+    def test_numeric_cells(self, tmp_path, provider):
+        rows = [
+            [20300103, "08:00:00", "", 73.0, 927.0, "payee-d", "", "", "消费",
+             "", "--", "完成"],
+        ]  # fmt: skip
+        (txn,) = provider.parse(create_xls(tmp_path, rows=rows))
+        assert txn.date == date(2030, 1, 3)
+        assert txn.amount == Decimal("73")
+        assert txn.metadata["balance"] == "927"
+
+    def test_unknown_currency_raises(self, tmp_path, provider):
+        with pytest.raises(ValueError, match="currency"):
+            provider.parse(create_xls(tmp_path, title=TITLE.replace("人民币", "美元")))
+
+    def test_missing_header_raises(self, tmp_path, provider):
+        with pytest.raises(ValueError, match="header"):
+            provider.parse(create_xls(tmp_path, headers=["a", "b", "c"]))
+
+
+class TestDetection:
+    def test_detected_by_content(self, tmp_path):
+        path = create_xls(tmp_path, filename="export.xls")
+        assert auto_detect_provider(path).provider_id == "cncb_debit"
+
+    def test_bank_named_file_detected_as_debit(self, tmp_path):
+        path = create_xls(tmp_path, filename="中信银行交易明细.xls")
+        assert auto_detect_provider(path).provider_id == "cncb_debit"
+
+    def test_credit_export_is_not_debit(self, tmp_path):
+        credit_headers = ["交易日期", "入账日期", "交易描述", "卡末四位",
+                          "交易币种", "结算币种", "交易金额", "结算金额"]  # fmt: skip
+        path = create_xls(
+            tmp_path,
+            rows=[],
+            title="本期账单明细(人民币)",
+            headers=credit_headers,
+            filename="export.xls",
+        )
+        assert not CNCBDebitProvider.can_handle(path)
+        assert auto_detect_provider(path).provider_id == "cncb_credit"
+
+    def test_registered(self):
+        assert isinstance(get_provider("cncb_debit"), CNCBDebitProvider)

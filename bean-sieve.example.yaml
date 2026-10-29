@@ -211,6 +211,12 @@ providers:
       CNY: Assets:Bank:WeLab:CNY
       USD: Assets:Bank:WeLab:USD
 
+  cncb_debit:
+    # 键是明细第一行账号的后四位
+    accounts:
+      "1234": Assets:Bank:CNCB:1234
+    balance: true
+
   cncbi_debit:
     # CSV 不含账号，只配一个账户，所有交易都记到这个账户（键名随意，写 4 位数字时作为 card_last4）
     accounts:

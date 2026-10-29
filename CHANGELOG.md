@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 新增
 
+- 中信银行借记卡 Provider（`cncb_debit`）：解析交易明细 XLS，按表头内容识别
 - 浦发银行借记卡 Provider（`spdb_debit`）：解析交易流水 PDF 回单
 - 浦发银行信用卡：解析 PDF 账单；同月传入交易明细和 PDF 时只采用交易明细
 - 工商银行信用卡 Provider（`icbc_credit`）：解析电子邮件账单、补发对账单 PDF 和历史明细 PDF，同一账期多份文件只采用一份

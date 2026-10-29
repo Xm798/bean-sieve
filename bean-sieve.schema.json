@@ -110,7 +110,9 @@
               "order_amount",
               "fx_ref",
               "transaction_date",
-              "counterparty_name"
+              "counterparty_name",
+              "institution",
+              "card_number"
             ]
           },
           "examples": [
@@ -405,6 +407,10 @@
         "welab_debit": {
           "description": "汇立银行（WeLab Bank）",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["transaction_type", "exchange_info", "counterparty", "fx_ref", "transaction_date"] } } } }]
+        },
+        "cncb_debit": {
+          "description": "中信银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["summary", "balance", "counterparty_account", "institution", "reference", "card_number", "status"] } } } }]
         },
         "cncbi_debit": {
           "description": "中信银行（国际）",

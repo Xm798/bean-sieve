@@ -1,0 +1,101 @@
+---
+title: 中信银行借记卡
+description: 解析中信银行借记卡导出的交易明细 XLS，与账本对账
+---
+
+## 账单下载方式
+
+在中信银行个人网银或手机银行里查询借记卡的账户交易明细，选好起止日期后导出 Excel（XLS）文件。
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="cncb_debit" />
+
+文件名可以随意取。导出文件里没有银行名称，Bean-Sieve 读 XLS 的前 10 行，同时找到「收入金额」「支出金额」「受理机构」「交易流水号」「交易卡号」这几个表头，就认作中信银行借记卡明细。中信银行信用卡的账单没有这几个表头，不会被认作借记卡明细。
+
+第一行写着账号、币种和起止日期，形如 `账号：600000 **** ** 1234 人民币 起始日期:20300301 截止日期:20300331`。账号后四位取打码账号的末四位，目前只支持人民币账户，其他币种解析时直接报错。
+
+第二行是表头，Bean-Sieve 按表头文字找列，缺「交易日期」「收入金额」「支出金额」任一列时报错。金额是带千分位逗号的文本，空的一栏写作 `__`。「支出金额」记为支出，「收入金额」记为收入；两栏都空的行跳过。明细按时间倒序排列，解析时倒过来，按记账顺序输出。
+
+描述取「摘要」，收款方取「对方名称」。
+
+第一行的起止日期就是这份明细的对账范围。账本里落在这段日期内、明细里却没有的条目会被列为 Extra。
+
+## 配置示例
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  cncb_debit:
+    accounts:
+      "1234": Assets:Bank:CNCB
+    balance: true
+
+rules:
+  - description: "结息"
+    contra_account: Income:Bank:Interest
+  - description: "信用卡还款"
+    contra_account: Liabilities:CreditCard:CNCB
+```
+
+`accounts` 的键是账号后四位。一份明细只含一个账号，有几张卡就列几项；对账时只把这份文件那张卡对应的账户纳入 Extra 检查。
+
+`balance: true` 时，输出末尾按「账户余额」追加一条 `balance` 断言，日期是截止日期的次日。
+
+## 解析出的元数据字段
+
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `summary` | 摘要 | |
+| `balance` | 账户余额 | 这笔交易之后的余额 |
+| `counterparty_account` | 对方账号 | 打码的账号 |
+| `institution` | 受理机构 | |
+| `reference` | 交易流水号 | 一次操作的两笔往来可能共用一个流水号，所以不作为 `order_id` |
+| `card_number` | 交易卡号 | 连续空格合并为一个，`--` 视为空 |
+| `status` | 状态 | 如「完成」 |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.cncb_debit.output_metadata` 列出的字段会追加到全局列表上。
+
+## 已知限制
+
+- 「状态」只记录下来，不参与过滤，所有行都会被解析。
+- 只支持人民币账户。
+- 解析时假定明细按时间倒序排列，文件本身不标明顺序，Bean-Sieve 也不检查。如果实际是正序，同一时刻的几笔交易会排反，`balance` 断言可能取到其中较早一笔之后的余额。
+
+## 输出样例
+
+仓库的 [`examples/cncb_debit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/cncb_debit) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile 中信银行借记卡交易明细2030年03月.xls -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+账本里已有的 3 月 26 日那笔被匹配，不再输出；3 月 15 日的转账没有规则命中，记到 `Expenses:FIXME` 并标 `!`；账本里 3 月 18 日那笔在起止日期内、明细里没有，被列为 Extra；末尾的 `balance` 断言取最后一笔交易后的余额。
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+账单文件 `中信银行借记卡交易明细2030年03月.xls` 不是纯文本，这里不展开，可在 [`examples/cncb_debit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/cncb_debit) 下载。
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/cncb_debit/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/cncb_debit/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/cncb_debit/expected.bean</include>
+
+</Tab>
+
+</Tabs>
