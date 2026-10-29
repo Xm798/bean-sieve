@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import codecs
 import csv
+import io
 import re
 import shutil
 import tempfile
@@ -18,6 +19,7 @@ from collections.abc import Iterable, Sequence
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+import xlrd
 from openpyxl import load_workbook
 
 
@@ -171,3 +173,43 @@ def load_openpyxl_workbook(path: Path):
                 if tmp_path:
                     Path(tmp_path).unlink(missing_ok=True)
         return load_workbook(path)
+
+
+def _read_sheet_head(path: Path, nrows: int) -> list[list[str]]:
+    data = path.read_bytes()
+    # Banks ship OOXML under an .xls name, so the zip signature picks the reader.
+    if data.startswith(b"PK"):
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Workbook contains no default style",
+                category=UserWarning,
+            )
+            wb = load_workbook(io.BytesIO(data), read_only=True)
+        try:
+            sheet = wb.worksheets[0]
+            # Read-only mode trusts the declared dimension, which some exports
+            # understate, cutting rows down to their first cell.
+            sheet.reset_dimensions()
+            rows = sheet.iter_rows(max_row=nrows, values_only=True)
+            return [["" if v is None else str(v).strip() for v in row] for row in rows]
+        finally:
+            wb.close()
+    sheet = xlrd.open_workbook(file_contents=data).sheet_by_index(0)
+    return [
+        [normalize_cell_str(v) for v in sheet.row_values(r)]
+        for r in range(min(nrows, sheet.nrows))
+    ]
+
+
+def sheet_head_contains(path: Path, keywords: Iterable[str], nrows: int) -> bool:
+    """Return whether every keyword is a substring of some cell in the first rows.
+
+    Reads the first sheet of a BIFF or OOXML workbook regardless of its suffix,
+    so renamed exports are recognised by content; an unreadable file is False.
+    """
+    try:
+        cells = [cell for row in _read_sheet_head(path, nrows) for cell in row if cell]
+    except Exception:
+        return False
+    return all(any(kw in cell for cell in cells) for kw in keywords)

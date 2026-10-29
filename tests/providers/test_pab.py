@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from bean_sieve.providers import get_provider
+from bean_sieve.providers import auto_detect_provider, get_provider
 from bean_sieve.providers.banks.debit.pab import PABDebitProvider
 
 
@@ -152,6 +152,24 @@ class TestPABDebitProvider:
         assert PABDebitProvider.can_handle(Path("借记卡平安银行.xlsx"))
         assert not PABDebitProvider.can_handle(Path("pab_statement.csv"))
         assert not PABDebitProvider.can_handle(Path("招商银行借记卡.xlsx"))
+
+    @pytest.mark.parametrize("ext", [".xlsx", ".xls"])
+    def test_renamed_file_detected_by_content(self, tmp_path, ext):
+        """A file renamed away from the bank's default name is recognised by its header."""
+        f = create_pab_xlsx(tmp_path, [])
+        renamed = f.rename(tmp_path / f"PAB_0000_20300101-20301231{ext}")
+        assert isinstance(auto_detect_provider(renamed), PABDebitProvider)
+
+    def test_partial_header_not_detected(self, tmp_path):
+        """A sheet carrying only some of PAB's column names is not claimed."""
+        wb = Workbook()
+        ws = wb.active
+        assert ws is not None
+        ws.append(["账号：6230****0000"])
+        ws.append(["交易时间", "付款方姓名", "交易金额"])
+        f = tmp_path / "statement.xlsx"
+        wb.save(f)
+        assert not PABDebitProvider.can_handle(f)
 
     def test_parse_transactions(self, pab_xlsx_file):
         """Test parsing transactions from Excel file."""

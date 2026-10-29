@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import tempfile
+import zipfile
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
+import xlwt
 from openpyxl import Workbook
 
 from bean_sieve.providers._tabular import (
@@ -18,6 +21,7 @@ from bean_sieve.providers._tabular import (
     normalize_cell_str,
     read_csv_rows,
     read_text_lines,
+    sheet_head_contains,
     to_decimal,
 )
 
@@ -270,3 +274,79 @@ class TestLoadOpenpyxlWorkbook:
         load_openpyxl_workbook(path)
 
         assert set(Path(tempfile.gettempdir()).glob("*.xlsx")) == before
+
+
+class TestSheetHeadContains:
+    """Tests for sheet_head_contains()."""
+
+    ROWS = [["title-a"], [], ["col-a", "col-b"], ["later-a"]]
+
+    def _write_xlsx(self, path: Path) -> Path:
+        wb = Workbook()
+        ws = wb.active
+        assert ws is not None
+        for row in self.ROWS:
+            ws.append(row)
+        wb.save(path)
+        return path
+
+    def _write_xls(self, path: Path) -> Path:
+        wb = xlwt.Workbook()
+        ws = wb.add_sheet("Sheet1")
+        for r, row in enumerate(self.ROWS):
+            for c, value in enumerate(row):
+                ws.write(r, c, value)
+        wb.save(str(path))
+        return path
+
+    @pytest.mark.parametrize("name", ["book.xlsx", "book.xls"])
+    def test_ooxml_under_either_suffix(self, tmp_path: Path, name: str) -> None:
+        path = self._write_xlsx(tmp_path / name)
+
+        assert sheet_head_contains(path, ["title-a", "col-b"], nrows=3)
+
+    def test_ooxml_with_understated_dimension(self, tmp_path: Path) -> None:
+        """Cells past a sheet's declared dimension are still read."""
+        path = self._write_xlsx(tmp_path / "book.xlsx")
+        with zipfile.ZipFile(path) as src:
+            parts = {name: src.read(name) for name in src.namelist()}
+        sheet = "xl/worksheets/sheet1.xml"
+        parts[sheet] = re.sub(
+            rb'<dimension ref="[^"]*"', b'<dimension ref="A1"', parts[sheet]
+        )
+        with zipfile.ZipFile(path, "w") as dst:
+            for name, data in parts.items():
+                dst.writestr(name, data)
+
+        assert sheet_head_contains(path, ["col-b"], nrows=3)
+
+    def test_biff_xls(self, tmp_path: Path) -> None:
+        path = self._write_xls(tmp_path / "book.xls")
+
+        assert sheet_head_contains(path, ["title-a", "col-b"], nrows=3)
+
+    def test_keyword_matches_cell_substring(self, tmp_path: Path) -> None:
+        path = self._write_xls(tmp_path / "book.xls")
+
+        assert sheet_head_contains(path, ["title"], nrows=3)
+
+    def test_every_keyword_is_required(self, tmp_path: Path) -> None:
+        path = self._write_xls(tmp_path / "book.xls")
+
+        assert not sheet_head_contains(path, ["title-a", "col-c"], nrows=3)
+
+    @pytest.mark.parametrize("writer", ["_write_xls", "_write_xlsx"])
+    def test_rows_past_nrows_are_ignored(self, tmp_path: Path, writer: str) -> None:
+        path = getattr(self, writer)(tmp_path / "book.xls")
+
+        assert not sheet_head_contains(path, ["later-a"], nrows=3)
+
+    @pytest.mark.parametrize("content", [b"", b"not a workbook"])
+    def test_unreadable_file_is_false(self, tmp_path: Path, content: bytes) -> None:
+        path = tmp_path / "book.xls"
+        path.write_bytes(content)
+
+        assert not sheet_head_contains(path, ["title-a"], nrows=3)
+
+    def test_missing_file_is_false(self, tmp_path: Path) -> None:
+        assert not sheet_head_contains(tmp_path / "absent.xls", ["title-a"], nrows=3)

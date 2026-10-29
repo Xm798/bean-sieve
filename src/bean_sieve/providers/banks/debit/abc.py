@@ -10,7 +10,12 @@ from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import join_description, load_openpyxl_workbook, masked_card_last4
+from ..._tabular import (
+    join_description,
+    load_openpyxl_workbook,
+    masked_card_last4,
+    sheet_head_contains,
+)
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -39,7 +44,6 @@ class ABCDebitProvider(BaseProvider):
     provider_name = "农业银行借记卡"
     supported_formats = [".xlsx", ".xls"]
     filename_pattern = re.compile(r"detail\d{8}")
-    content_keywords = []  # Binary file, content detection not possible
     per_card_statement = True  # ABC exports one statement per card
 
     COL_TX_DATE = 0  # 交易日期
@@ -56,6 +60,8 @@ class ABCDebitProvider(BaseProvider):
 
     HEADER_KEYWORDS = ("交易日期", "交易时间")
     TITLE_MARKER = "账户明细查询"
+    # The title is generic, so ABC-specific column names back it up.
+    CONTENT_MARKERS = (TITLE_MARKER, "本次余额", "交易用途")
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse ABC debit card XLSX statement."""
@@ -88,6 +94,10 @@ class ABCDebitProvider(BaseProvider):
 
         self.assign_statement_periods(transactions)
         return transactions
+
+    @classmethod
+    def _match_content(cls, file_path: Path) -> bool:
+        return sheet_head_contains(file_path, cls.CONTENT_MARKERS, nrows=10)
 
     @staticmethod
     def _extract_card_last4(rows: list) -> str | None:

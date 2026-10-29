@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import load_openpyxl_workbook
+from ..._tabular import load_openpyxl_workbook, sheet_head_contains
 from ...base import BaseProvider
 
 
@@ -26,7 +26,6 @@ class PABDebitProvider(BaseProvider):
     provider_name = "平安银行借记卡"
     supported_formats = [".xls", ".xlsx"]
     filename_pattern = re.compile(r"平安.*借记|借记.*平安")
-    content_keywords = []  # Binary file, can't check content
     per_card_statement = True  # PAB exports one statement per card
 
     # Column indices (0-based, after header row)
@@ -41,6 +40,9 @@ class PABDebitProvider(BaseProvider):
     COL_SUMMARY = 8  # 摘要
     COL_NOTE = 9  # 备注
     COL_ORDER_ID = 10  # 交易流水号
+
+    # The export carries no bank name, so its column names identify it.
+    CONTENT_MARKERS = ("付款方姓名", "收款方姓名", "交易流水号")
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse PAB debit card Excel statement."""
@@ -60,6 +62,10 @@ class PABDebitProvider(BaseProvider):
 
         self.assign_statement_periods(transactions)
         return transactions
+
+    @classmethod
+    def _match_content(cls, file_path: Path) -> bool:
+        return sheet_head_contains(file_path, cls.CONTENT_MARKERS, nrows=5)
 
     def _extract_card_last4(self, sheet) -> str | None:
         """Extract card suffix from the first row account info."""

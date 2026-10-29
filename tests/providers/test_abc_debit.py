@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
+from bean_sieve.providers import auto_detect_provider
 from bean_sieve.providers.banks.debit.abc import ABCDebitProvider
 
 
@@ -347,3 +348,19 @@ class TestABCDebitProvider:
         assert pattern.search("detail20260405")
         assert pattern.search("detail20260105")
         assert not pattern.search("transaction_list")
+
+    @pytest.mark.parametrize("ext", [".xlsx", ".xls"])
+    def test_renamed_file_detected_by_content(self, tmp_path: Path, ext: str) -> None:
+        """A file renamed away from detailYYYYMMDD is recognised by its header."""
+        f = _create_xlsx(
+            tmp_path / f"ABC_0000_20300101-20301231{ext}",
+            [TITLE_ROW, INFO_ROW, HEADER_ROW],
+        )
+        assert isinstance(auto_detect_provider(f), ABCDebitProvider)
+
+    def test_title_without_abc_header_not_detected(self, tmp_path: Path) -> None:
+        """The generic title alone does not claim the file."""
+        f = _create_xlsx(
+            tmp_path / "statement.xlsx", [TITLE_ROW, INFO_ROW, ["交易日期", "金额"]]
+        )
+        assert not ABCDebitProvider.can_handle(f)

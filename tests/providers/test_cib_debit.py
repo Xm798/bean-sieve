@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import xlwt
 
-from bean_sieve.providers import get_provider
+from bean_sieve.providers import auto_detect_provider, get_provider
 from bean_sieve.providers.banks.debit.cib import CIBDebitProvider
 
 HEADERS = [
@@ -164,6 +164,22 @@ class TestCIBDebitProvider:
         assert not CIBDebitProvider.can_handle(
             Path("交易明细_6789_20250101_20250331.xls")
         )
+
+    def test_renamed_file_detected_by_content(self, tmp_path: Path) -> None:
+        """A file renamed away from the bank's default name is recognised by its header."""
+        f = create_cib_xls(tmp_path, [], filename="CIB_0000_20300101-20301231.xls")
+        assert isinstance(auto_detect_provider(f), CIBDebitProvider)
+
+    def test_header_without_cib_title_not_detected(self, tmp_path: Path) -> None:
+        """Another bank's statement sharing the column names is not claimed."""
+        wb = xlwt.Workbook()
+        ws = wb.add_sheet("Sheet0")
+        ws.write(0, 0, "其他银行交易明细")
+        for col, header in enumerate(HEADERS):
+            ws.write(10, col, header)
+        f = tmp_path / "statement.xls"
+        wb.save(str(f))
+        assert not CIBDebitProvider.can_handle(f)
 
     def test_parse_transactions(self, cib_xls_file: Path) -> None:
         """Test parsing transactions from XLS file."""

@@ -12,7 +12,12 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import join_description, normalize_cell_str, to_decimal
+from ..._tabular import (
+    join_description,
+    normalize_cell_str,
+    sheet_head_contains,
+    to_decimal,
+)
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -41,7 +46,6 @@ class CIBDebitProvider(BaseProvider):
     provider_name = "兴业银行借记卡"
     supported_formats = [".xls"]
     filename_pattern = re.compile(r"的交易明细 \d{8}-\d{8}")
-    content_keywords = []  # Binary XLS (BIFF8), content detection not possible
     per_card_statement = True  # CIB exports one statement per card
 
     COL_TX_TIME = 0  # 交易时间 (datetime string)
@@ -60,6 +64,7 @@ class CIBDebitProvider(BaseProvider):
     HEADER_KEYWORDS = ("交易时间", "记账日")
     FOOTER_MARKER = "说明"
     TITLE_MARKER = "兴业银行"
+    CONTENT_MARKERS = (TITLE_MARKER, "记账日", "对方银行")
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse CIB debit card XLS statement."""
@@ -100,6 +105,10 @@ class CIBDebitProvider(BaseProvider):
 
         self.assign_statement_periods(transactions)
         return transactions
+
+    @classmethod
+    def _match_content(cls, file_path: Path) -> bool:
+        return sheet_head_contains(file_path, cls.CONTENT_MARKERS, nrows=15)
 
     def _find_header_row(self, sheet) -> int:
         """Find header row by scanning for column header keywords."""
