@@ -37,10 +37,18 @@ Content-Transfer-Encoding: base64
 """
 
 
+NEW_HEADER = (
+    "<tr><td>交易日期 T Date</td><td>入账日期 P Date</td>"
+    "<td>卡号 后四位 Card No.</td><td>交易描述 Description</td>"
+    "<td>交易金额/币种 Tran Amt/Curr</td>"
+    "<td>入账金额/币种 (支出为-) Sett Amt/Curr</td></tr>"
+)
+
+
 @pytest.fixture
 def abc_html_content():
     """Sample ABC statement HTML content."""
-    return """<html>
+    return f"""<html>
 <head><title>金穗信用卡电子对账单</title></head>
 <body>
 <table>
@@ -56,7 +64,8 @@ def abc_html_content():
     <tr><td>2324.00</td></tr>
 </table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>251103</td>
         <td>251103</td>
         <td>1234</td>
@@ -191,11 +200,12 @@ class TestABCCreditProvider:
 
         Such rows must still parse, with card_last4 reduced to the 4 digits.
         """
-        html = """<html>
+        html = f"""<html>
 <body>
 <table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>300102</td>
         <td>300102</td>
         <td>5678附</td>
@@ -230,14 +240,15 @@ class TestABCCreditProvider:
 
         Such rows must still parse, falling back to the statement's own card.
         """
-        html = """<html>
+        html = f"""<html>
 <body>
 <table>
     <tr><td><span>620000******1234</span></td></tr>
     <tr><td><span>2030/01/01-2030/01/31</span></td></tr>
 </table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>300110</td>
         <td>300110</td>
         <td>1234</td>
@@ -279,11 +290,12 @@ class TestABCCreditProvider:
 
     def test_repayment_row_without_statement_card(self, tmp_path):
         """A card-less row still parses when the statement card is unavailable."""
-        html = """<html>
+        html = f"""<html>
 <body>
 <table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>300113</td>
         <td>300113</td>
         <td></td>
@@ -305,11 +317,12 @@ class TestABCCreditProvider:
 
     def test_malformed_card_cell_is_warned(self, tmp_path, caplog):
         """A row with an unrecognisable card field is dropped, but never silently."""
-        html = """<html>
+        html = f"""<html>
 <body>
 <table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>300113</td>
         <td>300113</td>
         <td>not-a-card</td>
@@ -354,11 +367,12 @@ class TestABCDateParsing:
 
     def test_yymmdd_format(self, tmp_path):
         """Test parsing YYMMDD date format."""
-        html = """<html>
+        html = f"""<html>
 <body>
 <table><tr><td><span>2025/12/01-2025/12/31</span></td></tr></table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>251225</td>
         <td>251225</td>
         <td>5678</td>
@@ -380,11 +394,12 @@ class TestABCDateParsing:
     def test_cross_century_date(self, tmp_path):
         """Test that dates with YY > 50 are treated as 1900s (edge case)."""
         # This is a theoretical edge case - current dates use 20xx
-        html = """<html>
+        html = f"""<html>
 <body>
 <table><tr><td><span>2025/01/01-2025/01/31</span></td></tr></table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>250115</td>
         <td>250115</td>
         <td>9999</td>
@@ -409,11 +424,12 @@ class TestABCAmountParsing:
 
     def test_amount_with_thousands_separator(self, tmp_path):
         """Test parsing amounts with comma separators."""
-        html = """<html>
+        html = f"""<html>
 <body>
 <table><tr><td><span>2025/11/01-2025/11/30</span></td></tr></table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>251115</td>
         <td>251115</td>
         <td>1234</td>
@@ -434,11 +450,12 @@ class TestABCAmountParsing:
 
     def test_usd_amount(self, tmp_path):
         """Test parsing USD amounts."""
-        html = """<html>
+        html = f"""<html>
 <body>
 <table><tr><td><span>2025/11/01-2025/11/30</span></td></tr></table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>251120</td>
         <td>251120</td>
         <td>1234</td>
@@ -460,11 +477,12 @@ class TestABCAmountParsing:
 
     def test_positive_amount_refund(self, tmp_path):
         """Test parsing positive amounts (refunds)."""
-        html = """<html>
+        html = f"""<html>
 <body>
 <table><tr><td><span>2025/11/01-2025/11/30</span></td></tr></table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>251125</td>
         <td>251125</td>
         <td>1234</td>
@@ -485,7 +503,7 @@ class TestABCAmountParsing:
         assert transactions[0].is_income
 
 
-REBATE_HTML = """<html>
+REBATE_HTML = f"""<html>
 <head><title>金穗信用卡电子对账单</title></head>
 <body>
 <table>
@@ -502,7 +520,8 @@ REBATE_HTML = """<html>
     <tr><td>30.00</td></tr>
 </table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>300102</td>
         <td>300102</td>
         <td>1234</td>
@@ -567,7 +586,8 @@ def formula_rebate_html(rebate_used: str, adjustment: str) -> str:
 </table>
 </div>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>300102</td>
         <td>300102</td>
         <td>1234</td>
@@ -774,14 +794,15 @@ class TestABCStatementPeriod:
 
     def test_cycle_widens_around_a_row_dated_outside_it(self, tmp_path):
         """Test that an out-of-cycle row widens the card's period."""
-        html = """<html>
+        html = f"""<html>
 <body>
 <table>
     <tr><td><span>620000******1234</span></td></tr>
     <tr><td><span>2030/03/01-2030/03/31</span></td></tr>
 </table>
 <table>
-    <tr>
+    {NEW_HEADER}
+<tr>
         <td>300227</td>
         <td>300302</td>
         <td>1234</td>
@@ -840,6 +861,7 @@ def write_abc_eml(path: Path, rows: list[Row], cycle: str = CYCLE) -> Path:
 <tr><td><span>{cycle}</span></td></tr>
 </table>
 <table>
+{NEW_HEADER}
 {body}
 </table>
 </body></html>"""
@@ -947,7 +969,7 @@ class TestABCReissue:
         )
 
         assert summary.card_number == CARD
-        assert summary.statement_cycle == CYCLE
+        assert summary.statement_period == (date(2030, 3, 1), date(2030, 3, 31))
         assert summary.statement_balance == Decimal("-1186.00")
         assert summary.new_charges is None
         assert summary.rebate_used == Decimal(0)
@@ -1028,3 +1050,212 @@ class TestABCCoverage:
             path.name: sum(t.source_file == path for t in kept) for path in paths
         }
         assert by_file == {"s.eml": 4, "r.pdf": 0, "next.pdf": 1}
+
+
+OLD_CARD = "620000*****2468"
+
+
+def _nest(html: str, depth: int) -> str:
+    for _ in range(depth):
+        html = f"<table><tr><td>{html}</td></tr></table>"
+    return html
+
+
+def _bilingual(zh: str, en: str) -> str:
+    return f"<td><table><tr><td>{zh}</td></tr><tr><td>{en}</td></tr></table></td>"
+
+
+def old_template_html(
+    rows: list[Row],
+    cycle: str = "20300301-20300331",
+    balance: str = "-1,186.00",
+    new_charge: str = "130.00",
+) -> str:
+    """Render rows in the older mail layout.
+
+    Every block sits in nested layout tables, each detail row with a spacer
+    cell in front, YYYYMMDD dates and 交易摘要 / 交易地点 in separate cells; a
+    description without a space prints as one merged cell.
+    """
+    header = "".join(
+        _bilingual(zh, en)
+        for zh, en in (
+            ("交易日", "TDate"),
+            ("入账日期", "PDate"),
+            ("卡号后四位", "Card No."),
+            ("交易摘要", "Type"),
+            ("交易地点", "City/Merchant Name/Branches"),
+            ("交易金额/币种", "Tran Amt/Curr"),
+            ("入账金额/币种(支出为-)", "Sett Amt/Curr"),
+        )
+    )
+    details = []
+    for trans, post, card, description, amount, booked in rows:
+        cells = ["", f"20{trans}", f"20{post}", card, *description.split(" ", 1)]
+        cells += [amount, booked]
+        tds = "".join(f"<td>{cell}</td>" for cell in cells)
+        details.append(_nest(f"<table><tr>{tds}</tr></table>", 3))
+    formula_labels = "".join(
+        _bilingual(*label) if isinstance(label, tuple) else f"<td>{label}</td>"
+        for label in (
+            ("币种", "Curr"),
+            ("上期余额（欠款为-)", "Previous Balance"),
+            "-",
+            ("本期新增应还款额", "New Charge"),
+            "+",
+            ("本期已还款额、刷卡金转入", "Payments"),
+            "=",
+            ("本期账户全部余额(欠款为-)", "Account Balance"),
+        )
+    )
+    formula_values = "".join(
+        f"<td>{v}</td>"
+        for v in ("人民币(CNY)", "-1,072.50", new_charge, "16.50", balance)
+    )
+    summary = (
+        "<table><tr><td></td><td>卡号</td>"
+        f"<td>{OLD_CARD}</td><td>账单周期</td><td>{cycle}</td>"
+        "<td>到期还款日</td><td>20300420</td></tr></table>"
+        "<table><tr><td>币种</td><td>本期应还款额(欠款为-)</td>"
+        "<td>最低还款额(欠款为-)</td><td>信用额度</td></tr>"
+        "<tr><td>Curr</td><td>New Balance</td><td>Min.Payment</td>"
+        "<td>Credit Limit</td></tr>"
+        f"<tr><td>人民币(CNY)</td><td>{balance}</td><td>-118.60</td>"
+        "<td>23000.00</td></tr></table>"
+    )
+    return f"""<html>
+<head><meta http-equiv='Content-Type' content='text/html;charset=gbk'></head>
+<body>
+{_nest(summary, 3)}
+{_nest(f"<table><tr>{formula_labels}</tr></table>", 4)}
+{_nest(f"<table><tr>{formula_values}</tr></table>", 4)}
+<table><tr><td>【交易明细】</td></tr></table>
+{_nest(f"<table><tr>{header}</tr></table>", 4)}
+{"".join(details)}
+</body></html>"""
+
+
+def write_old_template_eml(
+    path: Path, rows: list[Row], content_type: str = "text/html", **kwargs: str
+) -> Path:
+    """Write the mail as the older template sends it: GBK, declared only in HTML."""
+    encoded = base64.b64encode(old_template_html(rows, **kwargs).encode("gbk"))
+    path.write_bytes(
+        b"From: creditcard@abchina.com\nMIME-Version: 1.0\n"
+        + f"Content-Type: {content_type}\n".encode("ascii")
+        + b"Content-Transfer-Encoding: base64\n\n"
+        + encoded
+    )
+    return path
+
+
+class TestABCOldTemplate:
+    """The older mail template carries the same rows as the current one."""
+
+    def test_same_transactions_as_current_template(self, tmp_path):
+        provider = ABCCreditProvider()
+        old = provider.parse(write_old_template_eml(tmp_path / "old.eml", ROWS))
+        new = provider.parse(write_abc_eml(tmp_path / "new.eml", ROWS))
+
+        assert len(old) == len(ROWS)
+        assert shape(old) == shape(new)
+
+    def test_empty_mime_charset_falls_back_to_the_html_one(self, tmp_path):
+        path = write_old_template_eml(
+            tmp_path / "old.eml", ROWS, content_type='text/html; charset=""'
+        )
+        txns = ABCCreditProvider().parse(path)
+
+        assert txns[0].description == "网上消费 支付宝，payee-a"
+
+    def test_gb2312_label_decodes_characters_outside_gb2312(self, tmp_path):
+        # 镕 is in GBK but not in GB2312.
+        rows = [("300302", "300302", "", "消费 镕-shop", "-53.00/CNY", "-53.00/CNY")]
+        path = write_old_template_eml(
+            tmp_path / "old.eml", rows, content_type="text/html; charset=gb2312"
+        )
+        txns = ABCCreditProvider().parse(path)
+
+        assert txns[0].description == "消费 镕-shop"
+
+    def test_summary(self, tmp_path):
+        summary = ABCCreditProvider()._extract_summary(
+            write_old_template_eml(tmp_path / "old.eml", ROWS)
+        )
+
+        assert summary.card_number == OLD_CARD
+        assert summary.statement_period == (date(2030, 3, 1), date(2030, 3, 31))
+        assert summary.statement_balance == Decimal("-1186.00")
+        assert summary.new_charges == Decimal("130.00")
+        assert summary.adjustment is None
+        assert summary.rebate_used == Decimal(0)
+
+    def test_post_output_balances(self, tmp_path):
+        path = write_old_template_eml(tmp_path / "old.eml", ROWS)
+        output = ABCCreditProvider().post_output(
+            "",
+            empty_result(),
+            ReconcileContext(statement_paths=[path], provider_ids={path: "abc_credit"}),
+        )
+
+        assert f"卡号: {OLD_CARD} (尾号 2468)" in output
+        assert "账单周期: 2030/03/01-2030/03/31" in output
+        assert "账单消费:             130.00 CNY" in output
+        assert "状态: ✅ 平账" in output
+        assert "未读出" not in output
+
+    def test_coverage_uses_the_printed_cycle(self, tmp_path):
+        provider = ABCCreditProvider()
+        path = write_old_template_eml(tmp_path / "old.eml", ROWS)
+        covs = provider.coverage(path, provider.parse(path))
+
+        assert [(c.account, c.start, c.end, len(c.rows)) for c in covs] == [
+            ("2468", date(2030, 3, 1), date(2030, 3, 31), 3),
+            ("9753", date(2030, 3, 1), date(2030, 3, 31), 1),
+        ]
+
+
+class TestABCUnreadableMail:
+    def test_dated_rows_without_a_known_header_are_warned(self, tmp_path, caplog):
+        html = old_template_html(ROWS).replace("交易摘要", "交易类型")
+        path = tmp_path / "农业银行金穗信用卡.eml"
+        path.write_text(create_abc_eml(html), encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING):
+            assert ABCCreditProvider().parse(path) == []
+
+        assert "Unrecognised ABC statement layout" in caplog.text
+        assert path.name in caplog.text
+
+    def test_missing_cycle_is_warned(self, tmp_path, caplog):
+        path = write_abc_eml(tmp_path / "s.eml", ROWS, cycle="")
+
+        with caplog.at_level(logging.WARNING):
+            transactions = ABCCreditProvider().parse(path)
+
+        assert len(transactions) == len(ROWS)
+        assert "No statement cycle" in caplog.text
+        assert path.name in caplog.text
+
+    def test_report_names_the_fields_it_could_not_read(self, tmp_path):
+        path = write_abc_eml(tmp_path / "s.eml", ROWS, cycle="")
+        output = ABCCreditProvider().post_output(
+            "",
+            empty_result(),
+            ReconcileContext(statement_paths=[path], provider_ids={path: "abc_credit"}),
+        )
+
+        assert ";   未读出: 账单周期、本期应还款额、账务说明\n" in output
+
+    def test_rebate_without_a_cycle_books_no_entry(self, tmp_path):
+        path = tmp_path / "农业银行金穗信用卡刷卡金.eml"
+        html = REBATE_HTML.replace("<span>2030/01/01-2030/01/31</span>", "")
+        path.write_text(create_abc_eml(html), encoding="utf-8")
+        output = ABCCreditProvider().post_output(
+            "",
+            empty_result(),
+            ReconcileContext(statement_paths=[path], provider_ids={path: "abc_credit"}),
+        )
+
+        assert "刷卡金抵扣 ---" not in output
+        assert "状态: ✅ 平账 (刷卡金 5.00，账单周期未读出，未生成分录)" in output

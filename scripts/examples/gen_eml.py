@@ -13,8 +13,101 @@ from gen_pdf import (
 )
 
 
+def _abc_nest(html: str, depth: int) -> str:
+    for _ in range(depth):
+        html = f"<table><tr><td>{html}</td></tr></table>"
+    return html
+
+
+def _abc_bilingual(zh: str, en: str) -> str:
+    return f"<td><table><tr><td>{zh}</td></tr><tr><td>{en}</td></tr></table></td>"
+
+
+def _abc_credit_older_template(out_dir: Path) -> None:
+    """The layout mailed before the current one: GBK, nested layout tables,
+    YYYYMMDD dates, 交易摘要 and 交易地点 in separate cells, 刷卡金 as rows."""
+    # (trans_date, post_date, 交易摘要 and 交易地点 or one merged cell, amount)
+    rows = [
+        ("20300105", "20300105", ["网上消费", "支付宝，store-h"], "-121.00"),
+        ("20300109", "20300110", ["消费", "store-i"], "-74.00"),
+        ("20300114", "20300114", ["刷卡金转入", "活动返还-j"], "7.30"),
+        ("20300120", "20300120", ["约定还款"], "870.00"),
+    ]
+    header = "".join(
+        _abc_bilingual(zh, en)
+        for zh, en in (
+            ("交易日", "TDate"),
+            ("入账日期", "PDate"),
+            ("卡号后四位", "Card No."),
+            ("交易摘要", "Type"),
+            ("交易地点", "City/Merchant Name/Branches"),
+            ("交易金额/币种", "Tran Amt/Curr"),
+            ("入账金额/币种(支出为-)", "Sett Amt/Curr"),
+        )
+    )
+    details = "\n".join(
+        _abc_nest(
+            "<table><tr><td></td>"
+            + "".join(
+                f"<td>{c}</td>"
+                for c in (t, p, "", *desc, f"{abs(float(a)):.2f}/CNY", f"{a}/CNY")
+            )
+            + "</tr></table>",
+            3,
+        )
+        for t, p, desc, a in rows
+    )
+    formula_labels = "".join(
+        _abc_bilingual(*label) if isinstance(label, tuple) else f"<td>{label}</td>"
+        for label in (
+            ("币种", "Curr"),
+            ("上期余额（欠款为-)", "Previous Balance"),
+            "-",
+            ("本期新增应还款额", "New Charge"),
+            "+",
+            ("本期已还款额、刷卡金转入", "Payments"),
+            "=",
+            ("本期账户全部余额(欠款为-)", "Account Balance"),
+        )
+    )
+    formula_values = "".join(
+        f"<td>{v}</td>"
+        for v in ("人民币(CNY)", "-870.00", "195.00", "877.30", "-187.70")
+    )
+    summary = (
+        "<table><tr><td></td><td>卡号</td><td>620000*****4321</td>"
+        "<td>账单周期</td><td>20300101-20300131</td>"
+        "<td>到期还款日</td><td>20300220</td></tr></table>"
+        "<table><tr><td>币种</td><td>本期应还款额(欠款为-)</td>"
+        "<td>最低还款额(欠款为-)</td><td>信用额度</td></tr>"
+        "<tr><td>Curr</td><td>New Balance</td><td>Min.Payment</td>"
+        "<td>Credit Limit</td></tr>"
+        "<tr><td>人民币(CNY)</td><td>-187.70</td><td>-18.77</td>"
+        "<td>23000.00</td></tr></table>"
+    )
+    html = f"""<html>
+<head><meta http-equiv='Content-Type' content='text/html;charset=gbk'></head>
+<body>
+{_abc_nest(summary, 3)}
+{_abc_nest(f"<table><tr>{formula_labels}</tr></table>", 4)}
+{_abc_nest(f"<table><tr>{formula_values}</tr></table>", 4)}
+<table><tr><td>【交易明细】</td></tr></table>
+{_abc_nest(f"<table><tr>{header}</tr></table>", 4)}
+{details}
+</body>
+</html>"""
+    write_eml(
+        out_dir / "农业银行金穗信用卡2030年01月电子账单.eml",
+        html,
+        "金穗信用卡电子对账单",
+        encoding="base64",
+        charset="gb2312",
+    )
+
+
 @generator("abc_credit")
 def abc_credit(out_dir: Path) -> None:
+    _abc_credit_older_template(out_dir)
     # A month only the reissue covers.
     abc_credit_reissue(
         out_dir / "农业银行信用卡对账单2030年02月（补）.pdf",
@@ -103,6 +196,14 @@ def abc_credit(out_dir: Path) -> None:
 </table>
 </div>
 <table>
+<tr>
+<td>交易日期 T Date</td>
+<td>入账日期 P Date</td>
+<td>卡号 后四位 Card No.</td>
+<td>交易描述 Description</td>
+<td>交易金额/币种 Tran Amt/Curr</td>
+<td>入账金额/币种 (支出为-) Sett Amt/Curr</td>
+</tr>
 {body}
 </table>
 <table>

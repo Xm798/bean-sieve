@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import codecs
+import email
 import logging
 import re
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from itertools import dropwhile
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from ....config.schema import ProviderConfig
 from ....core.coverage import Coverage
@@ -19,11 +22,16 @@ from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
 
-# Statement's own masked card number, e.g. "620000******1234"
-_MASKED_CARD_RE = re.compile(r"^\d{6}\*{6}\d{4}$")
-# Transaction date cell, YYMMDD
-_ROW_DATE_RE = re.compile(r"^\d{6}$")
-_CYCLE_RE = re.compile(r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})")
+# Statement's own masked card number: "620000******1234", or with five
+# asterisks in the older mail template
+_MASKED_CARD_RE = re.compile(r"^\d{6}\*{5,6}\d{4}$")
+# Transaction date cell: YYMMDD, or YYYYMMDD in the older mail template
+_ROW_DATE_RE = re.compile(r"^\d{6}(?:\d{2})?$")
+# "2030/01/01-2030/01/31", or "20300101-20300131" in the older mail template
+_CYCLE_RE = re.compile(r"(\d{4})/?(\d{2})/?(\d{2})-(\d{4})/?(\d{2})/?(\d{2})")
+_META_CHARSET_RE = re.compile(rb"<meta[^>]*charset=[\"']?([\w-]+)", re.IGNORECASE)
+_GB_CHARSETS = ("gb2312", "gbk")
+_FORMULA_OPERATORS = ("-", "=", "+")
 _CARD_CELL_RE = re.compile(r"^(\d{4})[主附]?$")
 _ROW_AMOUNT_RE = re.compile(r"^-?[\d,]+\.\d+/[A-Z]{3}$")
 _SUMMARY_AMOUNT_RE = re.compile(r"^-?[\d,]+\.\d{2}$")
@@ -32,12 +40,58 @@ _PDF_TITLE = "农业银行信用卡对账单"
 _PDF_LINE_TOLERANCE = 2.0
 
 
+class _MailTemplate(NamedTuple):
+    """One layout of the mailed statement.
+
+    ``header`` holds the prefixes of the detail header's cells, whitespace
+    removed; the 账务说明 labels name the formula cells the report reads.
+    Detail rows share one shape in every layout (two dates, the card cell,
+    the description cells, two amounts), so a layout is told apart only by
+    these labels.
+    """
+
+    header: tuple[str, ...]
+    new_charges_label: str
+    adjustment_label: str | None
+
+
+_TEMPLATES: tuple[_MailTemplate, ...] = (
+    _MailTemplate(
+        header=(
+            "交易日期",
+            "入账日期",
+            "卡号后四位",
+            "交易描述",
+            "交易金额/币种",
+            "入账金额/币种",
+        ),
+        new_charges_label="本期账单金额",
+        adjustment_label="本期调整金额",
+    ),
+    # Older mails split the description into 交易摘要 and 交易地点 and print
+    # no 本期调整金额; their 刷卡金 arrives as itemised 刷卡金转入 rows.
+    _MailTemplate(
+        header=(
+            "交易日",
+            "入账日期",
+            "卡号后四位",
+            "交易摘要",
+            "交易地点",
+            "交易金额/币种",
+            "入账金额/币种",
+        ),
+        new_charges_label="本期新增应还款额",
+        adjustment_label=None,
+    ),
+)
+
+
 @dataclass
 class StatementSummary:
     """Summary information extracted from ABC statement."""
 
     card_number: str | None = None  # 卡号 (masked, e.g., 620000******1234)
-    statement_cycle: str | None = None  # 账单周期
+    statement_period: tuple[date, date] | None = None  # 账单周期
     statement_balance: Decimal | None = None  # 本期应还款额
     new_charges: Decimal | None = None  # 本期账单金额 (from 账务说明)
     adjustment: Decimal | None = None  # 本期调整金额 (from 账务说明)
@@ -62,14 +116,13 @@ class ABCCreditProvider(BaseProvider):
     Provider for Agricultural Bank of China (农业银行) credit card statements.
 
     Two formats carry the same detail rows:
-    - .eml: the mailed statement (金穗信用卡电子对账单), HTML
+    - .eml: the mailed statement (金穗信用卡电子对账单), HTML in one of the
+      layouts in ``_TEMPLATES``, told apart by the detail header
     - .pdf: the reissued statement (农业银行信用卡对账单YYYY年MM月（补）), a
       text PDF without the mail's 账务说明 formula or 刷卡金 summary
 
-    File format:
-    - Columns: 交易日期, 入账日期, 卡号后四位, 交易描述, 交易金额/币种, 入账金额/币种
-    - Date format: YYMMDD (e.g., "251103" = 2025-11-03)
-    - Amount sign: Settlement amount negative for expenses (支出为-)
+    Each layout's columns are listed in ``_TEMPLATES``; the settlement amount
+    is negative for expenses (支出为-).
     """
 
     provider_id = "abc_credit"
@@ -82,17 +135,18 @@ class ABCCreditProvider(BaseProvider):
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse an ABC credit card statement, mailed or reissued."""
+        lines = self._lines(file_path)
+        summary = _read_summary(lines)
+        statement_period = summary.statement_period
+        statement_card = summary.card_number[-4:] if summary.card_number else None
         if file_path.suffix.lower() == ".pdf":
-            lines = _pdf_lines(file_path)
-            summary = _pdf_summary(lines)
-            statement_period = _parse_cycle(summary.statement_cycle or "")
-            statement_card = summary.card_number[-4:] if summary.card_number else None
             transactions = self._pdf_transactions(lines, file_path, statement_card)
         else:
-            soup = self.parse_html(self.extract_html_from_eml(file_path))
-            statement_period = self._extract_statement_period(soup)
-            statement_card = self._extract_statement_card_last4(soup)
-            transactions = self._parse_transactions(soup, file_path, statement_card)
+            transactions = self._mail_transactions(lines, file_path, statement_card)
+        if statement_period is None:
+            logger.warning(
+                "No statement cycle found in ABC statement %s", file_path.name
+            )
 
         self.assign_statement_periods(transactions, statement_period)
         if statement_period:
@@ -149,65 +203,80 @@ class ABCCreditProvider(BaseProvider):
                 transactions.append(txn)
         return transactions
 
-    def _extract_statement_period(self, soup) -> tuple[date, date] | None:
-        """Extract statement period (e.g., '2025/10/24-2025/11/23')."""
-        for span in soup.find_all("span"):
-            if cycle := _parse_cycle(span.get_text(strip=True)):
-                return cycle
-        return None
+    def _lines(self, file_path: Path) -> list[list[str]]:
+        if file_path.suffix.lower() == ".pdf":
+            return _pdf_lines(file_path)
+        return self._mail_lines(file_path)
 
-    def _extract_statement_card_last4(self, soup) -> str | None:
-        """Extract the statement's own card number (e.g. '620000******1234')."""
-        for span in soup.find_all("span"):
-            text = span.get_text(strip=True)
-            if _MASKED_CARD_RE.match(text):
-                return text[-4:]
-        return None
+    def _mail_lines(self, file_path: Path) -> list[list[str]]:
+        """Return every table row of the mail, as its direct cells' texts.
 
-    def _parse_transactions(
+        Layout rows wrap whole blocks in one cell, so the readers match cells
+        by their full text and rows by their cell count.
+        """
+        soup = self.parse_html(_mail_html(file_path))
+        return [
+            [
+                self.clean_text(td.get_text())
+                for td in tr.find_all("td", recursive=False)
+            ]
+            for tr in soup.find_all("tr")
+        ]
+
+    def _mail_transactions(
         self,
-        soup,
+        lines: list[list[str]],
         file_path: Path,
         statement_card: str | None,
     ) -> list[Transaction]:
-        """Parse transactions from HTML tables."""
-        transactions = []
-        line_num = 0
+        """Read the detail rows that follow a template's detail header.
 
-        # Find transaction tables - use recursive=False to avoid duplicates
-        # from nested tables
-        for table in soup.find_all("table"):
-            # Get only direct tr children (not nested)
-            direct_rows = table.find_all("tr", recursive=False)
-            for row in direct_rows:
-                cells = row.find_all("td", recursive=False)
-                if len(cells) != 6:
-                    # Layout tables are full of non-transaction rows; only flag
-                    # rows that look like details. Check the cell count band
-                    # first: get_text() on a layout cell walks the whole subtree,
-                    # which for a top-level wrapper is the entire document.
-                    if 4 <= len(cells) <= 8 and _ROW_DATE_RE.match(
-                        self.clean_text(cells[0].get_text())
-                    ):
-                        logger.warning(
-                            "Skipping ABC transaction-like row in %s: "
-                            "expected 6 cells, got %d (%s)",
-                            file_path.name,
-                            len(cells),
-                            " | ".join(self.clean_text(c.get_text()) for c in cells),
-                        )
-                    continue
-
-                line_num += 1
-                txn = self._parse_transaction_row(
-                    [self.clean_text(c.get_text()) for c in cells],
-                    file_path,
-                    line_num,
-                    statement_card,
+        A row starts with its two dates, after spacer cells in the older
+        template, and ends with its two amounts; the cells between them are
+        the card number and the description, which the older template
+        prints in two cells (交易摘要, 交易地点) or one.
+        """
+        start = next(
+            (
+                i + 1
+                for i, line in enumerate(lines)
+                if any(_is_header(line, template) for template in _TEMPLATES)
+            ),
+            None,
+        )
+        if start is None:
+            # Dated rows under no known header mean the bank changed its
+            # layout; an empty result alone would look like a quiet month.
+            if any(_first_date_index(line) is not None for line in lines):
+                logger.warning(
+                    "Unrecognised ABC statement layout in %s", file_path.name
                 )
-                if txn:
-                    transactions.append(txn)
+            return []
 
+        transactions: list[Transaction] = []
+        for line in lines[start:]:
+            first = _first_date_index(line)
+            if first is None:
+                continue
+            cells = line[first:]
+            if not (
+                len(cells) >= 6
+                and _ROW_AMOUNT_RE.match(cells[-2])
+                and _ROW_AMOUNT_RE.match(cells[-1])
+            ):
+                logger.warning(
+                    "Skipping ABC transaction-like row in %s: %s",
+                    file_path.name,
+                    " | ".join(cells),
+                )
+                continue
+            description = " ".join(cell for cell in cells[3:-2] if cell)
+            row = [cells[0], cells[1], cells[2], description, cells[-2], cells[-1]]
+            txn = self._parse_transaction_row(
+                row, file_path, len(transactions) + 1, statement_card
+            )
+            if txn:
+                transactions.append(txn)
         return transactions
 
     def _parse_transaction_row(
@@ -224,11 +293,9 @@ class ABCCreditProvider(BaseProvider):
             description = cells[3]
             settle_amount = cells[5]
 
-            # Validate date format (YYMMDD)
             if not _ROW_DATE_RE.match(trans_date_str):
                 return None
 
-            # Parse date (YYMMDD -> YYYY-MM-DD)
             trans_date = self._parse_date(trans_date_str)
             if not trans_date:
                 return None
@@ -277,8 +344,10 @@ class ABCCreditProvider(BaseProvider):
             return None
 
     def _parse_date(self, date_str: str) -> date | None:
-        """Parse YYMMDD format to date object."""
+        """Parse a YYMMDD or YYYYMMDD date."""
         try:
+            if len(date_str) == 8:
+                return date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:]))
             yy = int(date_str[0:2])
             mm = int(date_str[2:4])
             dd = int(date_str[4:6])
@@ -305,89 +374,7 @@ class ABCCreditProvider(BaseProvider):
             return None, "CNY"
 
     def _extract_summary(self, file_path: Path) -> StatementSummary:
-        """Extract statement summary information."""
-        if file_path.suffix.lower() == ".pdf":
-            return _pdf_summary(_pdf_lines(file_path))
-        html = self.extract_html_from_eml(file_path)
-        soup = self.parse_html(html)
-        summary = StatementSummary()
-
-        for span in soup.find_all("span"):
-            text = span.get_text(strip=True)
-
-            # 卡号 (e.g., 620000******1234)
-            if _MASKED_CARD_RE.match(text):
-                summary.card_number = text
-
-            # 账单周期
-            if re.match(r"\d{4}/\d{2}/\d{2}-\d{4}/\d{2}/\d{2}", text):
-                summary.statement_cycle = text
-
-            # 本期应还款额
-            if "本期应还款额" in text:
-                parent = span.find_parent("tr")
-                if parent:
-                    next_row = parent.find_next_sibling("tr")
-                    if next_row:
-                        for cell in next_row.find_all("td"):
-                            cell_text = cell.get_text(strip=True)
-                            if re.match(r"^-?[\d,]+\.\d{2}$", cell_text):
-                                summary.statement_balance = Decimal(
-                                    cell_text.replace(",", "")
-                                )
-                                break
-
-            # 账务说明 formula table, anchored on its 本期账单金额 label
-            if "本期账单金额" in text and summary.new_charges is None:
-                formula = self._parse_account_formula(span)
-                summary.new_charges = formula.get("本期账单金额")
-                summary.adjustment = formula.get("本期调整金额")
-
-            # 本期使用刷卡金
-            if "本期使用刷卡金" in text:
-                parent_td = span.find_parent("td")
-                if parent_td:
-                    next_td = parent_td.find_next_sibling("td")
-                    if next_td:
-                        amount_text = next_td.get_text(strip=True)
-                        if re.match(r"^[\d,]+\.\d{2}$", amount_text):
-                            summary.rebate_used = Decimal(amount_text.replace(",", ""))
-
-        return summary
-
-    def _parse_account_formula(self, label_span) -> dict[str, Decimal]:
-        """Map each 账务说明 Chinese label (e.g. 本期调整金额) to its amount.
-
-        Labels and values sit in sibling tables; the label row also holds
-        operator cells (-, =, +) that have no value cell.
-        """
-        td = label_span.find_parent("td")
-        tr = td.find_parent("tr") if td else None
-        label_table = tr.find_parent("table") if tr else None
-        value_table = label_table.find_next_sibling("table") if label_table else None
-        value_row = value_table.find("tr") if value_table else None
-        if tr is None or value_row is None:
-            return {}
-
-        # A label cell's first span is the Chinese name; the English one follows.
-        labels = [
-            re.sub(r"\s+", "", span.get_text()) if span else ""
-            for span in (
-                cell.find("span") for cell in tr.find_all("td", recursive=False)
-            )
-        ]
-        labels = [label for label in labels if label not in ("-", "=", "+")]
-        values = [
-            cell.get_text(strip=True)
-            for cell in value_row.find_all("td", recursive=False)
-        ]
-
-        formula: dict[str, Decimal] = {}
-        for label, value in zip(labels, values, strict=False):
-            if not re.match(r"^-?[\d,]+\.\d{2}$", value):
-                continue
-            formula[label] = Decimal(value.replace(",", ""))
-        return formula
+        return _read_summary(self._lines(file_path))
 
     def post_output(
         self,
@@ -427,8 +414,20 @@ class ABCCreditProvider(BaseProvider):
 
             summary_lines.append(";")
             summary_lines.append(f"; 卡号: {card_display} (尾号 {card_last4})")
-            if summary.statement_cycle:
-                summary_lines.append(f"; 账单周期: {summary.statement_cycle}")
+            if summary.statement_period:
+                start, end = summary.statement_period
+                summary_lines.append(f"; 账单周期: {start:%Y/%m/%d}-{end:%Y/%m/%d}")
+            fields: list[tuple[str, object]] = [
+                ("卡号", summary.card_number),
+                ("账单周期", summary.statement_period),
+                ("本期应还款额", summary.statement_balance),
+            ]
+            # The reissue never prints the 账务说明 formula.
+            if file_path.suffix.lower() != ".pdf":
+                fields.append(("账务说明", summary.new_charges))
+            unread = [name for name, value in fields if value is None]
+            if unread:
+                summary_lines.append(f";   未读出: {'、'.join(unread)}")
             summary_lines.append(";")
 
             # Statement balance (negative in source = debt)
@@ -469,7 +468,13 @@ class ABCCreditProvider(BaseProvider):
             if stmt_balance == Decimal(0) and expenses == Decimal(0):
                 summary_lines.append(";   状态: ✅ 无消费")
             elif abs(diff) < Decimal("0.01"):
-                if rebate > 0:
+                if rebate > 0 and summary.statement_period is None:
+                    # The entry is dated on the cycle's last day.
+                    summary_lines.append(
+                        f";   状态: ✅ 平账 (刷卡金 {rebate:.2f}，"
+                        "账单周期未读出，未生成分录)"
+                    )
+                elif rebate > 0:
                     # Check if rebate already recorded in ledger
                     rebate_entry = self._generate_rebate_entry(
                         summary, rebate, result, context
@@ -521,19 +526,13 @@ class ABCCreditProvider(BaseProvider):
             provider_config = context.config.get_provider_config(self.provider_id)
 
         # Check if rebate already recorded in ledger
-        if self._rebate_exists_in_ledger(
-            card_last4, rebate, summary.statement_cycle, result, provider_config
+        period = summary.statement_period
+        if period is None or self._rebate_exists_in_ledger(
+            card_last4, rebate, period, result, provider_config
         ):
             return None
 
-        # Get statement end date for the entry date
-        entry_date = date.today()
-        if summary.statement_cycle:
-            match = re.search(r"(\d{4})/(\d{2})/(\d{2})$", summary.statement_cycle)
-            if match:
-                entry_date = date(
-                    int(match.group(1)), int(match.group(2)), int(match.group(3))
-                )
+        entry_date = period[1]
 
         # Get liability account from config
         liability_account = f"Liabilities:Credit:ABC:{card_last4}"
@@ -559,7 +558,7 @@ class ABCCreditProvider(BaseProvider):
         self,
         card_last4: str,
         rebate: Decimal,
-        statement_cycle: str | None,
+        period: tuple[date, date],
         result: ReconcileResult,
         provider_config: ProviderConfig | None,
     ) -> bool:
@@ -582,15 +581,12 @@ class ABCCreditProvider(BaseProvider):
         if not keywords and not income_account:
             return False
 
-        # Parse statement period for date range check
-        period = _parse_cycle(statement_cycle) if statement_cycle else None
-
         # Check extra entries (ledger entries not matched to statement)
         for txn_posting in result.match_result.extra:
             txn, posting = txn_posting
 
             # Check if within statement period
-            if period and not (period[0] <= txn.date <= period[1]):
+            if not (period[0] <= txn.date <= period[1]):
                 continue
 
             # Check if posting matches card (by account containing card_last4)
@@ -622,33 +618,122 @@ class ABCCreditProvider(BaseProvider):
 
 
 def _parse_cycle(text: str) -> tuple[date, date] | None:
-    match = _CYCLE_RE.search(text)
+    match = _CYCLE_RE.fullmatch(text)
     if not match:
         return None
     y1, m1, d1, y2, m2, d2 = map(int, match.groups())
     return date(y1, m1, d1), date(y2, m2, d2)
 
 
-def _pdf_summary(lines: list[list[str]]) -> StatementSummary:
-    """Read the reissue's card, cycle and 本期应还款额.
+def _mail_html(file_path: Path) -> str:
+    """Decode the mail's HTML part by the charset it declares.
 
-    The reissue prints neither the 账务说明 formula nor 本期使用刷卡金, so
-    new_charges stays unset and no rebate is used.
+    Older mails leave the MIME charset empty and name GBK only in a <meta>
+    tag, or declare gb2312 while using characters outside it; GB18030
+    decodes every member of that family.
     """
-    summary = StatementSummary()
-    awaiting_balance = False
-    for line in lines:
-        for cell in line:
-            if summary.card_number is None and _MASKED_CARD_RE.match(cell):
-                summary.card_number = cell
-            if summary.statement_cycle is None and _CYCLE_RE.fullmatch(cell):
-                summary.statement_cycle = cell
-            if cell.startswith("本期应还款额"):
-                awaiting_balance = True
-            elif awaiting_balance and _SUMMARY_AMOUNT_RE.match(cell):
-                summary.statement_balance = Decimal(cell.replace(",", ""))
-                awaiting_balance = False
+    with open(file_path, "rb") as f:
+        msg = email.message_from_binary_file(f)
+    part = next((p for p in msg.walk() if p.get_content_type() == "text/html"), msg)
+    raw = part.get_payload(decode=True)
+    if not isinstance(raw, bytes):
+        logger.warning("No HTML body in ABC mail %s", file_path.name)
+        return ""
+    charset = part.get_content_charset()
+    if not charset and (meta := _META_CHARSET_RE.search(raw)):
+        charset = meta.group(1).decode("ascii").lower()
+    if charset in _GB_CHARSETS:
+        charset = "gb18030"
+    try:
+        codecs.lookup(charset or "utf-8")
+    except LookupError:
+        charset = None
+    return raw.decode(charset or "utf-8", errors="replace")
+
+
+def _compact(cell: str) -> str:
+    return re.sub(r"\s+", "", cell)
+
+
+def _is_header(line: list[str], template: _MailTemplate) -> bool:
+    return len(line) == len(template.header) and all(
+        _compact(cell).startswith(label)
+        for cell, label in zip(line, template.header, strict=True)
+    )
+
+
+def _first_date_index(line: list[str]) -> int | None:
+    """Index of a row's first cell when it and the next are dates.
+
+    Only empty spacer cells may come before them.
+    """
+    for i, cell in enumerate(line[:-1]):
+        if cell:
+            dated = _ROW_DATE_RE.match(cell) and _ROW_DATE_RE.match(line[i + 1])
+            return i if dated else None
+    return None
+
+
+def _read_summary(lines: list[list[str]]) -> StatementSummary:
+    """Read card, cycle, 本期应还款额, 本期使用刷卡金 and the 账务说明 formula.
+
+    Card and cycle are whole cells; each amount is the first amount cell
+    after its label, which holds whether the value sits beside the label or
+    in a row below it. The reissue prints neither the formula nor
+    本期使用刷卡金.
+    """
+    cells = [cell for line in lines for cell in line]
+    summary = StatementSummary(
+        card_number=next((c for c in cells if _MASKED_CARD_RE.match(c)), None),
+        statement_period=next(filter(None, map(_parse_cycle, cells)), None),
+        statement_balance=_amount_after(cells, "本期应还款额"),
+        rebate_used=_amount_after(cells, "本期使用刷卡金") or Decimal(0),
+    )
+    for template in _TEMPLATES:
+        formula = _read_formula(lines, template.new_charges_label)
+        if formula is not None:
+            summary.new_charges = _formula_value(formula, template.new_charges_label)
+            if template.adjustment_label:
+                summary.adjustment = _formula_value(formula, template.adjustment_label)
+            break
     return summary
+
+
+def _amount_after(cells: list[str], label: str) -> Decimal | None:
+    following = dropwhile(lambda cell: not cell.startswith(label), cells)
+    return next(
+        (_decimal(cell) for cell in following if _SUMMARY_AMOUNT_RE.match(cell)), None
+    )
+
+
+def _decimal(cell: str) -> Decimal:
+    return Decimal(cell.replace(",", ""))
+
+
+def _read_formula(lines: list[list[str]], anchor: str) -> list[tuple[str, str]] | None:
+    """Pair each 账务说明 label with its value, or None without the formula.
+
+    The label row holds operator cells that have no value cell; the value
+    row is the first later row with one cell per label and an amount.
+    """
+    for i, line in enumerate(lines):
+        labels = [_compact(cell) for cell in line if cell not in _FORMULA_OPERATORS]
+        if not any(label.startswith(anchor) for label in labels):
+            continue
+        for values in lines[i + 1 :]:
+            if len(values) == len(labels) and any(
+                _SUMMARY_AMOUNT_RE.match(value) for value in values
+            ):
+                return list(zip(labels, values, strict=True))
+        return None
+    return None
+
+
+def _formula_value(formula: list[tuple[str, str]], label: str) -> Decimal | None:
+    for name, value in formula:
+        if name.startswith(label) and _SUMMARY_AMOUNT_RE.match(value):
+            return _decimal(value)
+    return None
 
 
 def _pdf_lines(file_path: Path) -> list[list[str]]:

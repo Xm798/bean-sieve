@@ -22,3 +22,5 @@ rules:
     contra_account: Assets:Bank:Checking
   - description: "手续费"
     contra_account: Expenses:Finance:Fee
+  - description: "刷卡金转入"
+    contra_account: Income:Rebate:ABC
