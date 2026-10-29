@@ -5,14 +5,23 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+import fitz
 import pytest
 
-from bean_sieve.providers import get_provider
+from bean_sieve.core.coverage import CoverageEntry, select
+from bean_sieve.core.metadata_keys import (
+    ORIGINAL_AMOUNT,
+    ORIGINAL_CURRENCY,
+    STATEMENT_CYCLE,
+)
+from bean_sieve.providers import PROVIDERS, get_provider
 from bean_sieve.providers.banks.credit.cgb import (
     _ISSUER,
     _ISSUER_SHORT,
     CGBCreditProvider,
 )
+
+EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
 
 def create_cgb_eml(html_content: str, subject: str = "statement-subject") -> str:
@@ -318,3 +327,226 @@ class TestCGBStatementPeriod:
         periods = {txn.card_last4: txn.statement_period for txn in transactions}
         assert periods["1234"] == (date(2030, 2, 27), date(2030, 3, 31))
         assert periods["5678"] == (date(2030, 3, 1), date(2030, 3, 31))
+
+
+# (trans date, post date, "(type)summary", amount, currency, booked, currency)
+Row = tuple[str, str, str, str, str, str, str]
+
+CARDS: dict[str, list[Row]] = {
+    "2468": [
+        (
+            "2030/03/02",
+            "2030/03/03",
+            "(消费)支付宝-payee-a",
+            "51.00",
+            "人民币",
+            "51.00",
+            "人民币",
+        ),
+        (
+            "2030/03/05",
+            "2030/03/06",
+            "(消费)shop-b",
+            "13.50",
+            "美元",
+            "97.00",
+            "人民币",
+        ),
+        (
+            "2030/03/09",
+            "2030/03/09",
+            "(还款)(云闪付)银联入账",
+            "-930.00",
+            "人民币",
+            "-930.00",
+            "人民币",
+        ),
+    ],
+    "1357": [
+        (
+            "2030/03/12",
+            "2030/03/13",
+            "(消费)payee-c",
+            "64.00",
+            "人民币",
+            "64.00",
+            "人民币",
+        ),
+        (
+            "2030/03/14",
+            "2030/03/14",
+            "(赠送)bonus-d",
+            "-15.50",
+            "人民币",
+            "-15.50",
+            "人民币",
+        ),
+    ],
+}
+CYCLE = ("2030/03/01", "2030/03/31")
+
+
+def write_cgb_eml(path: Path, cards: dict[str, list[Row]], cycle=CYCLE) -> Path:
+    tables = "\n".join(
+        f"<table>卡号：6200********{card}"
+        + "".join(f"<tr><td>{' '.join(row)}</td></tr>" for row in rows)
+        + "</table>"
+        for card, rows in cards.items()
+    )
+    html = f"""<html><body>
+<table><tr><td>账单周期:{cycle[0]}-{cycle[1]}</td></tr></table>
+{tables}
+</body></html>"""
+    path.write_text(create_cgb_eml(html), encoding="utf-8")
+    return path
+
+
+def write_cgb_pdf(
+    path: Path, cards: dict[str, list[Row]], cycle=CYCLE, rows_per_page: int = 30
+) -> Path:
+    """Draw a reissued CGB statement; its issuer name is only in the logo."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    def put(x: float, y: float, text: str, size: float = 9) -> None:
+        page.insert_text((x, y), text, fontname="china-s", fontsize=size)
+
+    put(34, 278, "信用卡账户信息", 14)
+    put(46, 314, "账单周期", 10)
+    put(171, 314, f"{cycle[0]} - {cycle[1]}", 10)
+    put(390, 314, "个人消费额度", 10)
+    put(28, 387, "注：通过发现精彩查询账单详情。")
+    xs = [32, 86, 138, 300, 400, 440, 540]
+    for x, label in zip(
+        xs,
+        [
+            "交易日期",
+            "入账日期",
+            "交易摘要",
+            "交易金额",
+            "交易货币",
+            "入账金额",
+            "入账货币",
+        ],
+        strict=True,
+    ):
+        put(x, 448, label, 10)
+    put(28, 465, "交易明细")
+    y = 477.0
+    written = 0
+    for card, rows in cards.items():
+        put(28, y, f"卡号：6200********{card}")
+        y += 11
+        for row in rows:
+            if written and written % rows_per_page == 0:
+                page = doc.new_page(width=595, height=842)
+                y = 80.0
+            for x, cell in zip(xs, row, strict=True):
+                put(x, y, cell)
+            y += 11
+            written += 1
+    put(290, 814, "1/1", 10)
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def shape(txns):
+    return [
+        (
+            t.date,
+            t.post_date,
+            t.amount,
+            t.currency,
+            t.description,
+            t.card_last4,
+            t.statement_period,
+            t.metadata,
+        )
+        for t in txns
+    ]
+
+
+class TestCGBReissue:
+    """Tests for the reissued PDF statement."""
+
+    def test_rows(self, tmp_path):
+        txns = CGBCreditProvider().parse(write_cgb_pdf(tmp_path / "r.pdf", CARDS))
+
+        assert [(t.date, t.amount, t.card_last4) for t in txns] == [
+            (date(2030, 3, 2), Decimal("51.00"), "2468"),
+            (date(2030, 3, 5), Decimal("97.00"), "2468"),
+            (date(2030, 3, 9), Decimal("-930.00"), "2468"),
+            (date(2030, 3, 12), Decimal("64.00"), "1357"),
+            (date(2030, 3, 14), Decimal("-15.50"), "1357"),
+        ]
+        assert txns[2].description == "(还款)(云闪付)银联入账"
+        assert txns[1].metadata[ORIGINAL_AMOUNT] == Decimal("13.50")
+        assert txns[1].metadata[ORIGINAL_CURRENCY] == "USD"
+        assert txns[0].metadata[STATEMENT_CYCLE] == (
+            date(2030, 3, 1),
+            date(2030, 3, 31),
+        )
+
+    def test_same_transactions_as_mail(self, tmp_path):
+        pdf = write_cgb_pdf(tmp_path / "r.pdf", CARDS)
+        eml = write_cgb_eml(tmp_path / "s.eml", CARDS)
+
+        provider = CGBCreditProvider()
+        assert shape(provider.parse(pdf)) == shape(provider.parse(eml))
+
+    def test_rows_across_pages(self, tmp_path):
+        pdf = write_cgb_pdf(tmp_path / "r.pdf", CARDS, rows_per_page=2)
+        assert len(CGBCreditProvider().parse(pdf)) == 5
+
+    def test_only_this_provider_claims_it(self, tmp_path):
+        pdf = write_cgb_pdf(tmp_path / "statement.pdf", CARDS)
+        assert [p for p, c in PROVIDERS.items() if c.can_handle(pdf)] == ["cgb_credit"]
+
+    def test_claims_no_other_example_statement(self):
+        for path in sorted(EXAMPLES.glob("*/*")):
+            if path.parent.name != "cgb_credit":
+                assert not CGBCreditProvider.can_handle(path), path
+
+
+class TestCGBCoverage:
+    def test_one_entry_per_card_for_the_printed_cycle(self, tmp_path):
+        provider = CGBCreditProvider()
+        for path, source in (
+            (write_cgb_pdf(tmp_path / "r.pdf", CARDS), "reissue"),
+            (write_cgb_eml(tmp_path / "s.eml", CARDS), "statement"),
+        ):
+            covs = provider.coverage(path, provider.parse(path))
+            assert [
+                (c.account, c.start, c.end, len(c.rows), c.source) for c in covs
+            ] == [
+                ("2468", date(2030, 3, 1), date(2030, 3, 31), 3, source),
+                ("1357", date(2030, 3, 1), date(2030, 3, 31), 2, source),
+            ]
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_mail_outranks_its_reissue(self, tmp_path, reverse):
+        provider = CGBCreditProvider()
+        paths = [
+            write_cgb_pdf(tmp_path / "r.pdf", CARDS),
+            write_cgb_eml(tmp_path / "s.eml", CARDS),
+            write_cgb_pdf(
+                tmp_path / "next.pdf",
+                {"2468": CARDS["2468"][:1]},
+                ("2030/04/01", "2030/04/30"),
+            ),
+        ]
+        if reverse:
+            paths.reverse()
+        ranks = {kind: i for i, kind in enumerate(provider.coverage_priority)}
+        parsed = {path: provider.parse(path) for path in paths}
+        entries = [
+            CoverageEntry("cgb_credit", path, cov, ranks[cov.source])
+            for path in paths
+            for cov in provider.coverage(path, parsed[path])
+        ]
+        kept = select(entries).keep([t for rows in parsed.values() for t in rows])
+        by_file = {
+            path.name: sum(t.source_file == path for t in kept) for path in paths
+        }
+        assert by_file == {"s.eml": 5, "r.pdf": 0, "next.pdf": 1}

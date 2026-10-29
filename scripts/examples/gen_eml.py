@@ -5,6 +5,7 @@ from pathlib import Path
 from _common import generator, write_eml
 from gen_pdf import (
     ccb_credit_reissue,
+    cgb_credit_reissue,
     cmb_credit_reissue,
     icbc_credit_export,
     icbc_credit_reissue,
@@ -313,6 +314,50 @@ def _cgb_table(card: str, rows: list[str]) -> str:
 
 @generator("cgb_credit")
 def cgb_credit(out_dir: Path) -> None:
+    # A month only the reissue covers.
+    cgb_credit_reissue(
+        out_dir / "cgb_credit-2030-02.pdf",
+        ("2030/02/01", "2030/02/28"),
+        [
+            (
+                "4321",
+                [
+                    (
+                        "2030/02/05",
+                        "2030/02/06",
+                        "(消费)支付宝-store-f",
+                        "87.00",
+                        "人民币",
+                        "87.00",
+                        "人民币",
+                    ),
+                    (
+                        "2030/02/18",
+                        "2030/02/18",
+                        "(还款)网银还款",
+                        "-1,170.00",
+                        "人民币",
+                        "-1,170.00",
+                        "人民币",
+                    ),
+                ],
+            ),
+            (
+                "8765",
+                [
+                    (
+                        "2030/02/11",
+                        "2030/02/12",
+                        "(消费)store-g",
+                        "93.00",
+                        "人民币",
+                        "93.00",
+                        "人民币",
+                    )
+                ],
+            ),
+        ],
+    )
     issuer = "广发银行"
     card_a = [
         "2030/03/03 2030/03/04 (消费)支付宝-store-a 38.00 人民币 38.00 人民币",

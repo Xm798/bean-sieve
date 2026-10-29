@@ -405,6 +405,54 @@ def ccb_credit_reissue(
     pdf.save(out)
 
 
+# The cgb_credit generator in gen_eml writes this next to its eml.
+def cgb_credit_reissue(
+    out: Path, cycle: tuple[str, str], cards: list[tuple[str, list[tuple[str, ...]]]]
+) -> None:
+    """Draw a CGB reissue; like the bank's, it names the issuer only in a logo.
+
+    A card is (suffix, rows); a row is (trans, post, "(type)summary", amount,
+    currency, booked, currency), every cell written on its own.
+    """
+    pdf = PdfPage(font_size=9)
+    pdf.put(34, 278, "信用卡账户信息", 14)
+    pdf.put(46, 314, "账单周期", 10)
+    pdf.put(171, 314, f"{cycle[0]} - {cycle[1]}", 10)
+    pdf.put(28, 387, "注：您可通过发现精彩、手机银行等官方渠道查询账单详情。")
+    xs = [32, 86, 138, 360, 410, 478, 528]
+    for x, label in zip(
+        xs,
+        [
+            "交易日期",
+            "入账日期",
+            "交易摘要",
+            "交易金额",
+            "交易货币",
+            "入账金额",
+            "入账货币",
+        ],
+        strict=True,
+    ):
+        pdf.put(x, 448, label, 10)
+    pdf.put(28, 465, "交易明细")
+    y = 477
+    for card, rows in cards:
+        pdf.put(28, y, f"卡号：6200********{card}")
+        y += 11
+        for row in rows:
+            for x, cell in zip(xs, row, strict=True):
+                # A Latin font keeps an amount out of its neighbours' span,
+                # as the bank's separate text objects do.
+                if re.search(r"[\u4e00-\u9fff]", cell):
+                    pdf.put(x, y, cell)
+                else:
+                    pdf.page.insert_text((x, y), cell, fontname="helv", fontsize=9)
+            y += 11
+    pdf.put(28, y + 20, "本期账单金额情况", 10)
+    pdf.put(290, 814, "1/1", 10)
+    pdf.save(out)
+
+
 # The icbc_credit generator in gen_eml writes these next to its eml.
 def icbc_credit_reissue(out: Path) -> None:
     pdf = PdfPage(font_size=6)

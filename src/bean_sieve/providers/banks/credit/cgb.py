@@ -6,8 +6,10 @@ import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
-from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
+from ....core.coverage import Coverage
+from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY, STATEMENT_CYCLE
 from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
@@ -33,17 +35,23 @@ _CURRENCY_CODES = {
     "泰铢": "THB",
 }
 
+# Spans of one PDF line have tops within this many points of each other.
+_PDF_LINE_TOLERANCE = 2.0
+
 
 @register_provider
 class CGBCreditProvider(BaseProvider):
     """
-    Provider for CGB credit card email statements.
+    Provider for CGB credit card statements.
 
-    Parses .eml files containing base64-encoded HTML statements.
+    Two formats print the same text:
+    - .eml: the mailed statement, base64-encoded GBK HTML
+    - .pdf: the reissued statement, a text PDF whose issuer name is only in
+      its logo image
 
-    File format:
-    - Encoding: GBK (base64 encoded)
-    - Statement period: 账单周期:YYYY/MM/DD-YYYY/MM/DD
+    Layout:
+    - Statement period: 账单周期:YYYY/MM/DD-YYYY/MM/DD (the PDF prints
+      "账单周期 YYYY/MM/DD - YYYY/MM/DD")
     - Card sections: 卡号：6200********1234 followed by transaction table
     - Transaction row: 交易日期 入账日期 (类型)摘要 金额 货币 入账金额 入账货币
     - A foreign-currency card bills in its own currency (e.g. 美元) and lists
@@ -57,18 +65,24 @@ class CGBCreditProvider(BaseProvider):
 
     provider_id = "cgb_credit"
     provider_name = f"{_ISSUER}信用卡"
-    supported_formats = [".eml"]
+    supported_formats = [".eml", ".pdf"]
     filename_keywords = [f"{_ISSUER_SHORT}信用卡", _ISSUER]
-    content_keywords = [f"{_ISSUER}信用卡", f"{_ISSUER_SHORT}信用卡"]
+    # 发现精彩 is the issuer's app, which the PDF's notes name.
+    content_keywords = [f"{_ISSUER}信用卡", f"{_ISSUER_SHORT}信用卡", "发现精彩"]
     per_card_statement = (
         True  # CGB sends combined statement but needs per-card tracking
     )
+    coverage_priority = ("statement", "reissue")
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse CGB credit card email statement."""
-        html = self.extract_html_from_eml(file_path)
-        soup = self.parse_html(html)
-        text = soup.get_text()
+        """Parse a CGB credit card statement, mailed or reissued."""
+        if file_path.suffix.lower() == ".pdf":
+            # Joining a line's cells with spaces gives the mail's text:
+            # "date date (type)summary amount currency ...".
+            text = "\n".join(" ".join(line) for line in _pdf_lines(file_path))
+        else:
+            html = self.extract_html_from_eml(file_path)
+            text = self.parse_html(html).get_text()
 
         statement_period = self._extract_statement_period(text)
         transactions: list[Transaction] = []
@@ -97,12 +111,34 @@ class CGBCreditProvider(BaseProvider):
             row_counter += len(card_transactions)
 
         self.assign_statement_periods(transactions, statement_period)
+        if statement_period:
+            for txn in transactions:
+                txn.metadata[STATEMENT_CYCLE] = statement_period
         return transactions
+
+    def coverage(
+        self, file_path: Path, transactions: list[Transaction]
+    ) -> list[Coverage]:
+        """Cover each card for the printed cycle; the mail outranks its reissue.
+
+        statement_period is widened by rows dated outside the cycle, so
+        coverage reads the cycle as printed.
+        """
+        source = "reissue" if file_path.suffix.lower() == ".pdf" else "statement"
+        by_card: dict[str, list[Transaction]] = {}
+        for txn in transactions:
+            if STATEMENT_CYCLE in txn.metadata:
+                by_card.setdefault(txn.card_last4 or "", []).append(txn)
+        return [
+            Coverage(card, *rows[0].metadata[STATEMENT_CYCLE], rows=rows, source=source)
+            for card, rows in by_card.items()
+        ]
 
     def _extract_statement_period(self, text: str) -> tuple[date, date] | None:
         """Extract statement period (e.g., '账单周期:2025/12/26-2026/01/25')."""
         match = re.search(
-            r"账单周期:(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})", text
+            r"账单周期[:：]?\s*(\d{4})/(\d{2})/(\d{2})\s*-\s*(\d{4})/(\d{2})/(\d{2})",
+            text,
         )
         if match:
             start = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
@@ -215,3 +251,54 @@ class CGBCreditProvider(BaseProvider):
             return Decimal(cleaned)
         except Exception:
             return None
+
+
+def _pdf_lines(file_path: Path) -> list[list[str]]:
+    """Return the PDF's printed lines, each as its cells read left to right.
+
+    A line is the spans whose tops lie within _PDF_LINE_TOLERANCE of its
+    first span's. PyMuPDF can join neighbouring cells into one span, so a
+    span is cut into cells wherever its characters leave a gap wider than
+    the font size.
+    """
+    import fitz
+
+    lines: list[list[str]] = []
+    with fitz.open(file_path) as doc:
+        for page in doc:
+            layout = cast(dict[str, Any], page.get_text("rawdict"))
+            cells = sorted(
+                cell
+                for block in layout["blocks"]
+                for line in block.get("lines", [])
+                for span in line["spans"]
+                for cell in _span_cells(span)
+            )
+            row: list[tuple[float, float, str]] = []
+            for cell in cells:
+                if row and cell[0] - row[0][0] > _PDF_LINE_TOLERANCE:
+                    lines.append([text for _, _, text in sorted(row, key=_cell_x)])
+                    row = []
+                row.append(cell)
+            if row:
+                lines.append([text for _, _, text in sorted(row, key=_cell_x)])
+    return lines
+
+
+def _span_cells(span: dict[str, Any]) -> list[tuple[float, float, str]]:
+    """Cut a span into (top, x, text) cells at gaps wider than its font size."""
+    runs: list[list[dict[str, Any]]] = [[]]
+    for char in span["chars"]:
+        if runs[-1] and char["bbox"][0] - runs[-1][-1]["bbox"][2] > span["size"]:
+            runs.append([])
+        runs[-1].append(char)
+    top = span["bbox"][1]
+    return [
+        (top, run[0]["bbox"][0], text)
+        for run in runs
+        if run and (text := "".join(char["c"] for char in run).strip())
+    ]
+
+
+def _cell_x(cell: tuple[float, float, str]) -> float:
+    return cell[1]
