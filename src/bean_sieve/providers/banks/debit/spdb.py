@@ -66,26 +66,7 @@ class SPDBDebitProvider(BaseProvider):
     content_keywords = [_TITLE]
     per_card_statement = True  # SPDB issues one statement per account
 
-    COL_DATE = 0
-    COL_TIME = 1
-    COL_ACCOUNT = 2
-    COL_NAME = 3
-    COL_AMOUNT = 4
-    COL_BALANCE = 5
-    COL_COUNTERPARTY = 6
-    COL_COUNTERPARTY_ACCOUNT = 7
-    COL_SUMMARY = 8
     NUM_COLS = 9
-
-    @classmethod
-    def _match_content(cls, file_path: Path) -> bool:
-        try:
-            import fitz
-
-            with fitz.open(file_path) as doc:
-                return doc.page_count > 0 and _TITLE in doc[0].get_text()[:500]
-        except Exception:
-            return False
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse an SPDB debit card transaction statement PDF."""
@@ -134,26 +115,32 @@ class SPDBDebitProvider(BaseProvider):
     ) -> Transaction | None:
         if len(row) < self.NUM_COLS:
             return None
-        cells = [_unwrap(cell) for cell in row]
-        tx_date = _parse_stamp(cells[self.COL_DATE], "%Y%m%d")
+        (
+            date_str,
+            time_str,
+            account,
+            _,
+            amount_str,
+            balance,
+            counterparty,
+            counterparty_account,
+            summary,
+        ) = (_unwrap(cell) for cell in row[: self.NUM_COLS])
+        tx_date = _parse_stamp(date_str, "%Y%m%d")
         if tx_date is None:
             return None
-        value = to_decimal(cells[self.COL_AMOUNT])
+        value = to_decimal(amount_str)
         if value is None:
             return None
 
-        name, reference = _split_name(row[self.COL_NAME])
-        tx_time = _parse_stamp(cells[self.COL_TIME], "%H%M%S")
-        account = cells[self.COL_ACCOUNT]
+        # 交易名称 keeps its line breaks: they separate the name from its reference.
+        name, reference = _split_name(row[3])
+        tx_time = _parse_stamp(time_str, "%H%M%S")
         metadata = {
-            key: val
-            for key, val in (
-                ("balance", cells[self.COL_BALANCE]),
-                ("counterparty_account", cells[self.COL_COUNTERPARTY_ACCOUNT]),
-                ("reference", reference),
-                ("summary", cells[self.COL_SUMMARY]),
-            )
-            if val
+            "balance": balance,
+            "counterparty_account": counterparty_account,
+            "reference": reference,
+            "summary": summary,
         }
 
         return Transaction(
@@ -163,10 +150,10 @@ class SPDBDebitProvider(BaseProvider):
             amount=-value,
             currency=currency,
             description=name,
-            payee=cells[self.COL_COUNTERPARTY] or None,
+            payee=counterparty or None,
             card_last4=account[-4:] if account else card_last4,
             provider=self.provider_id,
             source_file=file_path,
             source_line=row_num,
-            metadata=metadata,
+            metadata={key: val for key, val in metadata.items() if val},
         )

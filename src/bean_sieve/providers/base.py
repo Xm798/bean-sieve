@@ -102,13 +102,25 @@ class BaseProvider(ABC):
         if not cls.content_keywords:
             return False
         try:
-            # Read first 500 bytes for header detection
-            content = cls._read_file_header(file_path, 500)
-            if file_path.suffix.lower() == ".eml":
+            suffix = file_path.suffix.lower()
+            if suffix == ".pdf":
+                content = cls._read_pdf_first_page(file_path)
+            else:
+                # Read first 500 bytes for header detection
+                content = cls._read_file_header(file_path, 500)
+            if suffix == ".eml":
                 content += cls._read_eml_text(file_path)
             return any(kw in content for kw in cls.content_keywords)
         except Exception:
             return False
+
+    @classmethod
+    def _read_pdf_first_page(cls, file_path: Path) -> str:
+        """Return the text of a PDF's first page; PDF bytes are compressed."""
+        import fitz
+
+        with fitz.open(file_path) as doc:
+            return str(doc[0].get_text()) if doc.page_count else ""
 
     @classmethod
     def _read_eml_text(cls, file_path: Path) -> str:
