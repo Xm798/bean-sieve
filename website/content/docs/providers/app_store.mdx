@@ -52,7 +52,7 @@ rules:
 
 购买记录里没有付款方式，Bean-Sieve 不知道钱从哪个账户付出，生成的条目付款方一律是 `Assets:FIXME`，需要并入账本前手动改成实际账户。`account_mappings` 对 App Store 不起作用。
 
-`providers.app_store.accounts` 的键可以随意取，只有值起作用：这些账户是 Extra 的检查范围。账本里这些账户上的条目在购买记录里找不到时，会被报为 Extra。只有 `Assets` 和 `Liabilities` 开头的账户会参与匹配和 Extra 检查，所以这里要写 Apple ID 余额这类资产账户，写费用账户没有用。
+`providers.app_store.accounts` 的键可以随意取，只有值起作用：这些账户是 Extra 的检查范围。账本里这些账户上的条目在购买记录里找不到时，会被报为 Extra。账单的每一行对应钱从哪个账户出去，所以只有 `Assets` 和 `Liabilities` 开头的账户参与匹配和 Extra 检查，费用账户只是交易的另一边。这里要写 Apple ID 余额这类资产账户，写成 `Expenses:Digital:Apple` 这样的费用账户永远不会报出 Extra。
 
 `payee` 是 App 或服务的名字，`description` 是商品名（如「月度会员」），规则可以按任一字段匹配。
 

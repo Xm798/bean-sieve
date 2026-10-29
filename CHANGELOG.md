@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - 浦发银行借记卡 Provider（`spdb_debit`）：解析交易流水 PDF 回单
 - 交通银行信用卡：同一账期传入正本与补发时只采用一份，不再重复入账
+- 配置项 `fee_account`（`defaults` 和 `providers.<id>` 下均可设置）：账单里单列的手续费另记一条 posting，默认记到 `Expenses:FIXME`
 
 ### 修复
 
@@ -28,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 广发银行信用卡：识别主题只写「广发信用卡」的账单邮件
 - 建设银行借记卡：支持只有一列带符号「交易金额」的 9 列导出格式
 - 农业、建设、兴业、平安银行借记卡：按文件内容识别账单，不再依赖银行默认文件名
+- 微信支付：零钱提现的服务费单独记账，零钱按提现总额扣减；账本里按扣费后金额记的提现仍能匹配
+- `bean-sieve.example.yaml`：App Store 改用资产账户，众安银行各币种共用一个账户，汇立银行去掉不起作用的 `balance: true`
 
 ## [0.8.0] - 2026-10-29
 

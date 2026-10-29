@@ -412,3 +412,51 @@ def test_original_amount_without_currency_writes_billed_amount():
         "    Liabilities:Credit:Test  -37.00 CNY",
         "    Expenses:Test  37.00 CNY",
     ]
+
+
+def _fee_txn(amount: str, **kwargs) -> Transaction:
+    return Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal(amount),
+        currency="CNY",
+        description="desc-a",
+        account="Assets:Wallet:Test",
+        contra_account="Assets:Bank:Test",
+        fee=Decimal("0.10"),
+        **kwargs,
+    )
+
+
+def test_fee_posting_takes_fee_out_of_an_outflow():
+    """The account pays the gross amount; the contra side receives it net of fee."""
+    output = BeancountWriter(default_fee="Expenses:Fee").format_transaction(
+        _fee_txn("100.00")
+    )
+    assert output.split("\n")[-3:] == [
+        "    Assets:Wallet:Test  -100.00 CNY",
+        "    Expenses:Fee  0.10 CNY",
+        "    Assets:Bank:Test  99.90 CNY",
+    ]
+
+
+def test_fee_posting_on_an_inflow_grosses_up_the_contra_side():
+    """The account receives the net amount; the payer sent it plus the fee."""
+    output = BeancountWriter(default_fee="Expenses:Fee").format_transaction(
+        _fee_txn("-99.90")
+    )
+    assert output.split("\n")[-3:] == [
+        "    Assets:Wallet:Test  99.90 CNY",
+        "    Expenses:Fee  0.10 CNY",
+        "    Assets:Bank:Test  -100.00 CNY",
+    ]
+
+
+def test_fee_account_on_the_transaction_overrides_the_default():
+    txn = _fee_txn("100.00", metadata={"_fee_account": "Expenses:Fee:Wallet"})
+    output = BeancountWriter(default_fee="Expenses:Fee").format_transaction(txn)
+    assert "    Expenses:Fee:Wallet  0.10 CNY" in output.split("\n")
+
+
+def test_fee_account_defaults_to_the_expense_placeholder():
+    output = BeancountWriter().format_transaction(_fee_txn("100.00"))
+    assert "    Expenses:FIXME  0.10 CNY" in output.split("\n")

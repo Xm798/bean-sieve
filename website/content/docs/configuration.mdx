@@ -24,6 +24,7 @@ defaults:
   currency: CNY
   expense_account: Expenses:FIXME
   income_account: Income:FIXME
+  fee_account: Expenses:FIXME  # 账单里单列的手续费记到这里
   date_tolerance: 0  # 日期模糊匹配容差（天）
   # rebate_account_prefixes: ["Income:Rebate:"]  # 返利收入账户（含子账户），用于红包抵扣还款的总额匹配
 
@@ -36,6 +37,7 @@ providers:
   wechat:
     accounts:
       "零钱": Assets:Current:Wechat
+    fee_account: Expenses:Finance:Fee  # 只对这个 provider 生效，优先于 defaults.fee_account
 
 # 规则匹配（按顺序匹配，靠前的规则优先）
 rules:
@@ -68,3 +70,5 @@ rules:
 ```
 
 规则里的 `description`、`payee` 是匹配条件（正则）；`target_payee` 是写进输出的收款方。
+
+有些账单会把手续费单独列出，比如微信零钱提现的服务费。这类交易会多出一条手续费 posting，记到 `providers.<id>.fee_account`；provider 没配时用 `defaults.fee_account`，默认是 `Expenses:FIXME`。

@@ -399,17 +399,19 @@ class Sieve:
         """Get candidate ledger entries for matching."""
         index = self._rebate_index if gross else self._ledger_index
         candidates = []
-        amounts = {abs(txn.amount)}
-        if txn.original_amount is not None:
-            amounts.add(txn.original_amount)
+        # Exact amount first, so a posting at the statement amount wins over a
+        # fallback amount on any date within tolerance.
+        amounts = [abs(txn.amount)]
+        for fallback in (txn.original_amount, _net_of_fee(txn)):
+            if fallback is not None and fallback not in amounts:
+                amounts.append(fallback)
 
-        # Check dates within tolerance
-        for delta in range(self.config.date_tolerance + 1):
-            for sign in [0, 1, -1]:
-                if delta == 0 and sign != 0:
-                    continue
-                check_date = txn.date + timedelta(days=delta * sign if sign else 0)
-                for amount in amounts:
+        for amount in amounts:
+            for delta in range(self.config.date_tolerance + 1):
+                for sign in [0, 1, -1]:
+                    if delta == 0 and sign != 0:
+                        continue
+                    check_date = txn.date + timedelta(days=delta * sign if sign else 0)
                     candidates.extend(index.get((check_date, amount), []))
 
         return candidates
@@ -454,7 +456,7 @@ class Sieve:
             else:
                 amount_ok = self._amount_matches(
                     txn, units_number, units_currency, price_number
-                ) or self._original_amount_matches(txn, units_number, units_currency)
+                ) or self._fallback_amount_matches(txn, units_number, units_currency)
             if not amount_ok:
                 return False
 
@@ -510,6 +512,26 @@ class Sieve:
             return amount_diff <= tolerance or cost_diff <= tolerance
 
         return units_currency == txn.currency and amount_diff <= tolerance
+
+    def _fallback_amount_matches(
+        self, txn: Transaction, units_number: Decimal, units_currency: str
+    ) -> bool:
+        return self._original_amount_matches(
+            txn, units_number, units_currency
+        ) or self._net_of_fee_matches(txn, units_number, units_currency)
+
+    def _net_of_fee_matches(
+        self, txn: Transaction, units_number: Decimal, units_currency: str
+    ) -> bool:
+        """Accept an outflow booked at the amount that arrived, fee left out.
+
+        Hand-written ledgers often record a fee-bearing transfer with the net
+        figure on both legs, as bean-sieve itself did before it posted fees.
+        """
+        net = _net_of_fee(txn)
+        if net is None or units_currency != txn.currency:
+            return False
+        return abs(net - abs(units_number)) <= self.config.amount_tolerance
 
     def _original_amount_matches(
         self, txn: Transaction, units_number: Decimal, units_currency: str
@@ -586,6 +608,13 @@ class Sieve:
 
 def _has_gross_fallback(txn: Transaction) -> bool:
     return bool(txn.metadata.get(REBATE_TOPUP_MATCH))
+
+
+def _net_of_fee(txn: Transaction) -> Decimal | None:
+    """Amount an outflow delivered after its fee; inflows already report it."""
+    if not txn.fee or txn.amount <= 0:
+        return None
+    return txn.amount - txn.fee
 
 
 def _is_rebate_account(account: str, prefixes: Iterable[str]) -> bool:

@@ -271,13 +271,15 @@ class WechatProvider(BaseProvider):
         amount_str = amount_str.lstrip("¥").strip()
         amount = Decimal(amount_str)
 
-        # Handle commission in remarks
         commission = Decimal("0")
         if "服务费" in remarks:
             match = COMMISSION_REGEX.search(remarks)
             if match:
                 commission = Decimal(match.group())
-                amount = amount - commission
+                # The amount column is gross: a withdrawal takes it all from the
+                # wallet, while a collection credits the wallet net of the fee.
+                if order_type == WechatOrderType.INCOME:
+                    amount = amount - commission
 
         # Handle rebate in remarks (已优惠¥10.00)
         # ¥ symbol indicates CNY rebate
@@ -313,6 +315,7 @@ class WechatProvider(BaseProvider):
             source_file=file_path,
             source_line=line_num,
             statement_period=statement_period,
+            fee=commission or None,
             metadata={
                 "tx_type": tx_type_str,
                 "method": method,

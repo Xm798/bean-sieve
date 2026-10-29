@@ -294,9 +294,35 @@ class TestWechatCommissionHandling:
 
         assert len(transactions) == 1
         txn = transactions[0]
-        # Amount should be 100.00 - 0.10 = 99.90, negated for income
+        # The wallet receives the amount net of the fee.
         assert txn.amount == Decimal("-99.90")
+        assert txn.fee == Decimal("0.10")
         assert txn.metadata["commission"] == "0.10"
+
+    def test_withdraw_fee_leaves_the_wallet_on_top_of_the_amount(self, tmp_path):
+        file_path = _wechat_workbook(
+            tmp_path,
+            [
+                [
+                    "2030-01-02 10:00:00",
+                    "零钱提现",
+                    "测试银行(0001)",
+                    "/",
+                    "/",
+                    "¥50.00",
+                    "测试银行(0001)",
+                    "提现已到账",
+                    "TX001",
+                    "/",
+                    "服务费¥0.05",
+                ]
+            ],
+        )
+
+        (txn,) = WechatProvider().parse(file_path)
+
+        assert txn.amount == Decimal("50.00")
+        assert txn.fee == Decimal("0.05")
 
 
 class TestWechatCashWithdraw:

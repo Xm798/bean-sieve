@@ -5,6 +5,9 @@ defaults:
   currency: CNY
   expense_account: Expenses:FIXME
   income_account: Income:FIXME
+  # 账单里单列的手续费（如微信零钱提现服务费）记到这个账户；
+  # providers.<id>.fee_account 可以按 provider 单独指定
+  fee_account: Expenses:FIXME
   date_tolerance: 0
   # 交易标志：* 表示已核对，! 表示待处理
   flag: "!"
@@ -81,13 +84,15 @@ providers:
       "花呗": Liabilities:Credit:Huabei
 
   app_store:
+    # 只有 Assets/Liabilities 账户参与匹配和 Extra 检查，这里要写资产账户
     accounts:
-      "Apple ID": Expenses:Digital:Apple
+      "Apple ID": Assets:AppleID:Balance
 
   wechat:
     accounts:
       "零钱": Assets:Wallet:WeChat:Balance
       "零钱通": Assets:Wallet:WeChat:LingQianTong
+    fee_account: Expenses:Finance:Fee
 
   jd:
     accounts:
@@ -186,11 +191,12 @@ providers:
       "7777": Assets:Bank:SPDB:7777
 
   zabank_debit:
-    # ZABank uses currency code as account key
+    # 键是币种代码。换汇的两条 posting 都记在卖出币种的账户上，
+    # 所以各币种指向同一个多币种账户
     accounts:
-      HKD: Assets:Bank:ZABank:HKD
-      CNY: Assets:Bank:ZABank:CNY
-      USD: Assets:Bank:ZABank:USD
+      HKD: Assets:Bank:ZABank
+      CNY: Assets:Bank:ZABank
+      USD: Assets:Bank:ZABank
     balance: true
 
   welab_debit:
@@ -199,7 +205,6 @@ providers:
       HKD: Assets:Bank:WeLab:HKD
       CNY: Assets:Bank:WeLab:CNY
       USD: Assets:Bank:WeLab:USD
-    balance: true
 
   cncbi_debit:
     # CSV 不含账号，只配一个账户，所有交易都记到这个账户（键名随意，写 4 位数字时作为 card_last4）

@@ -51,7 +51,8 @@
     time: "09:00:00"
     order_id: "1000000001203005100007"
     source: "wechat"
-    Assets:WeChat:Balance  -99.90 CNY
+    Assets:WeChat:Balance  -100.00 CNY
+    Expenses:Fee:WeChat  0.10 CNY
     Assets:Bank:CMB  99.90 CNY
 
 2030-05-11 * "/" "零钱通转出-到招商银行(5678)"

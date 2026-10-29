@@ -50,6 +50,7 @@ providers:
     accounts:
       "零钱": Assets:WeChat:Balance
       "零钱通": Assets:WeChat:LingQianTong
+    fee_account: Expenses:Fee:WeChat
 ```
 
 账户配置的规则与[支付宝](./alipay.mdx#配置示例)相同：
@@ -60,6 +61,7 @@ providers:
 几类特殊交易的处理：
 
 - 零钱提现：从零钱转出，对方科目按「支付方式」里的银行卡找账户。
+- 服务费：备注里的 `服务费¥0.10` 会另记一条手续费 posting，记到 `providers.wechat.fee_account`，没配时用 `defaults.fee_account`（默认 `Expenses:FIXME`）。提现 100 元、服务费 0.10 元时，零钱记 -100.00，银行卡记 +99.90，手续费记 0.10。收款带服务费时，零钱记到账的净额，对方科目记扣费前的金额。账本里把提现按到账金额记成 -99.90 / +99.90 的旧条目，对账时照样能匹配上。
 - 零钱通转出：交易类型形如 `零钱通转出-到招商银行(5678)`，从零钱通转出。目标卡写成 `银行名(后四位)`，`account_mappings` 里只要有一个 `pattern` 同时含银行名和这四位数字就能对上，比如上面的 `招商银行储蓄卡(5678)`。
 - 收到的红包和转账：状态为「已存入零钱」，记入零钱。
 - 立减优惠：备注里的 `已优惠¥5.00` 会另记一条返利 posting，记到该支付方式对应 `account_mappings` 条目的 `rebate_account`。没写 `rebate_account` 时记到 `Rebate:FIXME`。
@@ -85,7 +87,6 @@ providers:
 
 ## 已知限制
 
-- 有服务费的提现，输出的两条 posting 都是扣除服务费后的金额（例如提现 100 元、服务费 0.10 元，输出 -99.90 和 +99.90），服务费本身不入账，需要手工补上。
 - 「收/支」为 `/` 的行，只输出提现、零钱通转出、经营账户充值，以及状态为「已存入零钱」「已存入经营账户」的收款，其余不输出。
 - 「交易对方」为 `/` 的行（如零钱通转出），收款方原样输出为 `"/"`。
 - 优惠金额只在备注带 `¥` 时识别，金额一律按人民币处理。
@@ -99,7 +100,7 @@ providers:
 bean-sieve reconcile wechat.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
 
-账本里已有的 5 月 8 日晚餐被匹配，不再输出；5 月 3 日的午餐带出了一条 `Income:Rebate:CMB` 返利 posting；5 月 10 日的提现扣掉了服务费；账本里 5 月 13 日那笔在账单里找不到，被列为 Extra。
+账本里已有的 5 月 8 日晚餐被匹配，不再输出；5 月 3 日的午餐带出了一条 `Income:Rebate:CMB` 返利 posting；5 月 10 日的提现把 0.10 元服务费单独记到 `Expenses:Fee:WeChat`；账本里 5 月 13 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

@@ -2,9 +2,15 @@
 
 import base64
 from datetime import date
+from decimal import Decimal
 
-from bean_sieve.api import _build_check_scope
+from bean_sieve.api import (
+    _apply_provider_output_config,
+    _build_check_scope,
+    generate_output,
+)
 from bean_sieve.config.schema import AccountMapping, Config, DiagnosticsConfig
+from bean_sieve.core.types import MatchResult, ReconcileResult, Transaction
 
 
 def test_check_scope_empty_without_explicit_config():
@@ -443,3 +449,30 @@ def test_full_reconcile_post_output_reuses_parsed_snapshot(tmp_path, monkeypatch
     assert [t.date for t in result.processed] == [date(2030, 1, 2)]
     assert ";   解析消费:              30.00 CNY" in output.read_text(encoding="utf-8")
     assert parse_calls == [statement]
+
+
+def _fee_output(config: Config, provider: str) -> str:
+    txn = Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("100.00"),
+        currency="CNY",
+        description="desc-a",
+        account="Assets:Wallet:Test",
+        contra_account="Assets:Bank:Test",
+        provider=provider,
+        fee=Decimal("0.10"),
+    )
+    processed = _apply_provider_output_config([txn], config)
+    result = ReconcileResult(match_result=MatchResult(), processed=processed)
+    return generate_output(result, config=config)
+
+
+def test_fee_account_prefers_provider_config_over_defaults():
+    config = Config.from_dict(
+        {
+            "defaults": {"fee_account": "Expenses:Fee"},
+            "providers": {"prov-a": {"fee_account": "Expenses:Fee:ProvA"}},
+        }
+    )
+    assert "    Expenses:Fee:ProvA  0.10 CNY" in _fee_output(config, "prov-a")
+    assert "    Expenses:Fee  0.10 CNY" in _fee_output(config, "prov-b")

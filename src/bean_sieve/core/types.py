@@ -62,6 +62,10 @@ class Transaction(BaseModel):
     price_amount: Decimal | None = None
     price_currency: str | None = None
 
+    # Unsigned charge taken out of the primary account alongside the transfer:
+    # the contra side receives amount minus fee, and the fee posts separately.
+    fee: Decimal | None = None
+
     # Matching results (filled by rules engine)
     account: str | None = None
     contra_account: str | None = None
@@ -128,6 +132,7 @@ class Transaction(BaseModel):
             "provider": self.provider,
             "source_file": str(self.source_file) if self.source_file else None,
             "source_line": self.source_line,
+            "fee": str(self.fee) if self.fee is not None else None,
             "statement_period": (
                 [
                     self.statement_period[0].isoformat(),
@@ -167,6 +172,7 @@ class Transaction(BaseModel):
             provider=data.get("provider", ""),
             source_file=Path(data["source_file"]) if data.get("source_file") else None,
             source_line=data.get("source_line"),
+            fee=Decimal(data["fee"]) if data.get("fee") is not None else None,
             statement_period=(
                 (
                     date.fromisoformat(data["statement_period"][0]),

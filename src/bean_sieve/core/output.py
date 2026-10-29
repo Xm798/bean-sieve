@@ -11,6 +11,7 @@ from pathlib import Path
 from beancount.parser import printer
 
 from .metadata_keys import (
+    FEE_ACCOUNT,
     MATCHED_RULE,
     ORIGINAL_PAYEE,
     OUTPUT_METADATA,
@@ -50,6 +51,7 @@ class BeancountWriter:
         default_expense: str = "Expenses:FIXME",
         default_income: str = "Income:FIXME",
         default_rebate: str = "Rebate:FIXME",
+        default_fee: str = "Expenses:FIXME",
         output_metadata: list[str] | None = None,
         sort_by_time: str | None = "asc",
         default_flag: str = "!",
@@ -58,6 +60,7 @@ class BeancountWriter:
         self.default_expense = default_expense
         self.default_income = default_income
         self.default_rebate = default_rebate
+        self.default_fee = default_fee
         # Which metadata fields to include (None = all)
         self.output_metadata = output_metadata
         # Sort by datetime: "asc", "desc", or None (no sort)
@@ -178,7 +181,8 @@ class BeancountWriter:
         account = txn.account or "Assets:FIXME"
         amount = -txn.amount  # Statement shows outflow as positive
 
-        # Multi-currency exchange: primary posting with @@ price, contra auto-balanced
+        # Multi-currency exchange: primary posting with @@ price, contra auto-balanced.
+        # Requires txn.fee to be unset: neither posting here carries a fee.
         if txn.price_amount is not None and txn.price_currency:
             postings.append(
                 f"{account}  {amount} {txn.currency}"
@@ -221,6 +225,11 @@ class BeancountWriter:
             contra_amount = txn.amount + rebate
         else:
             contra_amount = txn.amount
+
+        if txn.fee:
+            fee_account = txn.metadata.get(FEE_ACCOUNT) or self.default_fee
+            postings.append(f"{fee_account}  {txn.fee} {txn.currency}")
+            contra_amount -= txn.fee
 
         # Contra account (expense/income)
         contra = txn.contra_account

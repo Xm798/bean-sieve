@@ -28,6 +28,11 @@
           "default": "Income:FIXME",
           "description": "Default income account for unmatched transactions"
         },
+        "fee_account": {
+          "type": "string",
+          "default": "Expenses:FIXME",
+          "description": "Account for fees a provider reports on a transaction (e.g. a WeChat withdrawal service fee), unless providers.<id>.fee_account names one"
+        },
         "date_tolerance": {
           "type": "integer",
           "minimum": 0,
@@ -459,6 +464,10 @@
         "rebate_income_account": {
           "type": "string",
           "description": "Income account for rebate entries (e.g., Income:Rebate:ABC)"
+        },
+        "fee_account": {
+          "type": "string",
+          "description": "Account for fees reported on this provider's transactions; overrides defaults.fee_account"
         },
         "rebate_keywords": {
           "type": "array",

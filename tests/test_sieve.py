@@ -462,3 +462,52 @@ def test_original_amount_requires_its_currency(tmp_path):
 
     assert result.matched == []
     assert len(result.missing) == 1
+
+
+def _withdrawal_with_fee() -> Transaction:
+    return Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("50.00"),
+        currency="CNY",
+        description="withdraw-a",
+        account="Assets:Wallet:Test",
+        provider="prov-a",
+        fee=Decimal("0.05"),
+    )
+
+
+def _withdrawal_ledger(tmp_path: Path, *wallet_postings: str) -> Path:
+    entries = "\n".join(
+        f"""
+2030-01-02 * "withdraw-a"
+    Assets:Wallet:Test  {posting}
+    Assets:Bank:Test
+"""
+        for posting in wallet_postings
+    )
+    return _write_ledger(
+        tmp_path,
+        "1900-01-01 open Assets:Wallet:Test\n1900-01-01 open Assets:Bank:Test\n"
+        + entries,
+    )
+
+
+def test_outflow_with_fee_matches_an_entry_booked_net_of_the_fee(tmp_path):
+    """A wallet posting recorded at the amount the bank received still matches."""
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(_withdrawal_ledger(tmp_path, "-49.95 CNY"))
+
+    result = sieve.match([_withdrawal_with_fee()])
+
+    assert len(result.matched) == 1
+    assert result.extra == []
+
+
+def test_outflow_with_fee_prefers_the_gross_posting(tmp_path):
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(_withdrawal_ledger(tmp_path, "-49.95 CNY", "-50.00 CNY"))
+
+    result = sieve.match([_withdrawal_with_fee()])
+
+    ((_, entry),) = result.matched
+    assert entry.posting.units.number == Decimal("-50.00")

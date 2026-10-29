@@ -14,6 +14,9 @@ class DefaultsConfig(BaseModel):
     currency: str = "CNY"
     expense_account: str = "Expenses:FIXME"
     income_account: str = "Income:FIXME"
+    # Account for fees a provider reports on a transaction, unless the
+    # provider config names its own
+    fee_account: str = "Expenses:FIXME"
     date_tolerance: Annotated[int, Field(ge=0, le=30)] = 2
     # Metadata fields to include in output (None means include all)
     # Common fields: time, order_id, source, category, method, peer_account, etc.
@@ -125,6 +128,8 @@ class ProviderConfig(BaseModel):
     rebate_income_account: str | None = None
     # Rebate configuration: keywords to identify existing rebate transactions in ledger
     rebate_keywords: list[str] = Field(default_factory=list)
+    # Account for fees reported on this provider's transactions
+    fee_account: str | None = None
     # Generate balance directive after reconciliation (uses metadata["balance"])
     balance: bool = False
 

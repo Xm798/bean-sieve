@@ -26,6 +26,7 @@ providers:
     accounts:
       "零钱": Assets:WeChat:Balance
       "零钱通": Assets:WeChat:LingQianTong
+    fee_account: Expenses:Fee:WeChat
 
 rules:
   - description: "(早餐|午餐|晚餐)"

@@ -30,6 +30,7 @@ from .core.accounts import (
 )
 from .core.coverage import CoverageEntry, CoverageSelection, select
 from .core.metadata_keys import (
+    FEE_ACCOUNT,
     IGNORED,
     MATCHED_PRESET_RULE,
     OUTPUT_METADATA,
@@ -219,6 +220,7 @@ def generate_output(
     writer = BeancountWriter(
         default_expense=config.defaults.expense_account,
         default_income=config.defaults.income_account,
+        default_fee=config.defaults.fee_account,
         output_metadata=config.defaults.output_metadata,
         sort_by_time=config.defaults.sort_by_time,
         default_flag=config.defaults.flag,
@@ -442,14 +444,17 @@ def _apply_provider_output_config(
     config: Config,
 ) -> list[Transaction]:
     """
-    Apply provider-specific output metadata configuration.
+    Apply provider-specific output configuration.
 
-    Sets _posting_metadata and _output_metadata in txn.metadata based on
-    provider config. These are used by BeancountWriter to control output.
+    Sets _posting_metadata, _output_metadata and _fee_account in txn.metadata
+    based on provider config. These are used by BeancountWriter to control output.
     """
     result = []
     for txn in transactions:
         provider_config = config.get_provider_config(txn.provider)
+
+        if txn.fee and provider_config.fee_account:
+            txn.metadata[FEE_ACCOUNT] = provider_config.fee_account
 
         # Set posting_metadata from provider config
         if provider_config.posting_metadata:
