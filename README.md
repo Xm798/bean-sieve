@@ -38,10 +38,10 @@ uv sync --extra dev
 uv run pytest
 
 # 代码检查
-uv run ruff check src/ tests/
+uv run ruff check src/ tests/ scripts/
 
 # 格式化
-uv run ruff format src/ tests/
+uv run ruff format src/ tests/ scripts/
 ```
 
 ## Community

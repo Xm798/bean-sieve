@@ -19,7 +19,7 @@ jobs:
           enable-cache: true
       - run: uv python install ${{ matrix.python-version }}
       - run: uv sync --extra dev
-      - run: uv run ruff format --check src/ tests/
-      - run: uv run ruff check src/ tests/
+      - run: uv run ruff format --check src/ tests/ scripts/
+      - run: uv run ruff check src/ tests/ scripts/
       - run: uv run pyright src/
       - run: uv run pytest

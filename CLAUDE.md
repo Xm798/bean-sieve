@@ -37,11 +37,14 @@ uv run pytest -k "test_name"       # by name pattern
 uv run pytest tests/test_examples.py --update-examples  # rewrite examples/*/expected.bean
 
 # Linting and formatting
-uv run ruff check src/ tests/
-uv run ruff format src/ tests/
+uv run ruff check src/ tests/ scripts/
+uv run ruff format src/ tests/ scripts/
 
 # Type checking
 uv run pyright src/
+
+# Regenerate synthetic statements in examples/<id>/ (all, or the given ids)
+uv run --group examples python scripts/examples/generate.py [provider_id ...]
 
 # CLI usage
 uv run bean-sieve reconcile <files> -l <ledger> -o pending.bean
@@ -176,4 +179,4 @@ providers:
 
 Tests use pytest with fixtures in `tests/conftest.py`. Sample data for providers is generated programmatically or uses minimal inline fixtures.
 
-`examples/<provider_id>/` holds one golden example per provider: a synthetic statement file (any name, detected as that provider), `bean-sieve.yaml`, `ledger.bean`, and `expected.bean`. `tests/test_examples.py` runs `full_reconcile` on each directory and compares the output with `expected.bean` byte for byte, printing a unified diff on mismatch; the `; Date:` header is frozen to `2000-01-01 00:00:00` and the example directory prefix is stripped from Extra `; Source:` paths. Adding a directory adds a test case. The test also fails when a registered provider has no example directory or a directory names no registered provider, and validates each `bean-sieve.yaml` against the full `bean-sieve.schema.json` (provider pages embed it as a complete config). The example layout (reserved file names, statement listing) is defined once in `website/scripts/export_providers.py` and imported by the test. After an intended output change, rerun with `--update-examples` and review the diff. Example values follow the synthetic-fixture rules above.
+`examples/<provider_id>/` holds one golden example per provider: a synthetic statement file (any name, detected as that provider), `bean-sieve.yaml`, `ledger.bean`, and `expected.bean`. `tests/test_examples.py` runs `full_reconcile` on each directory and compares the output with `expected.bean` byte for byte, printing a unified diff on mismatch; the `; Date:` header is frozen to `2000-01-01 00:00:00` and the example directory prefix is stripped from Extra `; Source:` paths. Adding a directory adds a test case. The test also fails when a registered provider has no example directory or a directory names no registered provider, and validates each `bean-sieve.yaml` against the full `bean-sieve.schema.json` (provider pages embed it as a complete config). The example layout (reserved file names, statement listing) is defined once in `website/scripts/export_providers.py` and imported by the test. Statement files are built by `scripts/examples/generate.py` (one `@generator("<id>")` function per provider in `scripts/examples/gen_*.py`, shared eml/xls/xlsx/pdf writers in `_common.py`, deps in the `examples` dependency group); its output is deterministic, so regenerating an unchanged generator leaves the committed bytes alone. Examples without a generator (hand-written CSVs such as `wechat`) keep the committed file as the source of truth. After changing a statement or an intended output change, rerun with `--update-examples` and review the diff. Example values follow the synthetic-fixture rules above.

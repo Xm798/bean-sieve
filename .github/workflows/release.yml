@@ -16,8 +16,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --extra dev
-      - run: uv run ruff format --check src/ tests/
-      - run: uv run ruff check src/ tests/
+      - run: uv run ruff format --check src/ tests/ scripts/
+      - run: uv run ruff check src/ tests/ scripts/
       - run: uv run pyright src/
       - run: uv run pytest
 
