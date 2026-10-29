@@ -1,5 +1,6 @@
 """Statement and ledger builders shared by tests."""
 
+import base64
 from datetime import date
 from pathlib import Path
 
@@ -73,3 +74,17 @@ def load_sieve(tmp_path: Path, ledger_text: str, *, date_tolerance: int = 0) -> 
     sieve = Sieve(SieveConfig(date_tolerance=date_tolerance))
     sieve.load_ledger(ledger_path)
     return sieve
+
+
+def create_bocom_eml(html_content: str) -> str:
+    """Create an EML file content with the given HTML."""
+    encoded = base64.b64encode(html_content.encode("gbk")).decode("ascii")
+    return f"""From: test@bocomcc.com
+Subject: =?gbk?B?vbvNqNL40NC49sjL0MXTw7+o?=
+To: test@example.com
+MIME-Version: 1.0
+Content-Type: text/html; charset="gbk"
+Content-Transfer-Encoding: base64
+
+{encoded}
+"""

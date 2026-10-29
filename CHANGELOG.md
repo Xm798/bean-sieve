@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### 新增
 
 - 浦发银行借记卡 Provider（`spdb_debit`）：解析交易流水 PDF 回单
+- 交通银行信用卡：同一账期传入正本与补发时只采用一份，不再重复入账
 
 ### 修复
 

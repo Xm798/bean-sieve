@@ -8,7 +8,12 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
+from ....core.coverage import Coverage
+from ....core.metadata_keys import (
+    ORIGINAL_AMOUNT,
+    ORIGINAL_CURRENCY,
+    STATEMENT_CYCLE,
+)
 from ....core.types import Transaction
 from ... import register_provider
 from ..._tabular import masked_card_last4
@@ -128,7 +133,31 @@ class BOCOMCreditProvider(BaseProvider):
                     transactions.append(txn)
 
         self.assign_statement_periods(transactions, statement_period)
+        if statement_period:
+            for txn in transactions:
+                txn.metadata[STATEMENT_CYCLE] = statement_period
         return transactions
+
+    def coverage(
+        self,
+        file_path: Path,  # noqa: ARG002
+        transactions: list[Transaction],
+    ) -> list[Coverage]:
+        """Cover each card for the printed cycle.
+
+        statement_period is the cycle widened by delayed settlements, which
+        would make consecutive statements overlap, so parse() keeps the cycle
+        as printed. A reissue is sent in the same format as the original, so
+        both are one source kind and the earlier file on the command line wins.
+        """
+        by_card: dict[str, list[Transaction]] = {}
+        for txn in transactions:
+            if STATEMENT_CYCLE in txn.metadata:
+                by_card.setdefault(txn.card_last4 or "", []).append(txn)
+        return [
+            Coverage(card, *rows[0].metadata[STATEMENT_CYCLE], rows=rows)
+            for card, rows in by_card.items()
+        ]
 
     def _detect_section(self, first_row) -> str | None:
         """Detect section type from the nearest heading before the table's rows.

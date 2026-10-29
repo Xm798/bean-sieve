@@ -6,6 +6,7 @@ import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .core.coverage import CoverageEntry, CoverageSelection
     from .core.suggest import SuggestedRule
 import platform
 import subprocess
@@ -175,6 +176,11 @@ def completion(shell: str):
 @click.option("--date-range", help="Date range filter (YYYY-MM-DD:YYYY-MM-DD)")
 @click.option("--account-filter", help="Filter ledger to accounts with this prefix")
 @click.option("--dry-run", is_flag=True, help="Show results without writing file")
+@click.option(
+    "--keep-overlap",
+    is_flag=True,
+    help="Keep every row of overlapping statements of the same account (debug)",
+)
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 @click.option("-q", "--quiet", is_flag=True, help="Quiet mode")
 def reconcile(
@@ -186,6 +192,7 @@ def reconcile(
     date_range,
     account_filter,
     dry_run,
+    keep_overlap,
     verbose,
     quiet,
 ):
@@ -216,6 +223,7 @@ def reconcile(
             provider_id=provider,
             date_range=dr,
             account_filter=account_filter,
+            keep_overlap=keep_overlap,
         )
 
         # Display results
@@ -754,9 +762,46 @@ def _print_match_counts(match_result):
         )
 
 
+def _coverage_label(entry: CoverageEntry) -> str:
+    cov = entry.coverage
+    return f"{entry.provider_id} {cov.account} {cov.start}..{cov.end}"
+
+
+def _display_coverage(selection: CoverageSelection, verbose: bool = False):
+    """Display which overlapping statement files were adopted and dropped."""
+    if not selection.drops and not (verbose and selection.adopted):
+        return
+
+    console.print("\n[bold]Statement selection:[/bold]")
+    winners = {w for d in selection.drops for w in d.winners}
+    for entry in selection.adopted:
+        if not verbose and entry not in winners:
+            continue
+        console.print(
+            f"  [green]✅ Adopted:[/green] {escape(_coverage_label(entry))}  "
+            f"{escape(entry.path.name)}"
+        )
+    for drop in selection.drops:
+        whole = "" if drop.entry.coverage.clip else " (whole period)"
+        console.print(
+            f"  [yellow]✂️  Dropped:[/yellow] {escape(_coverage_label(drop.entry))}  "
+            f"{escape(drop.entry.path.name)}: {len(drop.rows)} row(s){whole}"
+        )
+    for m in selection.mismatches:
+        console.print(
+            f"  [red]⚠️  Mismatch:[/red] {escape(m.winner.coverage.account)} "
+            f"{m.start}..{m.end}  {escape(m.winner.path.name)} "
+            f"{m.winner_count} row(s) / {m.winner_total} vs "
+            f"{escape(m.loser.path.name)} {m.loser_count} row(s) / {m.loser_total}"
+        )
+
+
 def _display_result(result, verbose: bool = False):
     """Display reconciliation result."""
     mr = result.match_result
+
+    if result.coverage is not None:
+        _display_coverage(result.coverage, verbose)
 
     # Summary
     console.print("\n[bold]Summary:[/bold]")

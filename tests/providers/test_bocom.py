@@ -1,6 +1,5 @@
 """Tests for Bank of Communications (BOCOM) credit card statement provider."""
 
-import base64
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -9,20 +8,7 @@ import pytest
 
 from bean_sieve.providers import get_provider
 from bean_sieve.providers.banks.credit.bocom import BOCOMCreditProvider
-
-
-def create_bocom_eml(html_content: str) -> str:
-    """Create an EML file content with the given HTML."""
-    encoded = base64.b64encode(html_content.encode("gbk")).decode("ascii")
-    return f"""From: test@bocomcc.com
-Subject: =?gbk?B?vbvNqNL40NC49sjL0MXTw7+o?=
-To: test@example.com
-MIME-Version: 1.0
-Content-Type: text/html; charset="gbk"
-Content-Transfer-Encoding: base64
-
-{encoded}
-"""
+from tests.helpers import create_bocom_eml
 
 
 @pytest.fixture
@@ -553,6 +539,17 @@ class TestBOCOMSlashDateLayouts:
         ] == [
             (date(2030, 2, 1), date(2030, 2, 1), "0009", Decimal("-45.06")),
             (date(2030, 1, 12), date(2030, 1, 13), "0009", Decimal("24.68")),
+        ]
+
+    @pytest.mark.parametrize(
+        "html", [IN_TABLE_HEADING_LAYOUT_HTML, NO_CARD_COLUMN_LAYOUT_HTML]
+    )
+    def test_coverage_spans_the_printed_cycle(self, tmp_path, html):
+        provider = BOCOMCreditProvider()
+        transactions = self.parse(tmp_path, html)
+        coverages = provider.coverage(self.path(tmp_path), transactions)
+        assert [(c.account, c.start, c.end, len(c.rows)) for c in coverages] == [
+            ("0009", date(2030, 1, 5), date(2030, 2, 4), len(transactions))
         ]
 
     def test_rmb_amounts_are_cny(self, tmp_path):

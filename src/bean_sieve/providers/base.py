@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from bs4 import BeautifulSoup
 
 from ..config import Config
+from ..core.coverage import Coverage
 from ..core.types import ReconcileContext, ReconcileResult, Transaction
 from ._tabular import with_bom_encoding
 
@@ -63,6 +64,10 @@ class BaseProvider(ABC):
     # statement (False), and a configured account the file never names is off
     # this statement (True) or on it, covered by the file's periods (False).
     per_card_statement: bool = False
+
+    # Source kinds of coverage() in descending precedence; an unlisted kind
+    # ranks below every listed one.
+    coverage_priority: tuple[str, ...] = ()
 
     @classmethod
     def can_handle(cls, file_path: Path) -> bool:
@@ -198,6 +203,29 @@ class BaseProvider(ABC):
             Modified output content
         """
         return content
+
+    # === Statement Selection ===
+
+    def coverage(
+        self,
+        file_path: Path,  # noqa: ARG002
+        transactions: list[Transaction],  # noqa: ARG002
+    ) -> list[Coverage]:
+        """
+        Return the account periods this file reports, one per account.
+
+        Files of the same provider whose coverages overlap compete, and only
+        one is adopted for the overlap (see core/coverage.py). A provider
+        returning none keeps every row of every file.
+
+        Args:
+            file_path: The statement file
+            transactions: The file's parse output
+
+        Returns:
+            One Coverage per account the file speaks for
+        """
+        return []
 
     # === Statement Period ===
 

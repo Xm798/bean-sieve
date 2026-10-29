@@ -28,6 +28,7 @@ from .core.accounts import (
     resolve_by_keyword_regex,
     resolve_by_method,
 )
+from .core.coverage import CoverageEntry, CoverageSelection, select
 from .core.metadata_keys import (
     IGNORED,
     MATCHED_PRESET_RULE,
@@ -241,6 +242,7 @@ def full_reconcile(
     provider_id: str | None = None,
     date_range: tuple[date, date] | None = None,
     account_filter: str | None = None,
+    keep_overlap: bool = False,
 ) -> ReconcileResult:
     """
     Complete reconciliation workflow.
@@ -256,6 +258,8 @@ def full_reconcile(
         provider_id: Provider to use (or auto-detect)
         date_range: Filter transactions to this range
         account_filter: Filter ledger to accounts with this prefix
+        keep_overlap: Keep every row of overlapping statement files instead
+            of adopting one file per account and period
 
     Returns:
         ReconcileResult with all processing results
@@ -278,6 +282,12 @@ def full_reconcile(
     )
 
     transactions = [txn for path, _ in pset.files for txn in context.parsed[path]]
+
+    # Runs on the parse output itself, ahead of the model_copy steps below:
+    # keep() tells rows apart by identity.
+    coverage = None if keep_overlap else _select_coverage(pset, context.parsed)
+    if coverage is not None:
+        transactions = coverage.keep(transactions)
 
     # Infer date range from transactions if not explicitly provided
     # This ensures Extra calculation only considers ledger entries within statement scope
@@ -356,6 +366,7 @@ def full_reconcile(
         covered_ranges=covered_ranges,
         covered_groups=covered_groups,
     )
+    result.coverage = coverage
 
     # Generate output
     if output_path:
@@ -382,6 +393,25 @@ def full_reconcile(
                 f.write(content)
 
     return result
+
+
+def _select_coverage(
+    pset: ProviderSet, parsed: dict[Path, list[Transaction]]
+) -> CoverageSelection:
+    """Adopt one statement file per provider, account and overlapping period."""
+    entries: list[CoverageEntry] = []
+    for path, provider in pset.files:
+        ranks = {kind: i for i, kind in enumerate(provider.coverage_priority)}
+        entries.extend(
+            CoverageEntry(
+                provider_id=provider.provider_id,
+                path=path,
+                coverage=coverage,
+                rank=ranks.get(coverage.source, len(ranks)),
+            )
+            for coverage in provider.coverage(path, parsed[path])
+        )
+    return select(entries)
 
 
 def _apply_pre_reconcile_hooks(

@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from beancount.core.data import TxnPosting
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, InstanceOf, computed_field
 
+from .coverage import CoverageSelection
 from .metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
 
 if TYPE_CHECKING:
@@ -251,6 +252,10 @@ class ReconcileResult(BaseModel):
 
     match_result: MatchResult
     processed: list[Transaction] = Field(default_factory=list)
+    # Which overlapping statement files were adopted; None when the run kept
+    # every file (--keep-overlap). Checked by type only: a schema built from
+    # the dataclass fields would need the Transaction forward reference there.
+    coverage: InstanceOf[CoverageSelection] | None = None
 
     @computed_field
     @property

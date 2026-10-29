@@ -56,6 +56,8 @@ uv run bean-sieve providers
 ```
 Statement Files → Provider.parse() → [Transaction]
                                           ↓
+                 Provider.coverage() → coverage.select() → rows of overlapping files dropped
+                                          ↓
 Ledger → Sieve.load_ledger() → Sieve.match() → MatchResult
                                           ↓
                         RulesEngine.apply() → processed transactions
@@ -96,6 +98,8 @@ class MyProvider(BaseProvider):
 ```
 
 CSV/XLS providers share their tabular parsing steps (encoding detection, header search, cell decoding, …) via `providers/_tabular.py` — import from it rather than re-adding a private copy.
+
+**Statement selection** (optional, override `coverage(file_path, transactions)`): returns one `Coverage` (account key, inclusive period, rows, `itemized`, `source`, `clip`) per account the file reports. `api._select_coverage` runs `core/coverage.py:select()` once on the parse output, before date filtering and hooks: within one provider and account, overlapping files compete and only one is adopted. `itemized=False` files never compete; whole-period files compete first, the lower index of `source` in the provider's `coverage_priority` winning (unlisted kinds rank last) and ties going to the earlier file on the command line; a loser is dropped for its whole period. `clip` sources (arbitrary-range exports) compete afterwards by the same order and keep only rows booked (`post_date or date`) outside every adopted period, so an export never displaces a statement. A merged statement emits one coverage per card. Count/total differences between two itemized overlapping files are reported as mismatches; `ReconcileResult.coverage` holds the selection and the CLI prints it. `reconcile --keep-overlap` skips the step. A provider without `coverage()` keeps every row; `bocom_credit` implements it from the printed cycle.
 
 **Lifecycle Hooks** (optional, override in provider):
 
