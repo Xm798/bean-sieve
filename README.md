@@ -108,6 +108,7 @@ bean-sieve completion fish > ~/.config/fish/completions/bean-sieve.fish
 | `cmb_debit`    | 招商银行借记卡 | CSV       | CSV 导出账单       |
 | `cib_debit`    | 兴业银行借记卡 | XLS       | XLS 导出账单       |
 | `pab_debit`    | 平安银行借记卡 | XLS/XLSX  | Excel 导出账单     |
+| `spdb_debit`   | 浦发银行借记卡 | PDF       | 交易流水回单       |
 | `cncbi_debit`  | 中信银行（国际）| CSV      | 网银导出账单       |
 | `hsbchk_debit` | 汇丰香港储蓄账户| CSV      | 网银导出账单       |
 | `zabank_debit` | 众安银行       | PDF       | 综合月结单         |
@@ -240,6 +241,7 @@ rules:
 | 招商银行 | [专业版](https://cmbchina.com/pbankwebNew/downloadPage.aspx) PC 客户端 | Windows | 需安装客户端 |
 | 兴业银行 | [个人网上银行](https://personalbank.cib.com.cn/) | Windows / macOS | 需安装安全控件，查询→交易明细查询→流水下载→Excel |
 | 平安银行 | [个人网上银行](https://bank.pingan.com.cn/m/main/index.html) | Windows / macOS | 扫码登录无需安全控件 |
+| 浦发银行 | 浦发银行手机银行 App | iOS / Android | 申请交易流水，导出 PDF「个人客户交易流水专用回单」 |
 | 汇丰香港 | [HSBC HK Online Banking](https://www.hsbc.com.hk/) | Windows / macOS | 储蓄账户：交易记录页 → Download → CSV，导出文件名为 `TransactionHistory.csv` |
 | 中信银行（国际） | [inet Online Banking](https://ibanking.cncbinternational.com/) | Windows / macOS | 账户活动 → 下载 CSV |
 | 汇立银行 | [WeLab Bank App](https://www.welab.bank/) | iOS / Android | App 内「总览 → 月结单」下载电子月结单 PDF（多币种综合单） |
@@ -395,6 +397,15 @@ rules:
 | `balance` | 账户余额 |
 | `note` | 备注 |
 | `counterparty_account` | 对方账号 |
+
+#### 浦发银行 `spdb_debit`
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `balance` | 账户余额 |
+| `counterparty_account` | 对手账号 |
+| `reference` | 交易名称后附的流水号或卡号 |
+| `summary` | 交易摘要 |
 
 #### 众安银行 `zabank_debit`
 

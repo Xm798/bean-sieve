@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### 新增
+
+- 浦发银行借记卡 Provider（`spdb_debit`）：解析交易流水 PDF 回单
+
 ### 修复
 
 - 中国银行借记卡：解析 UTF-16 编码的 CSV 导出文件

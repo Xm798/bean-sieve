@@ -197,6 +197,7 @@ from .banks.debit import (  # noqa: E402, F401
     welab,
     zabank,  # noqa: E402, F401
 )
+from .banks.debit import spdb as spdb_debit  # noqa: E402, F401
 
 # from .banks.credit import ccb, abc, cib, cmb, bosc, cgb, cmbc
 # from .banks.debit import abc, cmb, bocom

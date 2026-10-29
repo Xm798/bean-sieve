@@ -380,6 +380,10 @@
           "description": "平安银行借记卡",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["tx_type", "summary", "note", "balance", "counterparty_account"] } } } }]
         },
+        "spdb_debit": {
+          "description": "浦发银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["balance", "counterparty_account", "reference", "summary"] } } } }]
+        },
         "zabank_debit": {
           "description": "众安银行",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["exchange_info", "counterparty", "balance"] } } } }]
