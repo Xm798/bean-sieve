@@ -157,7 +157,7 @@ class TestPABDebitProvider:
     def test_renamed_file_detected_by_content(self, tmp_path, ext):
         """A file renamed away from the bank's default name is recognised by its header."""
         f = create_pab_xlsx(tmp_path, [])
-        renamed = f.rename(tmp_path / f"PAB_0000_20300101-20301231{ext}")
+        renamed = f.rename(tmp_path / f"export{ext}")
         assert isinstance(auto_detect_provider(renamed), PABDebitProvider)
 
     def test_partial_header_not_detected(self, tmp_path):

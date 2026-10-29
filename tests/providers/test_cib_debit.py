@@ -167,7 +167,7 @@ class TestCIBDebitProvider:
 
     def test_renamed_file_detected_by_content(self, tmp_path: Path) -> None:
         """A file renamed away from the bank's default name is recognised by its header."""
-        f = create_cib_xls(tmp_path, [], filename="CIB_0000_20300101-20301231.xls")
+        f = create_cib_xls(tmp_path, [], filename="export.xls")
         assert isinstance(auto_detect_provider(f), CIBDebitProvider)
 
     def test_header_without_cib_title_not_detected(self, tmp_path: Path) -> None:

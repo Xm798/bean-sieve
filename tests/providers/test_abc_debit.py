@@ -353,7 +353,7 @@ class TestABCDebitProvider:
     def test_renamed_file_detected_by_content(self, tmp_path: Path, ext: str) -> None:
         """A file renamed away from detailYYYYMMDD is recognised by its header."""
         f = _create_xlsx(
-            tmp_path / f"ABC_0000_20300101-20301231{ext}",
+            tmp_path / f"export{ext}",
             [TITLE_ROW, INFO_ROW, HEADER_ROW],
         )
         assert isinstance(auto_detect_provider(f), ABCDebitProvider)

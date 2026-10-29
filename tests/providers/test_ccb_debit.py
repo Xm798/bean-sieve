@@ -143,9 +143,7 @@ class TestCCBDebitProvider:
 
     def test_renamed_file_detected_by_content(self, ccb_xls_file):
         """A file renamed away from the bank's default name is recognised by its header."""
-        renamed = ccb_xls_file.rename(
-            ccb_xls_file.with_name("CCB_0000_20300101-20301231.xls")
-        )
+        renamed = ccb_xls_file.rename(ccb_xls_file.with_name("export.xls"))
         assert isinstance(auto_detect_provider(renamed), CCBDebitProvider)
 
     def test_header_without_ccb_title_not_detected(self, tmp_path):
@@ -536,6 +534,6 @@ class TestCCBSignedAmountLayout:
         ws.write(0, 4, "中国建设银行个人活期账户全部交易明细")
         for col, header in enumerate(SIGNED_HEADERS):
             ws.write(3, col, header)
-        f = tmp_path / "CCB_0000_20300101-20301231.xls"
+        f = tmp_path / "export.xls"
         wb.save(str(f))
         assert isinstance(auto_detect_provider(f), CCBDebitProvider)
