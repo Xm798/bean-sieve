@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 修复
 
+- 交通银行信用卡：解析 2017–2021 年旧版账单邮件，人民币金额统一记为 CNY
 - 中国银行借记卡：解析 UTF-16 编码的 CSV 导出文件
 - 中国银行信用卡：不再把浦发信用卡 PDF 识别为中行账单
 - 中信银行信用卡：不再把中信借记卡 XLS 识别为信用卡账单

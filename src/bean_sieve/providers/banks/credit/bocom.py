@@ -14,10 +14,13 @@ from ... import register_provider
 from ..._tabular import masked_card_last4
 from ...base import BaseProvider
 
-_FULL_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_FULL_DATE_RE = re.compile(r"^\d{4}[-/]\d{2}[-/]\d{2}$")
+_ROW_DATE_RE = re.compile(r"^(?:\d{4}[-/])?\d{2}[-/]\d{2}$")
 _CARD_ROW_RE = re.compile(r"卡号末四位\s*(\d{4})")
 _SECTION_HEADING_RE = re.compile(
-    r"还款、退货[、及]费用返还明细|消费、取现[、及]其他费用明细"
+    r"还款[、／/]退货(?:[、／/]|及)费用返还明细"
+    r"|消费[、／/]取现(?:[、／/]|及)其他费用明细"
+    r"|消费信贷分期交易明细"
 )
 
 
@@ -43,14 +46,18 @@ class BOCOMCreditProvider(BaseProvider):
     - 消费、取现、其他费用明细: spending/cash advances (positive amounts)
 
     BOCOM sends two statement layouts:
-    - Legacy row cells: '', 交易日期 (MM/DD), 记账日期, 卡末四位, 交易说明,
-      交易金额 (original currency, e.g. "HKD41.00"), 入账金额 (billed currency,
-      e.g. "CNY37.00").
-    - Detail row cells: 交易日期 (YYYY-MM-DD), 记账日期, 交易说明, 交易币种/金额
-      ("HKD 41.00"), 入账币种/金额. The card is given by a "卡号末四位 1234" row
-      above its transactions, and only where the table groups them by card;
-      otherwise the rows belong to the statement's own card. Section headings
-      read "…及费用返还明细" / "…及其他费用明细".
+    - Legacy row cells: '', 交易日期 (MM/DD, or YYYY/MM/DD until 2021), 记账日期,
+      卡末四位, 交易说明, 交易金额 (original currency, e.g. "HKD41.00"),
+      入账金额 (billed currency, e.g. "CNY37.00").
+    - Detail row cells: 交易日期 (YYYY-MM-DD, or YYYY/MM/DD until 2018), 记账日期,
+      交易说明, 交易币种/金额 ("HKD 41.00"), 入账币种/金额. The card is given
+      by a "卡号末四位 1234" row above its transactions, and only where the
+      table groups them by card; otherwise the rows belong to the statement's
+      own card. Section headings read "…及费用返还明细" / "…及其他费用明细".
+
+    Statements up to 2019 put the section heading in the table's own first row,
+    with "／" or "/" between the items, and list installments billed this cycle
+    under a third heading, "消费信贷分期交易明细", as spending.
     """
 
     provider_id = "bocom_credit"
@@ -82,11 +89,12 @@ class BOCOMCreditProvider(BaseProvider):
             # Find transaction rows in this table
             rows = table.find_all("tr")
             trans_rows: list[_Row] = []
+            first_row = None
             card_last4 = statement_card
             for row in rows:
                 cells = row.find_all("td")
                 cell_texts = [c.get_text(strip=True) for c in cells]
-                if len(cells) >= 7 and self._is_date(cell_texts[1]):
+                if len(cells) >= 7 and _ROW_DATE_RE.match(cell_texts[1]):
                     trans_date, post_date, row_card, desc, orig, billed = cell_texts[
                         1:7
                     ]
@@ -99,14 +107,16 @@ class BOCOMCreditProvider(BaseProvider):
                     ):
                         card_last4 = card_match.group(1)
                     continue
+                if first_row is None:
+                    first_row = row
                 trans_rows.append(
                     _Row(trans_date, post_date, row_card, desc, orig, billed)
                 )
 
-            if not trans_rows:
+            if first_row is None:
                 continue
 
-            section = self._detect_section(table)
+            section = self._detect_section(first_row)
 
             # Parse each transaction row
             for trans_row in trans_rows:
@@ -120,9 +130,13 @@ class BOCOMCreditProvider(BaseProvider):
         self.assign_statement_periods(transactions, statement_period)
         return transactions
 
-    def _detect_section(self, table) -> str | None:
-        """Detect section type from the nearest heading before the table."""
-        heading = table.find_previous(string=_SECTION_HEADING_RE)
+    def _detect_section(self, first_row) -> str | None:
+        """Detect section type from the nearest heading before the table's rows.
+
+        Searching from the first transaction row also finds a heading the table
+        holds in its own first row.
+        """
+        heading = first_row.find_previous(string=_SECTION_HEADING_RE)
         if heading is None:
             return None
         return "payment" if "还款" in heading else "spending"
@@ -136,10 +150,6 @@ class BOCOMCreditProvider(BaseProvider):
             return (start, end)
         return None
 
-    def _is_date(self, text: str) -> bool:
-        """Check if text is a date in MM/DD format."""
-        return bool(re.match(r"^\d{2}/\d{2}$", text))
-
     def _parse_row(
         self,
         row: _Row,
@@ -151,7 +161,12 @@ class BOCOMCreditProvider(BaseProvider):
         """Parse a single transaction row."""
         try:
             trans_date = self._parse_row_date(row.trans_date, statement_period)
-            post_date = self._parse_row_date(row.post_date, statement_period)
+            # Some 2021 rows print a single digit in place of the post date.
+            post_date = (
+                self._parse_row_date(row.post_date, statement_period)
+                if _ROW_DATE_RE.match(row.post_date)
+                else None
+            )
         except ValueError:
             return None
 
@@ -188,7 +203,7 @@ class BOCOMCreditProvider(BaseProvider):
         self, date_str: str, statement_period: tuple[date, date] | None
     ) -> date:
         if _FULL_DATE_RE.match(date_str):
-            return date.fromisoformat(date_str)
+            return date.fromisoformat(date_str.replace("/", "-"))
         return self._parse_date_with_period(date_str, statement_period)
 
     def _parse_date_with_period(
@@ -216,7 +231,8 @@ class BOCOMCreditProvider(BaseProvider):
         if not match:
             return None, "CNY"
 
-        currency = match.group(1)
+        # Older statements label renminbi amounts "RMB".
+        currency = "CNY" if match.group(1) == "RMB" else match.group(1)
         amount_num = match.group(2).replace(",", "")
 
         try:

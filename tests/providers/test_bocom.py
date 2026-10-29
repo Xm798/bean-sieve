@@ -423,3 +423,149 @@ class TestBOCOMDetailLayout:
         assert transactions
         for txn in transactions:
             assert txn.statement_period == (date(2030, 1, 5), date(2030, 2, 4))
+
+
+SLASH_DATE_ROW_HEADER = (
+    "<tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td>"
+    "<td>交易说明</td><td>交易金额</td><td>入账金额</td></tr>"
+)
+
+SLASH_DATE_LAYOUT_HTML = f"""<html>
+<head><title>交通银行信用卡电子账单</title></head>
+<body>
+<table><tr><td>交通银行信用卡 卡号:622200******0009 账单周期 2030/01/05-2030/02/04</td></tr></table>
+<table>
+    <tr><td>还款、退货、费用返还明细</td></tr>
+    <tr><td><table>
+        {SLASH_DATE_ROW_HEADER}
+        <tr><td></td><td>2030/02/01</td><td>2030/02/01</td><td>0009</td><td>信用卡还款 转账还款</td><td>CNY 1,111.11</td><td>CNY 1,111.11</td></tr>
+    </table></td></tr>
+    <tr><td>消费、取现、其他费用明细</td></tr>
+    <tr><td><table>
+        {SLASH_DATE_ROW_HEADER}
+        <tr><td></td><td>2029/12/30</td><td>2030/01/06</td><td>0009</td><td>消费 商户甲</td><td>CNY 24.68</td><td>CNY 24.68</td></tr>
+        <tr><td></td><td>2030/01/08</td><td>2030/01/08</td><td>0008</td><td>消费 商户乙</td><td>HKD 86.42</td><td>CNY 77.07(含手续费39.97)</td></tr>
+    </table></td></tr>
+</table>
+</body>
+</html>"""
+
+IN_TABLE_HEADING_ROW_HEADER = (
+    "<tr><td></td><td>交易日期</td><td>记账日期</td><td>卡号末四位</td>"
+    "<td>交易说明</td><td>交易币种／金额</td><td>入账币种／金额</td></tr>"
+)
+
+IN_TABLE_HEADING_LAYOUT_HTML = f"""<html>
+<head><title>交通银行信用卡电子账单</title></head>
+<body>
+<table><tr><td>交通银行信用卡 卡号:622200******0009 账单周期 2030/01/05-2030/02/04</td></tr></table>
+<table>
+    <tr><td>以下是您的还款／退货／费用返还明细</td></tr>
+    {IN_TABLE_HEADING_ROW_HEADER}
+    <tr><td></td><td>2030/02/01</td><td>2030/02/01</td><td>0009</td><td>信用卡还款 转账还款</td><td>CNY 555.51</td><td>CNY 555.51</td></tr>
+</table>
+<table>
+    <tr><td>以下是您的消费/取现/其他费用明细</td></tr>
+    {IN_TABLE_HEADING_ROW_HEADER}
+    <tr><td></td><td>2030/01/10</td><td>2030/01/10</td><td>0009</td><td>消费 商户甲</td><td>CNY 33.31</td><td>CNY 33.31</td></tr>
+</table>
+<table>
+    <tr><td>以下是您的消费信贷分期交易明细</td></tr>
+    {IN_TABLE_HEADING_ROW_HEADER}
+    <tr><td></td><td>2030/01/20</td><td>2030/01/20</td><td>0009</td><td>分期付款 商户乙 &lt;02/12&gt;</td><td>CNY 66.61</td><td>CNY 66.61</td></tr>
+</table>
+</body>
+</html>"""
+
+NO_CARD_COLUMN_ROW_HEADER = (
+    "<tr><td>交易日期</td><td>记账日期</td><td>交易说明</td>"
+    "<td>交易币种/金额</td><td>入账币种/金额</td></tr>"
+)
+
+NO_CARD_COLUMN_LAYOUT_HTML = f"""<html>
+<head><title>交通银行信用卡电子账单</title></head>
+<body>
+<table><tr><td>交通银行信用卡 卡号:622200******0009 账单周期 2030/01/05-2030/02/04</td></tr></table>
+<div>以下是您的还款、退货及费用返还明细</div>
+<table>
+    {NO_CARD_COLUMN_ROW_HEADER}
+    <tr><td>2030/02/01</td><td>2030/02/01</td><td>信用卡还款 转账还款</td><td>CNY 45.06</td><td>CNY 45.06</td></tr>
+</table>
+<div>以下是您的消费、取现及其他费用明细</div>
+<table>
+    {NO_CARD_COLUMN_ROW_HEADER}
+    <tr><td>2030/01/12</td><td>2030/01/13</td><td>消费 商户甲</td><td>CNY 24.68</td><td>CNY 24.68</td></tr>
+</table>
+</body>
+</html>"""
+
+
+class TestBOCOMSlashDateLayouts:
+    """Tests for the 2017–2021 layouts with YYYY/MM/DD row dates."""
+
+    @staticmethod
+    def path(tmp_path):
+        return tmp_path / "交通银行信用卡2030年02月电子账单.eml"
+
+    @classmethod
+    def parse(cls, tmp_path, html):
+        file_path = cls.path(tmp_path)
+        file_path.write_text(create_bocom_eml(html), encoding="utf-8")
+        return BOCOMCreditProvider().parse(file_path)
+
+    def test_card_column_rows(self, tmp_path):
+        transactions = self.parse(tmp_path, SLASH_DATE_LAYOUT_HTML)
+        assert [
+            (t.date, t.post_date, t.card_last4, t.amount, t.metadata["section"])
+            for t in transactions
+        ] == [
+            (
+                date(2030, 2, 1),
+                date(2030, 2, 1),
+                "0009",
+                Decimal("-1111.11"),
+                "payment",
+            ),
+            (
+                date(2029, 12, 30),
+                date(2030, 1, 6),
+                "0009",
+                Decimal("24.68"),
+                "spending",
+            ),
+            (date(2030, 1, 8), date(2030, 1, 8), "0008", Decimal("77.07"), "spending"),
+        ]
+        assert transactions[2].metadata["original_amount"] == Decimal("86.42")
+        assert transactions[2].metadata["original_currency"] == "HKD"
+
+    def test_heading_inside_the_table_sets_the_section(self, tmp_path):
+        transactions = self.parse(tmp_path, IN_TABLE_HEADING_LAYOUT_HTML)
+        assert [(t.amount, t.metadata["section"]) for t in transactions] == [
+            (Decimal("-555.51"), "payment"),
+            (Decimal("33.31"), "spending"),
+            (Decimal("66.61"), "spending"),
+        ]
+
+    def test_rows_without_card_column_take_the_statement_card(self, tmp_path):
+        transactions = self.parse(tmp_path, NO_CARD_COLUMN_LAYOUT_HTML)
+        assert [
+            (t.date, t.post_date, t.card_last4, t.amount) for t in transactions
+        ] == [
+            (date(2030, 2, 1), date(2030, 2, 1), "0009", Decimal("-45.06")),
+            (date(2030, 1, 12), date(2030, 1, 13), "0009", Decimal("24.68")),
+        ]
+
+    def test_rmb_amounts_are_cny(self, tmp_path):
+        html = SLASH_DATE_LAYOUT_HTML.replace("CNY 24.68", "RMB 24.68")
+        transactions = self.parse(tmp_path, html)
+        assert transactions[1].currency == "CNY"
+        assert "original_currency" not in transactions[1].metadata
+
+    def test_row_without_a_post_date_keeps_its_trans_date(self, tmp_path):
+        html = SLASH_DATE_LAYOUT_HTML.replace(
+            "<td>2029/12/30</td><td>2030/01/06</td>", "<td>2029/12/30</td><td>7</td>"
+        )
+        transactions = self.parse(tmp_path, html)
+        assert len(transactions) == 3
+        assert transactions[1].date == date(2029, 12, 30)
+        assert transactions[1].post_date is None
