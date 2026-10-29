@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+
+providers:
+  icbc_credit:
+    accounts:
+      "1111": Liabilities:CreditCard:ICBC:1111
+
+rules:
+  - description: "cafe"
+    contra_account: Expenses:Food:Coffee
+  - description: "信用卡还款|转帐"
+    contra_account: Assets:Bank:Checking

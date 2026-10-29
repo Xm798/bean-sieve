@@ -346,3 +346,202 @@ def cmb_credit_reissue(
     )
     pdf.put(40, 832, f"CMB Credit Card Statement ({year}.{month:02d})")
     pdf.save(out)
+
+
+# The icbc_credit generator in gen_eml writes these next to its eml.
+def icbc_credit_reissue(out: Path) -> None:
+    pdf = PdfPage(font_size=6)
+    # The print-time watermark comes first in the page's text, in large type.
+    for y in (120, 400, 680):
+        pdf.put(60, y, "2030-03-05 10:00:00 中国工商银行", 13)
+    pdf.put(40, 200, "账单周期 2030年2月1日—2030年2月28日")
+    pdf.put(40, 212, "对账单生成日 2030年2月28日")
+    pdf.put(40, 240, "人 民 币 交 易 明 细", 13)
+    xs = [20, 55, 120, 185, 240, 360, 460]
+    for x, label in zip(
+        xs,
+        [
+            "卡号后四位",
+            "交易日",
+            "记账日",
+            "交易类型",
+            "商户名称/城市",
+            "交易金额/币种",
+            "记账金额/币种",
+        ],
+        strict=True,
+    ):
+        pdf.put(x, 260, label)
+    pdf.put(37, 276, "---主卡明细---")
+    rows = [
+        (
+            "2030-02-03",
+            "2030-02-03",
+            "消费",
+            ["财付通-market-e"],
+            "64.00/RMB",
+            "64.00/RMB(支出)",
+        ),
+        # A long merchant name wraps inside its cell.
+        (
+            "2030-02-10",
+            "2030-02-11",
+            "消费",
+            ["支付宝-restaurant-f-", "branch-g"],
+            "88.00/RMB",
+            "88.00/RMB(支出)",
+        ),
+        (
+            "2030-02-14",
+            "2030-02-14",
+            "年费减免",
+            ["年费减免23.40元"],
+            "0.00/RMB",
+            "0.00/RMB(存入)",
+        ),
+        (
+            "2030-02-18",
+            "2030-02-18",
+            "信用卡还款",
+            ["支付宝"],
+            "300.00/RMB",
+            "300.00/RMB(存入)",
+        ),
+    ]
+    y = 294.0
+    for trans, post, kind, merchant, amount, booked in rows:
+        for x, text in zip(xs[:4], ["1111", trans, post, kind], strict=True):
+            pdf.put(x, y, text)
+        for i, line in enumerate(merchant):
+            pdf.put(xs[4], y + i * 12, line)
+        pdf.put(xs[5], y, amount)
+        pdf.put(xs[6], y, booked)
+        y += 12 * len(merchant) + 10
+    pdf.put(40, 700, "信用卡对账单（补）", 13)
+    pdf.put(400, 800, "网站www.icbc.com.cn 服务热线 95588")
+    pdf.save(out)
+
+
+def icbc_credit_export(out: Path) -> None:
+    # The export is a landscape table printed on a portrait page turned a
+    # quarter: every line runs up the page, rows advance along x and columns
+    # along y.
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.set_rotation(90)
+
+    def put(x: float, y: float, text: str, size: float = 5) -> None:
+        # Cells are centred on their column, as in the bank's export; china-s
+        # advances every character, ASCII included, by one em.
+        page.insert_text(
+            (x, y + len(text) * size / 2),
+            text,
+            fontname="china-s",
+            fontsize=size,
+            rotate=90,
+        )
+
+    put(30, 400, "中国工商银行信用卡历史明细（电子版）", 12)
+    put(55, 760, "卡号: 6222000000001111")
+    put(55, 560, "户名：cardholder-a")
+    put(55, 330, "起止日期：2030-03-20 — 2030-04-10")
+    columns = [
+        ("入账日期", 790),
+        ("交易卡号", 720),
+        ("收支", 650),
+        ("交易币种", 610),
+        ("交易金额", 560),
+        ("入账币种", 510),
+        ("入账金额", 460),
+        ("账户余额", 400),
+        ("对方户名", 340),
+        ("对方账号", 280),
+        ("摘要", 220),
+        ("交易场所", 160),
+    ]
+    for label, y in columns:
+        if label == "收支":
+            put(76, y, "收")
+            put(83, y, "支")
+        else:
+            put(80, y, label)
+    rows = [
+        (
+            "2030-03-20",
+            "10:20:30",
+            "贷",
+            "人民币",
+            "1200.00",
+            "人民币",
+            "1200.00",
+            "-311.00",
+            "cardholder-a",
+            "6222****8888",
+            "转帐",
+            ["支付宝"],
+        ),
+        (
+            "2030-04-03",
+            "12:00:00",
+            "借",
+            "人民币",
+            "52.00",
+            "人民币",
+            "52.00",
+            "-363.00",
+            "",
+            "",
+            "消费",
+            ["财付通-bakery-h-", "station-i"],
+        ),
+        (
+            "2030-04-06",
+            "09:15:00",
+            "贷",
+            "人民币",
+            "300.00",
+            "人民币",
+            "300.00",
+            "-63.00",
+            "cardholder-a",
+            "6222****9999",
+            "转帐",
+            ["手机银行"],
+        ),
+        (
+            "2030-04-08",
+            "18:40:00",
+            "借",
+            "港币",
+            "50.00",
+            "人民币",
+            "46.00",
+            "-109.00",
+            "",
+            "",
+            "消费",
+            ["overseas-shop-c"],
+        ),
+    ]
+    # Column-major writes keep each cell its own line in the extracted text,
+    # as in the bank's export; row-major writes would merge neighbouring cells.
+    xs = [100.0]
+    for row in rows[:-1]:
+        xs.append(xs[-1] + 7 * max(2, len(row[-1])) + 4)
+    for x, (day, clock, *_) in zip(xs, rows, strict=True):
+        put(x, 790, day)
+        put(x + 7, 790, clock)
+    for x in xs:
+        put(x + 3.5, 720, "6222000000001111")
+    for col, (_, y) in enumerate(columns[2:11], start=2):
+        for x, row in zip(xs, rows, strict=True):
+            if row[col]:
+                put(x + 3.5, y, row[col])
+    for x, row in zip(xs, rows, strict=True):
+        for i, line in enumerate(row[-1]):
+            put(x + i * 7, 160, line)
+    x = xs[-1] + 18
+    put(x + 20, 400, "支出合计：143.00 收入合计：300.00")
+    doc.set_metadata({})
+    doc.save(out, garbage=4, deflate=True, no_new_id=True)
+    doc.close()

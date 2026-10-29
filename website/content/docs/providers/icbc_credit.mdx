@@ -1,0 +1,129 @@
+---
+title: 工商银行信用卡
+description: 解析工商银行信用卡的电子邮件账单、补发对账单 PDF 和历史明细 PDF，与账本对账
+---
+
+## 账单下载方式
+
+工商银行信用卡按卡出账单，同一张卡的交易有三种来源，都能解析：
+
+| 来源 | 文件 | 获取方式 |
+| :--- | :--- | :--- |
+| 电子邮件账单 | `.eml` | 每月一封，标题为「中国工商银行客户对账单(ICBC Peony Card Bank Statement)」。在邮件客户端把整封邮件另存为 `.eml` |
+| 补发对账单 | `.pdf` | 在工商银行手机银行或网上银行申请补发历史账单，得到标题为「信用卡对账单（补）」的 PDF，一个账期一份 |
+| 历史明细 | `.pdf` | 在网上银行查询信用卡历史明细并导出，得到「中国工商银行信用卡历史明细（电子版）」PDF，起止日期自选，可跨多页 |
+
+具体入口以银行说明为准。保存邮件的方法：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="icbc_credit" />
+
+Bean-Sieve 按内容识别，不看文件名：邮件看解码后的标题和正文里有没有「ICBC Peony Card Bank Statement」，PDF 看第一页有没有「信用卡对账单（补）」或「中国工商银行信用卡历史明细」。
+
+邮件账单和补发对账单的交易明细是同一张表：卡号后四位、交易日、记账日、交易类型、商户名称/城市、交易金额/币种、记账金额/币种。记账金额后面括号里的「存入」表示还款、退货等减少欠款的交易，记为负数；「支出」表示消费、分期等增加欠款的交易，记为正数。金额和币种取记账金额，`RMB` 记作 `CNY`；交易币种与记账币种不同时，原币金额和币种记入 `original_amount` 和 `original_currency`，对方科目写成原币，并以 `@@` 标注记账金额：
+
+```beancount
+2030-03-09 ! "跨行消费 overseas-shop-c"
+    Liabilities:CreditCard:ICBC:1111  -86.20 CNY
+    Expenses:FIXME  97.50 HKD @@ 86.20 CNY
+```
+
+历史明细只有入账日期和时间。金额取入账金额：收支为「借」时照印出的数记，消费是正数，撤销此前一笔消费的行印的是负数，也记为负数；为「贷」时取反，记为负数。卡号取交易卡号的后四位。
+
+## 配置示例
+
+工商银行信用卡按卡管理，每张卡独立出账单、独立还款，账本里通常每张卡建一个账户。`accounts` 的键是卡号后四位：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  icbc_credit:
+    accounts:
+      "1111": Liabilities:CreditCard:ICBC:1111
+      "2222": Liabilities:CreditCard:ICBC:2222
+
+rules:
+  - description: "信用卡还款|转帐"
+    contra_account: Assets:Bank:Checking
+```
+
+描述由交易类型和商户拼成，如「消费 财付通-store-a」；历史明细取摘要和交易场所，如「转帐 手机银行」。收款方为空，可以用规则的 `target_payee` 补上。
+
+### 多份文件覆盖同一账期
+
+同一张卡、同一段时间的交易可能同时出现在几份文件里。一起传给 `reconcile` 时，每段时间只采用一份：
+
+- 邮件账单和补发对账单按印出的账单周期覆盖，同一账期两份都在时用邮件账单。
+- 历史明细只补账单周期以外的日子：入账日期落在已采用账单周期里的行丢弃，其余保留。
+
+`reconcile --keep-overlap` 关闭这一步，保留所有文件的全部交易。
+
+## 解析出的元数据字段
+
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号后四位 / 交易卡号 | 历史明细取完整卡号的后四位 |
+| `transaction_type` | 交易类型 | 邮件账单和补发对账单，如「消费」「信用卡还款」 |
+| `summary` | 摘要 | 历史明细，如「消费」「转帐」「退货」 |
+| `balance` | 账户余额 | 历史明细 |
+| `counterparty_name` | 对方户名 | 历史明细，有值时出现 |
+| `counterparty_account` | 对方账号 | 历史明细，有值时出现 |
+| `original_amount` | 交易金额 | 仅在交易币种与记账币种不同时出现 |
+| `original_currency` | 交易币种 | 与 `original_amount` 一起出现 |
+
+历史明细的入账时间写入 `time`。默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.icbc_credit.output_metadata` 列出的字段会追加到全局列表上。
+
+## 已知限制
+
+- 金额为 0.00 的行不产生交易，如账单里的年费减免说明和历史明细里 0.00 的退货行。
+- 历史明细每页底部的支出、收入合计按交易金额（原币）相加，Bean-Sieve 记的是入账金额，页内有外币交易时两者对不上。
+- 商户名称/城市一栏折行时，几行直接拼在一起，商户名和城市之间没有分隔。
+- 历史明细没有交易日，交易日期取入账日期，与按交易日记账的账本条目可能差一两天，由 `date_tolerance` 兜住。
+- 历史明细的币种按中文名换算，表里没有的币种整行跳过并记录警告。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
+
+## 输出样例
+
+仓库的 [`examples/icbc_credit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/icbc_credit) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile 中国工商银行信用卡对账单（补）2030年02月.pdf 中国工商银行客户对账单2030年03月.eml 中国工商银行信用卡历史明细.pdf -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+2 月的补发对账单和 3 月的邮件账单各管自己的账期，账本里已有的消费和还款被匹配，不再输出；3 月 9 日的港币消费对方科目写成 `97.50 HKD @@ 86.20 CNY`；0.00 的年费减免行不输出。历史明细从 3 月 20 日起，3 月那行还款已在邮件账单里，被丢弃，4 月的几行照常输出。账本里 2 月 25 日那笔在补发对账单里找不到，被列为 Extra。
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+三份账单文件都不是纯文本，这里不展开，可在 [`examples/icbc_credit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/icbc_credit) 下载。
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/icbc_credit/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/icbc_credit/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/icbc_credit/expected.bean</include>
+
+</Tab>
+
+</Tabs>

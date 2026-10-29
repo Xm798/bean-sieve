@@ -151,6 +151,11 @@ providers:
     accounts:
       "7777": Liabilities:CreditCard:CMBC
 
+  icbc_credit:
+    accounts:
+      "1111": Liabilities:CreditCard:ICBC:1111
+      "2222": Liabilities:CreditCard:ICBC:2222
+
   boc_debit:
     # CSV 中无卡号信息，配置单个账户时自动匹配
     accounts:

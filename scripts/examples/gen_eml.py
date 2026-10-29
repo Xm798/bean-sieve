@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from _common import generator, write_eml
-from gen_pdf import cmb_credit_reissue
+from gen_pdf import cmb_credit_reissue, icbc_credit_export, icbc_credit_reissue
 
 
 @generator("abc_credit")
@@ -636,6 +636,99 @@ def hxb_credit(out_dir: Path) -> None:
         html,
         "华夏信用卡对账单",
         encoding="base64",
+    )
+
+
+def _icbc_rows(card: str, rows: list[tuple[str, str, str, str, str, str]]) -> str:
+    return "\n".join(
+        f"<tr><td>{card}</td><td>{t}</td><td>{p}</td><td>{ty}</td>"
+        f"<td>{m}</td><td>{o}</td><td>{b}</td></tr>"
+        for t, p, ty, m, o, b in rows
+    )
+
+
+@generator("icbc_credit")
+def icbc_credit(out_dir: Path) -> None:
+    icbc_credit_reissue(out_dir / "中国工商银行信用卡对账单（补）2030年02月.pdf")
+    icbc_credit_export(out_dir / "中国工商银行信用卡历史明细.pdf")
+    rows = [
+        (
+            "2030-03-02",
+            "2030-03-02",
+            "消费",
+            "财付通-store-a",
+            "36.40/RMB",
+            "36.40/RMB(支出)",
+        ),
+        (
+            "2030-03-05",
+            "2030-03-06",
+            "消费",
+            "支付宝-cafe-b",
+            "26.00/RMB",
+            "26.00/RMB(支出)",
+        ),
+        (
+            "2030-03-09",
+            "2030-03-10",
+            "跨行消费",
+            "overseas-shop-c",
+            "97.50/HKD",
+            "86.20/RMB(支出)",
+        ),
+        (
+            "2030-03-12",
+            "2030-03-12",
+            "退货",
+            "财付通-store-a",
+            "36.40/RMB",
+            "36.40/RMB(存入)",
+        ),
+        (
+            "2030-03-15",
+            "2030-03-15",
+            "分期付款",
+            "shop-d 第2/6期",
+            "150.00/RMB",
+            "150.00/RMB(支出)",
+        ),
+        (
+            "2030-03-20",
+            "2030-03-20",
+            "信用卡还款",
+            "支付宝",
+            "1,200.00/RMB",
+            "1,200.00/RMB(存入)",
+        ),
+    ]
+    html = f"""<html>
+<head><title>中国工商银行客户对账单</title></head>
+<body>
+<table><tr><td>信 用 卡 对 账 单</td></tr></table>
+<table>
+<tr><td>账单周期</td><td>2030年3月1日—2030年3月31日</td></tr>
+<tr><td>对账单生成日</td><td>2030年3月31日</td></tr>
+</table>
+<table>
+<tr><td>需 还 款 明 细</td></tr>
+<tr><td>卡号后四位</td><td>币种</td><td>应还款额</td><td>最低还款额</td><td>信用额度</td></tr>
+<tr><td>1111(牡丹贷记卡)</td><td>人民币(本位币)</td><td>262.20/RMB</td><td>26.22/RMB</td><td>10,000.00/RMB</td></tr>
+</table>
+<table>
+<tr><td>人民币(本位币) 交 易 明 细</td></tr>
+<tr><td>卡号后四位</td><td>交易日</td><td>记账日</td><td>交易类型</td><td>商户名称/城市</td><td>交易金额/币种</td><td>记账金额/币种</td></tr>
+<tr><td>---主卡明细---</td></tr>
+{_icbc_rows("1111", rows)}
+</table>
+<table><tr><td>网站</td><td>www.icbc.com.cn</td></tr></table>
+</body>
+</html>"""
+    write_eml(
+        out_dir / "中国工商银行客户对账单2030年03月.eml",
+        html,
+        "中国工商银行客户对账单(ICBC Peony Card Bank Statement)",
+        sender="webmaster@icbc.example.com",
+        charset="gbk",
     )
 
 

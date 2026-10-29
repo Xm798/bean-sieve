@@ -109,7 +109,8 @@
               "balance_currency",
               "order_amount",
               "fx_ref",
-              "transaction_date"
+              "transaction_date",
+              "counterparty_name"
             ]
           },
           "examples": [
@@ -348,6 +349,10 @@
         "hsbchk_credit": {
           "description": "汇丰香港信用卡",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["transaction_status", "country", "district", "direction"] } } } }]
+        },
+        "icbc_credit": {
+          "description": "工商银行信用卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["transaction_type", "summary", "balance", "counterparty_name", "counterparty_account", "original_amount", "original_currency"] } } } }]
         },
         "psbc_credit": {
           "description": "邮储银行信用卡",

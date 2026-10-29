@@ -105,9 +105,10 @@ def content_scope(cls: type[BaseProvider]) -> str:
     """
     if _overrides(cls, "_match_content") or _overrides(cls, "can_handle"):
         return "custom"
-    if ".eml" in cls.supported_formats:
-        return "eml"
-    return "pdf" if ".pdf" in cls.supported_formats else "header"
+    formats = cls.supported_formats
+    if ".eml" in formats:
+        return "eml-pdf" if ".pdf" in formats else "eml"
+    return "pdf" if ".pdf" in formats else "header"
 
 
 def filename_keywords_ignore_case() -> bool:

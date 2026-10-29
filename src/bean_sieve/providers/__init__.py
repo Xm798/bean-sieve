@@ -183,6 +183,7 @@ from .banks.credit import (  # noqa: E402, F401
     psbc,
     spdb,
 )
+from .banks.credit import icbc as icbc_credit  # noqa: E402, F401
 from .banks.debit import abc as abc_debit  # noqa: E402, F401
 from .banks.debit import boc as boc_debit  # noqa: E402, F401
 from .banks.debit import bocom as bocom_debit  # noqa: E402, F401
