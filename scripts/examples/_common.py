@@ -102,12 +102,19 @@ def write_xlsx(out: Path, rows: Iterable[Sequence[Any]]) -> None:
 
 
 class PdfPage:
-    """A single A4 page drawn with the built-in Simplified Chinese font."""
+    """Pages (A4 by default) drawn with the built-in Simplified Chinese font."""
 
-    def __init__(self, font_size: float) -> None:
+    def __init__(
+        self, font_size: float, width: float = 595, height: float = 842
+    ) -> None:
         self.doc = fitz.open()
-        self.page = self.doc.new_page(width=595, height=842)
+        self.width = width
+        self.height = height
+        self.page = self.doc.new_page(width=width, height=height)
         self.font_size = font_size
+
+    def new_page(self) -> None:
+        self.page = self.doc.new_page(width=self.width, height=self.height)
 
     def put(self, x: float, y: float, text: str, size: float | None = None) -> None:
         self.page.insert_text(

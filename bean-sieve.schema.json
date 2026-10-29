@@ -112,7 +112,9 @@
               "transaction_date",
               "counterparty_name",
               "institution",
-              "card_number"
+              "card_number",
+              "cash_transfer",
+              "branch"
             ]
           },
           "examples": [
@@ -395,6 +397,10 @@
         "pab_debit": {
           "description": "平安银行借记卡",
           "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["tx_type", "summary", "note", "balance", "counterparty_account"] } } } }]
+        },
+        "cmbc_debit": {
+          "description": "民生银行借记卡",
+          "allOf": [{ "$ref": "#/$defs/providerConfig" }, { "properties": { "output_metadata": { "items": { "enum": ["balance", "cash_transfer", "channel", "branch", "counterparty_account", "counterparty_bank"] } } } }]
         },
         "spdb_debit": {
           "description": "浦发银行借记卡",

@@ -1,0 +1,106 @@
+---
+title: 民生银行借记卡
+description: 解析民生银行借记卡的个人账户对账单 PDF，与账本对账
+---
+
+## 账单下载方式
+
+在民生银行手机银行 App 里申请账户对账单，选好起止日期后导出 PDF 格式的「个人账户对账单」。
+
+## 支持的文件格式与识别方式
+
+<ProviderFacts id="cmbc_debit" />
+
+文件名可以随意取。Bean-Sieve 读 PDF 第一页的文字，标题「个人账户对账单」和「民生银行」两处都出现才识别为这家银行：标题本身很常见，银行名又可能出现在别家账单的对方行名里，只看其中一个容易认错。
+
+对账单是横向页面，每一页都重复印标题和页眉。页眉有客户姓名、客户账号（卡号）、产品名称、币种、钞汇标志、开户机构、账户账号、起止日期（`YYYY/MM/DD-YYYY/MM/DD`）、筛选条件和证件号码。卡号后四位取客户账号的末四位。币种按页眉的中文币种名换成三位代码，人民币即 `CNY`。
+
+明细表有 11 列：凭证类型、凭证号码、交易时间（`YYYY/MM/DD HH:MM:SS`）、摘要、交易金额、账户余额、现转标志、交易渠道、交易机构、对方户名/账号、对方行名。表头有格线，明细行没有，解析时按表头格子的左右边界分列，以交易时间列的日期作为每一行的开头。单元格超出列宽会折行，解析时重新拼接。行按时间先后排列，多页时接着读。
+
+「交易金额」带正负号，负数是支出，正数是收入或退款。「对方户名/账号」在最后一个 `/` 处拆开，前半段作为收款方，后半段记为 `counterparty_account`。结息之类的行没有凭证和对方信息，这些字段留空。
+
+最后一页末尾印有支出交易总额、收入交易总额和合计笔数。解析出的笔数和合计笔数对不上时会记一条警告。查询期内没有交易的对账单只有页眉和「未查询到交易明细」的提示，解析结果为空。
+
+页眉的起止日期就是这份对账单的对账范围。账本里落在这段日期内、账单里却没有的条目会被列为 Extra，晚于最后一笔交易的也算在内。
+
+## 配置示例
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  cmbc_debit:
+    accounts:
+      "1111": Assets:Bank:CMBC
+    balance: true
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - description: "结息"
+    contra_account: Income:Bank:Interest
+```
+
+`accounts` 的键是卡号后四位。一份对账单只含一个账户，有几张卡就列几项；对账时只把这份文件那张卡对应的账户纳入 Extra 检查。
+
+加 `balance: true` 会在输出末尾追加一条 `balance` 断言，金额取最后一笔交易后的账户余额，日期是起止日期最后一天的次日。
+
+## 解析出的元数据字段
+
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `balance` | 账户余额 | 交易后的余额 |
+| `cash_transfer` | 现转标志 | 如「转账」 |
+| `channel` | 交易渠道 | 如「手机银行」「网络银行」 |
+| `branch` | 交易机构 | 机构代码 |
+| `counterparty_account` | 对方户名/账号 | `/` 后面的账号 |
+| `counterparty_bank` | 对方行名 | |
+
+凭证类型和凭证号码不输出：凭证号码就是完整卡号，卡号后四位已经从页眉取得。
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.cmbc_debit.output_metadata` 列出的字段会追加到全局列表上。
+
+## 已知限制
+
+- 一份文件只按页眉的一个币种处理；页眉币种不在人民币、美元、港币、欧元、英镑、日元之列时，整份文件跳过并记警告。
+- 查询期内没有交易的对账单解析结果为空，不会据它的起止日期报告 Extra。
+- 表头格子数和 11 列对不上的页面会整页跳过，并记一条带页码的警告。
+- 单元格跨页折行时，下一页开头的续行会被丢掉。
+- 交易从 PDF 的文字层和表头格线里读取，扫描件或图片转成的 PDF 读不出交易。
+
+## 输出样例
+
+仓库的 [`examples/cmbc_debit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/cmbc_debit) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
+
+```bash
+bean-sieve reconcile cmbc_debit_203004.pdf -c bean-sieve.yaml -l ledger.bean -o pending.bean
+```
+
+账单有两页，第二页重复了页眉和表头。账本里已有的 4 月 18 日晚餐被匹配，不再输出；4 月 26 日那笔虽然晚于最后一笔交易，但仍在起止日期内，被列为 Extra，3 月 28 日那笔在起止日期之前，不参与检查。输出末尾的 `balance` 断言取最后一笔结息后的余额，日期是 5 月 1 日。
+
+<Tabs items={['账单', '配置', '已有账本', '输出']}>
+
+<Tab value="账单">
+
+账单文件 `cmbc_debit_203004.pdf` 不是纯文本，这里不展开，可在 [`examples/cmbc_debit/`](https://github.com/Xm798/bean-sieve/tree/master/examples/cmbc_debit) 下载。
+
+</Tab>
+
+<Tab value="配置">
+
+<include lang="yaml" meta='title="bean-sieve.yaml"'>../../../../examples/cmbc_debit/bean-sieve.yaml</include>
+
+</Tab>
+
+<Tab value="已有账本">
+
+<include lang="beancount" meta='title="ledger.bean"'>../../../../examples/cmbc_debit/ledger.bean</include>
+
+</Tab>
+
+<Tab value="输出">
+
+<include lang="beancount" meta='title="pending.bean"'>../../../../examples/cmbc_debit/expected.bean</include>
+
+</Tab>
+
+</Tabs>

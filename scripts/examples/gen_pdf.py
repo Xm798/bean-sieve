@@ -1,6 +1,8 @@
 """PDF statements drawn with PyMuPDF."""
 
 import re
+from decimal import Decimal
+from itertools import accumulate
 from pathlib import Path
 
 import fitz
@@ -126,7 +128,7 @@ def spdb_credit_pdf(out: Path, month: str, pages: list[list[list[str]]]) -> None
     y = 195.0
     for number, rows in enumerate(pages, start=1):
         if number > 1:
-            pdf.page = pdf.doc.new_page(width=595, height=842)
+            pdf.new_page()
             put(40, 40, "温馨提示：")
             y = 70.0
         for row in rows:
@@ -545,3 +547,64 @@ def icbc_credit_export(out: Path) -> None:
     doc.set_metadata({})
     doc.save(out, garbage=4, deflate=True, no_new_id=True)
     doc.close()
+
+
+@generator("cmbc_debit")
+def cmbc_debit(out_dir: Path) -> None:
+    # Landscape like the bank's; columns are wider than the bank's so the
+    # built-in font fits each cell, and cells are pre-wrapped the way the
+    # bank's PDF wraps them at the column width.
+    widths = [30, 50, 100, 80, 60, 60, 30, 50, 30, 150, 130]
+    cols = list(accumulate(widths, initial=20.0))
+    labels = ["凭证类型", "凭证号码", "交易时间", "摘要", "交易金额", "账户余额", "现转标志", "交易渠道", "交易机构", "对方户名/账号", "对方行名"]  # fmt: skip
+    card = "62000000000\n01111"
+    pages = [
+        [
+            ["卡", card, "2030/04/03 09:30:00", "代发工资", "8,800.00", "9,800.00", "转账", "网络银行", "8101", "雇主甲有限\n公司/100000001", "测试银行甲支行"],
+            ["卡", card, "2030/04/08 12:15:00", "快捷支付", "-65.00", "9,735.00", "转账", "网络银行", "8101", "商户乙/100000002", "测试银行乙"],
+            ["卡", card, "2030/04/12 19:00:00", "跨行转出", "-2,600.00", "7,135.00", "转账", "手机银行", "8102", "测试用户/620000000\n0002222", "测试银行丙"],
+        ],
+        [
+            ["卡", card, "2030/04/15 10:10:00", "快捷支付退款", "15.00", "7,150.00", "转账", "网络银行", "8101", "商户乙/100000002", "测试银行乙"],
+            ["卡", card, "2030/04/18 18:40:00", "扫码付款", "-28.00", "7,122.00", "转账", "手机银行", "8102", "餐厅丁/100000003", ""],
+            ["", "", "2030/04/21 02:00:00", "结息", "0.60", "7,122.60", "", "", "", "", ""],
+        ],
+    ]  # fmt: skip
+
+    pdf = PdfPage(font_size=5.0, width=842, height=595)
+    put = pdf.put
+    for number, rows in enumerate(pages, start=1):
+        if number > 1:
+            pdf.new_page()
+        put(380, 30, "个人账户对账单", 10)
+        put(22, 60, "客户姓名:测试用户")
+        put(300, 60, "客户账号:6200000000001111")
+        put(500, 60, "产品名称:活期")
+        put(620, 60, "币  种:人民币")
+        put(22, 75, "开户机构:中国民生银行股份有限公司测试支行")
+        put(300, 75, "账户账号:0000000000000000001")
+        put(500, 75, "起止日期:2030/04/01-2030/04/30")
+        put(620, 75, "筛选条件:全部")
+        for i, label in enumerate(labels):
+            pdf.page.draw_rect(fitz.Rect(cols[i], 88, cols[i + 1], 103), width=0.5)
+            put(cols[i] + 2, 97, label)
+        y = 112.0
+        for row in rows:
+            for x, cell in zip(cols, row, strict=False):
+                for j, line in enumerate(cell.split("\n")):
+                    put(x + 2, y + j * 7, line)
+            y += 20
+        put(20, y, "_" * 160)
+        if number == len(pages):
+            amounts = [Decimal(r[4].replace(",", "")) for p in pages for r in p]
+            outflow = -sum(a for a in amounts if a < 0)
+            inflow = sum(a for a in amounts if a > 0)
+            put(
+                22,
+                y + 10,
+                f"支出交易总额:{outflow:,.2f}   收入交易总额:{inflow:,.2f}   "
+                f"合计笔数:{len(amounts)}",
+            )
+        put(22, 570, "打印渠道:手机银行")
+        put(400, 580, f"第 {number} 页 / 共 {len(pages)} 页")
+    pdf.save(out_dir / "cmbc_debit_203004.pdf")

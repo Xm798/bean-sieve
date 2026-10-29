@@ -191,6 +191,11 @@ providers:
     # 对账后生成 balance 指令（日期为账单最后一天的次日）
     balance: true
 
+  cmbc_debit:
+    accounts:
+      "1111": Assets:Bank:CMBC:1111
+    balance: true
+
   spdb_debit:
     accounts:
       "7777": Assets:Bank:SPDB:7777

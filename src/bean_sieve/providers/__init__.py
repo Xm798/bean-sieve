@@ -190,6 +190,7 @@ from .banks.debit import bocom as bocom_debit  # noqa: E402, F401
 from .banks.debit import ccb as ccb_debit  # noqa: E402, F401
 from .banks.debit import cib as cib_debit  # noqa: E402, F401
 from .banks.debit import cmb as cmb_debit  # noqa: E402, F401
+from .banks.debit import cmbc as cmbc_debit  # noqa: E402, F401
 from .banks.debit import cncb as cncb_debit  # noqa: E402, F401
 from .banks.debit import cncbi as cncbi_debit  # noqa: E402, F401
 from .banks.debit import hsbchk as hsbchk_debit  # noqa: E402, F401

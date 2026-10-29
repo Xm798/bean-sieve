@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../bean-sieve.schema.json
+
+defaults:
+  currency: CNY
+  date_tolerance: 1
+  flag: "!"
+  output_metadata:
+    - time
+    - channel
+    - source
+  sort_by_time: asc
+
+providers:
+  cmbc_debit:
+    # Keys are the last four digits of 客户账号 in the page header.
+    accounts:
+      "1111": Assets:Bank:CMBC
+    balance: true
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - description: "结息"
+    contra_account: Income:Bank:Interest
+  - description: "跨行转出"
+    contra_account: Assets:Bank:Other
+  - payee: "商户乙"
+    contra_account: Expenses:Shopping

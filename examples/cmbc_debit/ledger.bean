@@ -1,0 +1,20 @@
+option "operating_currency" "CNY"
+
+2030-01-01 open Assets:Bank:CMBC CNY
+2030-01-01 open Assets:Bank:Other CNY
+2030-01-01 open Expenses:Food:Meal CNY
+2030-01-01 open Expenses:Shopping CNY
+2030-01-01 open Income:Salary CNY
+2030-01-01 open Income:Bank:Interest CNY
+
+2030-03-28 * "store-g" "before the statement period"
+  Assets:Bank:CMBC  -33.00 CNY
+  Expenses:Shopping
+
+2030-04-18 * "餐厅丁" "晚餐"
+  Assets:Bank:CMBC  -28.00 CNY
+  Expenses:Food:Meal
+
+2030-04-26 * "store-h" "recorded in the ledger, absent from the statement"
+  Assets:Bank:CMBC  -42.00 CNY
+  Expenses:Shopping
