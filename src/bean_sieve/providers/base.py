@@ -69,6 +69,10 @@ class BaseProvider(ABC):
     # ranks below every listed one.
     coverage_priority: tuple[str, ...] = ()
 
+    # Content keywords are searched in this many leading characters of a
+    # text file (after decoding), so they must sit near the top.
+    CONTENT_HEADER_CHARS = 500
+
     @classmethod
     def can_handle(cls, file_path: Path) -> bool:
         """
@@ -111,8 +115,7 @@ class BaseProvider(ABC):
             if suffix == ".pdf":
                 content = cls._read_pdf_first_page(file_path)
             else:
-                # Read first 500 bytes for header detection
-                content = cls._read_file_header(file_path, 500)
+                content = cls._read_file_header(file_path, cls.CONTENT_HEADER_CHARS)
             if suffix == ".eml":
                 content += cls._read_eml_text(file_path)
             return any(kw in content for kw in cls.content_keywords)
@@ -140,7 +143,7 @@ class BaseProvider(ABC):
         return provider.decode_subject(msg) + provider._extract_html_from_message(msg)
 
     @classmethod
-    def _read_file_header(cls, file_path: Path, size: int = 500) -> str:
+    def _read_file_header(cls, file_path: Path, size: int) -> str:
         """Read file header with encoding detection."""
         encodings = ("utf-8", "gbk", "gb2312", "utf-16")
         for encoding in with_bom_encoding(file_path, encodings):

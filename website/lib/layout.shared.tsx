@@ -4,7 +4,7 @@ import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 import { zhCN } from '@fumadocs/language/zh-cn';
 import { Package } from 'lucide-react';
 import { Logo } from '@/components/logo';
-import { appName, gitConfig, pypiUrl } from './shared';
+import { appName, pypiUrl, repoUrl } from './shared';
 
 export const translations = defineTranslations().extend(uiTranslations()).preset(zhCN());
 
@@ -18,7 +18,7 @@ export function baseOptions(): BaseLayoutProps {
         </>
       ),
     },
-    githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
+    githubUrl: repoUrl,
     links: [
       {
         type: 'icon',

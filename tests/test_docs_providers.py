@@ -1,26 +1,16 @@
 """Every registered provider has a docs page; see website/scripts/export_providers.py."""
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import pytest
 
 from bean_sieve.providers import PROVIDERS
-
-SCRIPT = Path(__file__).parents[1] / "website" / "scripts" / "export_providers.py"
+from tests.website_exporter import load_exporter
 
 
 @pytest.fixture(scope="module")
 def exporter():
-    spec = importlib.util.spec_from_file_location("export_providers", SCRIPT)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    # dataclass resolves annotations through sys.modules[__module__].
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    yield module
-    del sys.modules[spec.name]
+    return load_exporter()
 
 
 def test_every_registered_provider_has_a_page(exporter) -> None:
@@ -63,3 +53,27 @@ def test_nav_groups_follow_category_order(exporter) -> None:
     ]
     listed = [p for p in meta["pages"] if not p.startswith("---") and p != "index"]
     assert sorted(listed) == sorted(PROVIDERS)
+
+
+def test_check_examples_reports_missing_and_orphaned(exporter, tmp_path: Path) -> None:
+    (tmp_path / "alipay").mkdir()
+    (tmp_path / "retired").mkdir()
+    (tmp_path / "README.md").touch()
+
+    result = exporter.check_examples(["alipay", "wechat"], tmp_path)
+
+    assert result.missing == ["wechat"]
+    assert result.orphaned == ["retired"]
+
+
+def test_site_data_carries_category_titles_and_detection_facts(exporter) -> None:
+    data = exporter.site_data(exporter.sorted_providers())
+
+    assert [c["title"] for c in data["categories"]] == ["支付平台", "信用卡", "借记卡"]
+    assert data["detection"] == {
+        "contentHeaderChars": 500,
+        "filenameKeywordsIgnoreCase": True,
+    }
+    scopes = {p["id"]: p["contentScope"] for p in data["providers"]}
+    assert scopes["alipay"] == "header"
+    assert scopes["zabank_debit"] == "custom"

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { ArrowRight, FileSearch, FileSpreadsheet, GitCompareArrows, ListPlus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
-import { gitConfig } from '@/lib/shared';
+import { repoUrl } from '@/lib/shared';
 
 export const metadata: Metadata = {
   title: { absolute: 'Bean-Sieve：Beancount 账单导入与对账' },
@@ -64,7 +64,7 @@ export default function HomePage() {
             安装
           </Link>
           <a
-            href={`https://github.com/${gitConfig.user}/${gitConfig.repo}`}
+            href={repoUrl}
             className="inline-flex items-center rounded-full border bg-fd-background px-5 py-2.5 text-sm font-medium transition-colors hover:bg-fd-accent"
           >
             GitHub

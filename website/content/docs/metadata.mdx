@@ -1,0 +1,112 @@
+---
+title: 元数据与诊断
+description: 选择输出哪些元数据，把卡号写到 posting 下，并检查账本里已有条目的卡号
+icon: Tags
+---
+
+## 交易字段
+
+每种账单解析后都会变成同一种交易记录，字段如下。
+
+| 字段 | 类型 | 说明 |
+| :--- | :--- | :--- |
+| `date` | date | 交易日期 |
+| `time` | time | 交易时间（账单里有才填） |
+| `amount` | Decimal | 金额，支出为正，收入为负 |
+| `currency` | str | 币种 |
+| `description` | str | 账单里的原始描述 |
+| `payee` | str | 交易对方 |
+| `card_last4` | str | 卡号后四位。银行账单直接取卡号列；支付宝、微信从支付方式末尾的 `(XXXX)` 取 |
+| `order_id` | str | 订单号或流水号 |
+| `provider` | str | 数据源 ID |
+| `metadata` | dict | 账单里的其他列，各数据源的字段见对应的[数据源页面](./providers/index.mdx) |
+
+## 选择输出的元数据
+
+默认会把 `metadata` 里所有非空字段写到交易下面。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名：
+
+```yaml title="bean-sieve.yaml" config
+defaults:
+  output_metadata:
+    - time
+```
+
+某个数据源要多输出几项，写在 `providers.<id>.output_metadata` 里。这份列表会追加到全局列表后面，只对这个数据源生效：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  cib_debit:
+    output_metadata:
+      - counterparty_bank
+      - counterparty_account
+```
+
+<Callout type="info">
+  没有设置 `defaults.output_metadata` 时，数据源的 `output_metadata` 就是这个数据源输出的完整列表，其他字段不再输出。
+</Callout>
+
+交易没有匹配到账户时，`method` 字段总会输出，方便手动补账户。
+
+## 把字段写到 posting 下
+
+`output_metadata` 写在交易头下面，对整笔交易生效。要把字段写在账户那一行 posting 下面，用 `providers.<id>.posting_metadata`。它只能按数据源配置：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  hxb_credit:
+    posting_metadata:
+      - card_last4
+```
+
+常见用法是写 `card_last4`：按户管理的信用卡（如华夏、浦发、招商）一个账户下挂着多张卡，账户名看不出用的是哪张。
+
+## 检查账本里的卡号
+
+支付宝、微信账单的支付方式（如 `华夏银行信用卡(1234)`）指明了刷的是哪张卡。把一卡多号的账户列进 `diagnostics.meta_check_accounts`，账户名包含其中任一项即可：
+
+```yaml title="bean-sieve.yaml" config-partial
+diagnostics:
+  meta_check: true
+  meta_check_accounts:
+    - Liabilities:Credit:HXB
+    - Liabilities:Credit:SPDB
+    - Liabilities:Credit:CMB
+```
+
+列入的账户有两处变化。
+
+### 输出时写入卡号
+
+新生成的交易会在这些账户的 posting 下写上 `card_last4`，不用再配 `posting_metadata`：
+
+```beancount
+2030-03-15 ! "store-a" "拿铁"
+  time: "10:23:00"
+  Liabilities:Credit:HXB  -28.00 CNY
+    card_last4: "1234"
+  Expenses:Food:Coffee  28.00 CNY
+```
+
+### 对账时检查已有条目
+
+账单里的交易匹配到账本条目后，会比较两边的 `card_last4`。不一致不影响匹配结果，只在 pending.bean 末尾列出诊断：
+
+```text
+; ============================================================
+; Metadata diagnostics (2)
+; ============================================================
+; books/2030/q1.bean:1234  hint  missing posting meta `card_last4: "1234"` on Liabilities:Credit:HXB
+; books/2030/q2.bean:88    warn  posting meta `card_last4` mismatch on Liabilities:Credit:SPDB: ledger "5678", statement "1234"
+```
+
+- `hint`：账本里这笔交易没有 `card_last4`，可以按提示补上。
+- `warn`：账本里的 `card_last4` 和账单不一致，需要核对。这笔交易仍算已匹配，不会重复生成。
+
+账户名本身带卡号的（如 `Assets:Bank:ICBC:9999`）不必列入。没列入的账户不做检查，也不产生诊断。
+
+`meta_check` 默认为 `true`。设为 `false` 后，卡号不一致的条目不再算匹配，账单里的交易会作为缺失条目输出：
+
+```yaml title="bean-sieve.yaml" config
+diagnostics:
+  meta_check: false
+```

@@ -1,32 +1,43 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import providers from '@/generated/providers.json';
-import { gitConfig } from '@/lib/shared';
-
-type Category = 'payment' | 'credit' | 'debit';
+import siteData from '@/generated/providers.json';
+import { repoPathUrl } from '@/lib/shared';
 
 interface Provider {
   id: string;
   name: string;
-  category: Category;
+  category: string;
   formats: string[];
   filenameKeywords: string[];
   filenamePattern: string | null;
   contentKeywords: string[];
+  // header: the first `contentHeaderChars` characters; eml: decoded subject and
+  // body; custom: a provider-specific reader (PDF, XLS, parsed HTML).
+  contentScope: 'header' | 'eml' | 'custom';
   perCardStatement: boolean;
   presetRules: string[];
   example: { statements: string[] } | null;
 }
 
-const all = providers as Provider[];
+interface SiteData {
+  categories: { key: string; title: string }[];
+  detection: { contentHeaderChars: number; filenameKeywordsIgnoreCase: boolean };
+  providers: Provider[];
+}
 
-const categoryTitle: Record<Category, string> = {
-  payment: '支付平台',
-  credit: '信用卡',
-  debit: '借记卡',
+const { categories, detection: matching, providers: all } = siteData as SiteData;
+
+function categoryTitle(key: string): string {
+  const category = categories.find((c) => c.key === key);
+  if (!category) throw new Error(`unknown provider category "${key}"`);
+  return category.title;
+}
+
+const contentScopeLabel: Record<Provider['contentScope'], string> = {
+  header: `文件前 ${matching.contentHeaderChars} 个字符`,
+  eml: '邮件主题或正文',
+  custom: '文件内容',
 };
-
-const repoUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}/tree/${gitConfig.branch}`;
 
 // A missing id must fail the static build rather than render an empty table.
 function getProvider(id: string): Provider {
@@ -64,12 +75,15 @@ function detection(p: Provider): ReactNode {
       文件名匹配正则 <code>{p.filenamePattern}</code>
     </>
   ) : p.filenameKeywords.length > 0 ? (
-    <>文件名含 {anyOf(p.filenameKeywords)}（不区分大小写）</>
+    <>
+      文件名含 {anyOf(p.filenameKeywords)}
+      {matching.filenameKeywordsIgnoreCase && '（不区分大小写）'}
+    </>
   ) : null;
   const byContent =
     p.contentKeywords.length > 0 ? (
       <>
-        {p.formats.includes('.eml') ? '邮件主题或正文' : '文件前 500 个字符'}含{' '}
+        {contentScopeLabel[p.contentScope]}含{' '}
         {anyOf(p.contentKeywords)}
       </>
     ) : null;
@@ -89,7 +103,7 @@ export function ProviderFacts({ id }: { id: string }) {
   const rows: [string, ReactNode][] = [
     ['Provider ID', <code key="id">{p.id}</code>],
     ['名称', p.name],
-    ['分类', categoryTitle[p.category]],
+    ['分类', categoryTitle(p.category)],
     ['文件格式', <Codes key="formats" items={p.formats} />],
     ['自动识别', detection(p)],
   ];
@@ -106,7 +120,7 @@ export function ProviderFacts({ id }: { id: string }) {
   if (p.example) {
     rows.push([
       '示例',
-      <a key="example" href={`${repoUrl}/examples/${p.id}`}>
+      <a key="example" href={repoPathUrl('tree', `examples/${p.id}`)}>
         <code>examples/{p.id}/</code>
       </a>,
     ]);
@@ -128,7 +142,8 @@ export function ProviderFacts({ id }: { id: string }) {
   );
 }
 
-export function ProviderList({ category }: { category: Category }) {
+export function ProviderList({ category }: { category: string }) {
+  categoryTitle(category);
   return (
     <table>
       <thead>

@@ -10,7 +10,7 @@ import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/components/mdx';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
-import { gitConfig } from '@/lib/shared';
+import { repoPathUrl } from '@/lib/shared';
 
 export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   const params = await props.params;
@@ -31,7 +31,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
         />
       </DocsBody>
       <EditOnGitHub
-        href={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/website/content/docs/${page.path}`}
+        href={repoPathUrl('blob', `website/content/docs/${page.path}`)}
       />
     </DocsPage>
   );

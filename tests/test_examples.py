@@ -12,16 +12,19 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from ruamel.yaml import YAML
 
 from bean_sieve.api import full_reconcile
 from bean_sieve.core import output
-from bean_sieve.providers import resolve_providers
+from bean_sieve.providers import PROVIDERS, resolve_providers
+from tests.test_doc_snippets import schema_errors
+from tests.website_exporter import load_exporter
 
-EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
-CONFIG_NAME = "bean-sieve.yaml"
-LEDGER_NAME = "ledger.bean"
-EXPECTED_NAME = "expected.bean"
-RESERVED_NAMES = {CONFIG_NAME, LEDGER_NAME, EXPECTED_NAME}
+layout = load_exporter()
+EXAMPLES_DIR = layout.EXAMPLES_DIR
+CONFIG_NAME = layout.CONFIG_NAME
+LEDGER_NAME = layout.LEDGER_NAME
+EXPECTED_NAME = layout.EXPECTED_NAME
 
 
 class _FrozenDatetime(datetime):
@@ -34,12 +37,19 @@ def _example_dirs() -> list[Path]:
     return sorted(p for p in EXAMPLES_DIR.iterdir() if p.is_dir())
 
 
-def _statement_paths(example_dir: Path) -> list[Path]:
-    return sorted(
-        p
-        for p in example_dir.iterdir()
-        if p.is_file() and p.name not in RESERVED_NAMES and not p.name.startswith(".")
-    )
+def test_every_registered_provider_has_an_example() -> None:
+    result = layout.check_examples(sorted(PROVIDERS), EXAMPLES_DIR)
+    assert result.missing == [], "add examples/<provider_id>/"
+    assert result.orphaned == [], "rename or remove examples/<dir>/"
+
+
+# Provider pages embed these configs as complete files, so they get the full
+# schema, including `required`.
+@pytest.mark.parametrize("example_dir", _example_dirs(), ids=lambda p: p.name)
+def test_example_config_matches_schema(example_dir: Path) -> None:
+    config_path = example_dir / CONFIG_NAME
+    data = YAML(typ="safe").load(config_path.read_text(encoding="utf-8")) or {}
+    assert schema_errors(data, partial=False) == []
 
 
 @pytest.mark.parametrize("example_dir", _example_dirs(), ids=lambda p: p.name)
@@ -49,7 +59,7 @@ def test_example_output(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
 ) -> None:
-    statements = _statement_paths(example_dir)
+    statements = layout.statement_paths(example_dir)
     assert statements, f"{example_dir} has no statement file"
 
     # The directory name is the provider id, and auto-detection must pick it,
