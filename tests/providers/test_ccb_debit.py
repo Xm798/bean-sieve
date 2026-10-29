@@ -388,3 +388,130 @@ class TestCCBNumericCellHandling:
         transactions = provider.parse(file_path)
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("150")
+
+
+SIGNED_HEADERS = [
+    "序号",
+    "摘要",
+    "币别",
+    "钞汇",
+    "交易日期",
+    "交易金额",
+    "账户余额",
+    "交易地点/附言",
+    "对方账号与户名",
+]
+
+
+def create_ccb_signed_xls(tmp_path: Path, rows: list[list]) -> Path:
+    """Create a CCB debit XLS in the 9-column single signed-amount layout."""
+    wb = xlwt.Workbook()
+    ws = wb.add_sheet("Sheet1")
+    ws.write(0, 0, "China Construction Bank")
+    ws.write(1, 1, "卡号/账号:6222000000000004321")
+    for col, header in enumerate(SIGNED_HEADERS):
+        ws.write(3, col, header)
+    for i, row in enumerate(rows):
+        for col, value in enumerate(row):
+            ws.write(4 + i, col, value)
+    ws.write(4 + len(rows), 0, FOOTER)
+
+    file_path = tmp_path / "signed_layout.xls"
+    wb.save(str(file_path))
+    return file_path
+
+
+class TestCCBSignedAmountLayout:
+    """Tests for the 9-column export with one signed 交易金额 column."""
+
+    @pytest.fixture
+    def signed_xls(self, tmp_path):
+        return create_ccb_signed_xls(
+            tmp_path,
+            [
+                [
+                    1,
+                    "消费",
+                    "人民币",
+                    "钞",
+                    "20300102",
+                    "-13.57",
+                    "986.43",
+                    "loc-a",
+                    "",
+                ],
+                [
+                    2,
+                    "汇兑",
+                    "人民币",
+                    "钞",
+                    "20300103",
+                    "+24.68",
+                    "1011.11",
+                    "",
+                    "ab****0000/payee-b",
+                ],
+                [
+                    3,
+                    "利息存入",
+                    "人民币",
+                    "钞",
+                    "2030-01-04",
+                    "1,357.90",
+                    "2369.01",
+                    "",
+                    "payee-c",
+                ],
+            ],
+        )
+
+    def test_parses_every_row(self, signed_xls):
+        transactions = CCBDebitProvider().parse(signed_xls)
+        assert [t.date for t in transactions] == [
+            date(2030, 1, 2),
+            date(2030, 1, 3),
+            date(2030, 1, 4),
+        ]
+
+    def test_signed_amount_split_into_expense_and_income(self, signed_xls):
+        transactions = CCBDebitProvider().parse(signed_xls)
+        assert [t.amount for t in transactions] == [
+            Decimal("13.57"),
+            Decimal("-24.68"),
+            Decimal("-1357.90"),
+        ]
+
+    def test_text_columns_located_by_header(self, signed_xls):
+        txn1, txn2, txn3 = CCBDebitProvider().parse(signed_xls)
+        assert txn1.metadata["summary"] == "消费"
+        assert txn1.metadata["location"] == "loc-a"
+        assert txn1.metadata["balance"] == "986.43"
+        assert txn1.description == "消费 | loc-a"
+        assert txn1.payee is None
+        assert txn1.time is None
+        assert txn1.card_last4 == "4321"
+        assert txn2.payee == "payee-b"
+        assert txn2.metadata["counterparty_account"] == "ab****0000"
+        assert txn3.payee == "payee-c"
+        assert "counterparty_account" not in txn3.metadata
+
+    def test_missing_header_row_raises(self, tmp_path):
+        wb = xlwt.Workbook()
+        ws = wb.add_sheet("Sheet1")
+        ws.write(0, 0, "China Construction Bank")
+        file_path = tmp_path / "交易明细_4321_20300101_20300131.xls"
+        wb.save(str(file_path))
+        with pytest.raises(ValueError, match="header"):
+            CCBDebitProvider().parse(file_path)
+
+    def test_unrecognised_amount_header_raises(self, tmp_path):
+        wb = xlwt.Workbook()
+        ws = wb.add_sheet("Sheet1")
+        for col, header in enumerate(["序号", "摘要", "交易日期", "发生额"]):
+            ws.write(0, col, header)
+        ws.write(1, 2, "20300102")
+        ws.write(1, 3, "-13.57")
+        file_path = tmp_path / "交易明细_4321_20300101_20300131.xls"
+        wb.save(str(file_path))
+        with pytest.raises(ValueError, match="column layout"):
+            CCBDebitProvider().parse(file_path)
