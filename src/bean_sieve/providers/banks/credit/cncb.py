@@ -39,8 +39,9 @@ class CNCBCreditProvider(BaseProvider):
     provider_id = "cncb_credit"
     provider_name = "中信银行信用卡"
     supported_formats = [".xls"]
-    # The bank code alone also names CITIC debit exports, so detection relies on
-    # the credit export's own filename and column layout.
+    # Bank-wide names also appear on CITIC debit exports, so filenames match
+    # only credit-specific keywords and any other name falls back to the
+    # credit export's column layout.
     filename_keywords = ["中信信用卡", "已出账单明细"]
     per_card_statement = True  # CNCB sends separate statements per card
 

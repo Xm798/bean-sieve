@@ -125,14 +125,11 @@ class TestCNCBCreditProvider:
         assert not CNCBCreditProvider.can_handle(Path("已出账单明细.csv"))
         assert not CNCBCreditProvider.can_handle(Path("statement.xls"))
 
-    def test_can_handle_renamed_statement_by_header(self, tmp_path, sample_rows):
-        path = create_cncb_xls(
-            sample_rows, tmp_path / "2030-01_CNCB_0000_statement.xls"
-        )
+    def test_can_handle_by_header_under_any_filename(self, tmp_path, sample_rows):
+        path = create_cncb_xls(sample_rows, tmp_path / "export.xls")
         assert CNCBCreditProvider.can_handle(path)
 
-    def test_rejects_debit_export_named_by_bank_code(self, tmp_path):
-        """A debit export renamed to ``CNCB_<card4>_<from>-<to>.xls``."""
+    def test_rejects_debit_export_named_after_bank(self, tmp_path):
         import xlwt
 
         wb = xlwt.Workbook()
@@ -143,7 +140,7 @@ class TestCNCBCreditProvider:
             ws.write(1, col, header)
         for col, value in enumerate(["20300102", "10:00:00", "10.00", "", "10.00"]):
             ws.write(2, col, value)
-        path = tmp_path / "CNCB_0000_20300101-20301231.xls"
+        path = tmp_path / "中信银行交易明细.xls"
         wb.save(str(path))
 
         assert not CNCBCreditProvider.can_handle(path)
