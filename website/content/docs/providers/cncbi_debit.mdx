@@ -3,27 +3,59 @@ title: 中信银行（国际）
 description: 解析中信银行（国际）导出的 CSV 交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+登录[中信银行（国际）inet 网上银行](https://ibanking.cncbinternational.com/)，在账户活动页下载 CSV。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="cncbi_debit" />
 
+文件名不含 `CNCBI` 也没关系，Bean-Sieve 会在文件开头找表头。简体、繁体和英文三种表头都能识别：
+
+```text
+过账日,交易日,账项资料,支出,收入,结余
+過賬日,交易日,賬項資料,支出,收入,結餘
+Post Date,Trans.Date,Description,Debit,Credit,Balance
+```
+
+日期格式是 `日/月/年`，日期取「交易日」。「承上结余」「转承结余」及其繁体、英文写法的行只是余额结转，会被跳过。
+
+描述是「账项资料」原文。转数快交易的账项资料里有 `FICT`、`FOCT` 这类开头的参考编号，它记为 `order_id`，编号之后的文字作为收款方。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  cncbi_debit:
+    accounts:
+      "default": Assets:Bank:CNCBI:HKD
+
+rules:
+  - payee: "employer-a"
+    contra_account: Income:Salary
+  - description: "利息存入"
+    contra_account: Income:Bank:Interest
+```
+
+`accounts` 里列出的账户是 Extra 的检查范围。CSV 里没有账号，键写什么都不会被读取，见下面的已知限制。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `order_id` | 账项资料 | 转数快参考编号，只在转数快交易里出现 |
+| `balance` | 结余 | 保留原文的千位分隔符 |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.cncbi_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 交易行没有卡号，`accounts` 的键（包括 `"default"`）不会被用来查账户，银行一侧的 posting 输出为 `Assets:FIXME`，需要手工改成实际账户。匹配和 Extra 检查不受影响。
+- 同样因为行没有账户，`balance: true` 不会生成余额断言。
+- 金额一律按港币处理。
+- 「过账日」会被读取，但不写进输出。
+- 对账范围是第一笔到最后一笔交易的日期，前后各放宽 `date_tolerance` 天。
 
 ## 输出样例
 
@@ -32,6 +64,8 @@ description: 解析中信银行（国际）导出的 CSV 交易明细，与账�
 ```bash
 bean-sieve reconcile CNCBI_2030_09.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+银行一侧的 posting 都是 `Assets:FIXME`，配置里的 `"default"` 键没有被用上。账本里已有的 9 月 15 日晚餐被匹配，不再输出；转数快交易带出了 `order_id` 和收款方；「承上结余」「转承结余」两行被跳过；账本里 9 月 20 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

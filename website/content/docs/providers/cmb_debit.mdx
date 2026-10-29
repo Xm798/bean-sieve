@@ -3,27 +3,58 @@ title: 招商银行借记卡
 description: 解析招商银行借记卡导出的 CSV 交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+招商银行借记卡的 CSV 交易明细从[招商银行专业版](https://cmbchina.com/pbankwebNew/downloadPage.aspx) PC 客户端导出，客户端只有 Windows 版。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="cmb_debit" />
 
+文件名不含 `CMB_` 也没关系，Bean-Sieve 会在文件开头找「招商银行交易记录」。
+
+文件是带 BOM 的 UTF-8 CSV。开头几行以 `#` 起头，记录导出时间、账号、币种和起止日期，卡号后四位从「账号」一行打码的卡号里取。接着是表头和交易，单元格里的制表符会被去掉；末尾的「收入合计」「支出合计」两行会被跳过。
+
+描述由「交易类型」和「交易备注」拼成。明细里没有对方户名，收款方为空。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  cmb_debit:
+    accounts:
+      "1234": Assets:Bank:CMB
+
+rules:
+  - description: "代发工资"
+    target_payee: employer-a
+    contra_account: Income:Salary
+  - description: "信用卡还款"
+    contra_account: Liabilities:CreditCard:CMB
+```
+
+`accounts` 的键是卡号后四位。每份文件只有一张卡的明细，有几张卡就列几项；对账时只把这份文件那张卡对应的账户纳入 Extra 检查。
+
+规则只能按描述（交易类型和交易备注）匹配，要写收款方就在规则里用 `target_payee`。
+
+加 `balance: true` 会在输出末尾追加一条 `balance` 断言，金额取这张卡最后一笔交易后的余额，日期是该笔交易的次日。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `type` | 交易类型 | 如 `快捷支付`、`代发工资` |
+| `balance` | 余额 | |
+| `remark` | 交易备注 | |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.cmb_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 金额一律按人民币处理，文件开头的「币种」不读取。
+- 没有交易对方，收款方只能靠规则补上。
+- 对账范围是这张卡第一笔到最后一笔交易的日期，文件开头的起止日期不读取，账本里晚于最后一笔交易的条目不会报 Extra。
 
 ## 输出样例
 
@@ -32,6 +63,8 @@ description: 解析招商银行借记卡导出的 CSV 交易明细，与账本�
 ```bash
 bean-sieve reconcile CMB_20300801-20300831.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 8 月 26 日晚餐被匹配，不再输出；8 月 1 日的工资由规则的 `target_payee` 补上收款方；账本里 8 月 18 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

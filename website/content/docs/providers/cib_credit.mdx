@@ -3,27 +3,62 @@ title: 兴业银行信用卡
 description: 解析兴业银行信用卡电子邮件账单，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+兴业银行信用卡按卡出账单，每张卡每月一封电子账单邮件。还没开通邮件账单时，到兴业银行的信用卡渠道设置账单邮箱，具体入口以银行说明为准。
+
+收到账单后，在邮件客户端把整封邮件保存为 `.eml` 文件，每张卡的账单各存一份：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="cib_credit" />
 
+文件名里没有「兴业银行」或「兴业信用卡」时，Bean-Sieve 会解码邮件标题和正文，在里面找「兴业银行信用卡」。
+
+交易表按卡分开，每张表里有一行「卡号末四位 1234」标明卡号。每行交易有交易日期、记账日期、交易描述和金额，负数金额是还款或退款。日期是 `YYYY-MM-DD`，充电这类交易会带上时间（如 `2030-03-08 19:30`），只取日期部分，原文留在 `original_date` 里。对账范围取正文里的账单周期，支持 `2030/03/01-2030/03/31` 和 `2030-03-01至2030-03-31` 两种写法。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+兴业银行信用卡按卡管理，每张卡独立出账单、独立还款，账本里通常每张卡建一个账户。`accounts` 的键是卡号后四位：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  cib_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:CIB:1234
+      "5678": Liabilities:CreditCard:CIB:5678
+
+rules:
+  - description: "刷卡金"
+    contra_account: Income:Rebate:CIB
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+```
+
+交易描述写入描述，收款方为空，可以用规则的 `target_payee` 补上。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号末四位 | 取交易表里的卡号行 |
+| `original_date` | 交易日期 | 原文，带时间的行保留 `HH:MM` |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.cib_credit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 金额一律按人民币处理。
+- 交易日期里的时间只保留在 `original_date` 原文中，不写入 `time`，`sort_by_time` 排序用不到它。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +67,8 @@ description: 解析兴业银行信用卡电子邮件账单，与账本对账
 ```bash
 bean-sieve reconcile 兴业银行信用卡2030年03月电子账单.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 3 月 3 日消费被匹配，不再输出；3 月 8 日的充电记录带时间，`original_date` 保留了 `19:30`；账本里 3 月 25 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

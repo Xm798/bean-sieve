@@ -3,27 +3,55 @@ title: 中信银行信用卡
 description: 解析中信银行信用卡网银导出的交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+登录[中信银行信用卡网银](https://e.creditcard.ecitic.com/citiccard/ebank-ocp/ebankpc/bill.html)，导出已出账单明细，得到一个 `.xls` 文件。每张卡导出一份。网页上的按钮名称以实际页面为准。
+
+导出的文件不用改格式，但文件名要保留「中信」「已出账单明细」或 `cncb` 之一，见下一节。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="cncb_credit" />
 
+XLS 是二进制文件，没法按内容识别，只能靠文件名：文件名里要有「中信」「已出账单明细」或 `cncb`（不区分大小写）。改过名、这几个词都不在时，用 `-p cncb_credit` 指定。
+
+Bean-Sieve 在前 10 行里找以「交易日期」或「入账日期」开头的表头行，其后每行是一笔交易，列为交易日期、入账日期、交易描述、卡末四位、交易币种、结算币种、交易金额、结算金额。日期取交易日期。金额和币种取结算金额与结算币种，负数金额是还款或退款。
+
+导出文件里没有账单周期，每张卡的对账范围取这张卡第一笔到最后一笔交易的日期。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+中信银行信用卡按卡管理，每张卡独立出账单、独立还款，账本里通常每张卡建一个账户。`accounts` 的键是卡号后四位：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  cncb_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:CNCB:1234
+      "5678": Liabilities:CreditCard:CNCB:5678
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+```
+
+交易描述写入描述，收款方为空，可以用规则的 `target_payee` 补上。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡末四位 | |
+
+默认输出。在 `defaults.output_metadata` 里列出字段名后，只输出列出的字段。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 交易币种和交易金额不读取。境外交易只按结算金额记账，没有 `original_amount`，也不生成 `@@` 价格。
+- 对账范围只到每张卡第一笔和最后一笔交易的日期，账本里在这之前或之后的条目不会被报为 Extra。
+- 结算币种只认人民币、美元、欧元、英镑、日元、港币，其他币种名原样写进输出。
+- 表格少于 8 列时整份文件不解析，只在日志里给出警告。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +60,8 @@ description: 解析中信银行信用卡网银导出的交易明细，与账本�
 ```bash
 bean-sieve reconcile 中信银行信用卡已出账单明细2030年04月.xls -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 4 月 3 日消费被匹配，不再输出；4 月 12 日的境外消费只有结算金额 72.00 CNY；账本里 4 月 15 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

@@ -3,27 +3,70 @@ title: 京东支付
 description: 解析京东支付导出的 CSV 交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+在京东 App 的账单页申请导出交易流水，得到一个 CSV 文件，文件名里通常带「京东交易流水」。
+
+App 的菜单名称随版本调整，找不到时在 App 里搜索「交易流水」或「账单导出」。拿到的 CSV 直接交给 Bean-Sieve 即可，不必删掉表头。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="jd" />
 
+文件是带 BOM 的 UTF-8 编码，前 21 行是账户信息、统计和提示，第 22 行是列名，其后是交易。京东的导出格式有些特别：交易时间和两个订单号后面跟着制表符，Bean-Sieve 会自动去掉。
+
+文件名里没有「京东交易流水」时，Bean-Sieve 会改看文件内容里的「京东账号名」「交易订单号」「商家订单号」。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+account_mappings:
+  - pattern: "招商银行信用卡"
+    account: Liabilities:CreditCard:CMB
+
+providers:
+  jd:
+    accounts:
+      "京东白条": Liabilities:JD:Baitiao
+
+rules:
+  - payee: "某超市"
+    contra_account: Expenses:Daily
+  - description: "图书"
+    contra_account: Expenses:Education:Books
+```
+
+两处账户配置各有用途：
+
+- `providers.jd.accounts` 的键要与「收/付款方式」完全相同，适合白条这类京东自己的账户。这里列出的账户也是 Extra 的检查范围。
+- `account_mappings` 按「收/付款方式」列找账户，`pattern` 是该列的子串即算命中，适合银行卡。银行卡还会出现在银行自己的账单里，不要列进 `providers.jd.accounts`。
+
+`payee` 取「商户名称」，`description` 取「交易说明」。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `order_id` | 交易订单号 | |
+| `card_last4` | 收/付款方式 | 从 `(1234)` 中取出的卡号后四位 |
+| `method` | 收/付款方式 | 如 `京东白条`、`招商银行信用卡(1234)` |
+| `transaction_type` | 收/支 | `支出` 或 `收入` |
+| `transaction_status` | 交易状态 | 如 `交易成功` |
+| `transaction_category` | 交易分类 | 如 `日用百货` |
+| `merchant_order_id` | 商家订单号 | |
+| `notes` | 备注 | |
+| `refund_amount` | 金额 | 仅在金额带退款注记时出现，记录已退款的金额 |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.jd.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 「收/支」为「不计收支」的行一律不输出，包括退款记录、白条还款和账户间转账。白条还款要从银行账单里对账，或者手动记账。
+- 退款按原交易的金额注记处理：`300.00(已退款120.00)` 记为 180.00，退款金额写入 `refund_amount`；`(已全额退款)` 的交易不输出。
+- 账单头里的「日期区间」不会被读取。对账范围取第一笔到最后一笔交易的日期，两端再各放宽 `date_tolerance` 天；区间末尾几天没有交易时，那几天账本里多出的条目不会报为 Extra。要指定范围，在命令行加 `--date-range 2030-06-01:2030-06-30`。
+- 金额一律按人民币处理。
+- 列名固定在第 22 行。京东调整导出格式后可能解析失败，遇到时请附上脱敏样例[提 issue](https://github.com/Xm798/bean-sieve/issues)。
 
 ## 输出样例
 
@@ -32,6 +75,8 @@ description: 解析京东支付导出的 CSV 交易明细，与账本对账
 ```bash
 bean-sieve reconcile 京东交易流水.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 6 月 2 日白条消费被匹配，不再输出；6 月 4 日的消费扣掉已退的 120.00，按 180.00 入账；6 月 6 日的退款和 6 月 20 日的白条还款属于不计收支，没有出现；6 月 8 日的价保返还是收入，没有规则命中，对方科目为 `Income:FIXME`；账本里 6 月 7 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

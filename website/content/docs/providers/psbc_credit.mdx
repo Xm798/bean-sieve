@@ -3,27 +3,61 @@ title: 邮储银行信用卡
 description: 解析邮储银行信用卡电子邮件账单，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+邮储银行信用卡按卡出账单，每张卡每月一封电子账单邮件。还没开通邮件账单时，到邮储银行的信用卡渠道设置账单邮箱，具体入口以银行说明为准。
+
+收到账单后，在邮件客户端把整封邮件保存为 `.eml` 文件，每张卡的账单各存一份：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="psbc_credit" />
 
+文件名里没有「邮储银行信用卡电子账单」时，Bean-Sieve 会看邮件标题是否含「邮储银行信用卡电子账单」，或正文 HTML 的标题是否含「中国邮政储蓄银行信用卡对账单」。
+
+交易表的表头必须正好是这七列：交易日、记账日、交易摘要、人民币金额、卡号末四位、交易国别、境内外交易标识。日期是 `YYYYMMDD`，取交易日。金额形如 `￥-1,500.00`，负数是还款或退款。格式不对的行会被跳过，并在日志里给出警告。对账范围取正文里的「账单周期为【2030/03/01-2030/03/31】」。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+邮储银行信用卡按卡管理，每张卡独立出账单、独立还款，账本里通常每张卡建一个账户。`accounts` 的键是卡号后四位：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  psbc_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:PSBC:1234
+      "5678": Liabilities:CreditCard:PSBC:5678
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+```
+
+交易摘要写入描述，收款方为空，可以用规则的 `target_payee` 补上。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号末四位 | |
+| `country` | 交易国别 | 如 `CHN`、`USA`，为空时不出现 |
+| `domestic_or_overseas` | 境内外交易标识 | `境内` 或 `境外`，为空时不出现 |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.psbc_credit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 账单只有人民币金额一列，境外交易只按人民币记账，没有原币金额，不生成 `@@` 价格。
+- 找不到与上述七列完全一致的表头时，整份账单解析不出交易。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +66,8 @@ description: 解析邮储银行信用卡电子邮件账单，与账本对账
 ```bash
 bean-sieve reconcile 邮储银行信用卡电子账单2030年03月.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 3 月 3 日消费被匹配，不再输出；3 月 9 日的境外消费按人民币记账，带上了 `country: "USA"` 和 `domestic_or_overseas: "境外"`；账本里 3 月 25 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

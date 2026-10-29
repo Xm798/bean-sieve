@@ -3,27 +3,78 @@ title: 浦发银行信用卡
 description: 解析浦发银行信用卡网银导出的交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+浦发银行信用卡的邮件账单里有跳转到网银账单页面的入口，在那个页面导出交易明细，得到一个 `.xls` 文件。名下所有卡的交易在同一份文件里。页面上的按钮名称以实际页面为准。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="spdb_credit" />
 
+Bean-Sieve 按表头识别：第一个工作表的前 10 行里有一行正好是交易日期、记账日期、交易摘要、卡号末四位、卡片类型、交易币种、交易金额、原始交易金额&币种这八列，就认作浦发银行信用卡。文件名叫什么都可以。
+
+日期是 `YYYYMMDD`，取交易日期。金额和币种取交易金额与交易币种，负数是还款或退款。卡号后四位被 Excel 存成数字、丢了开头的 0 时，会补回四位。
+
+「原始交易金额&币种」形如 `5.00(美元)` 时，原币金额和币种记入 `original_amount` 和 `original_currency`，对方科目写成原币，并以 `@@` 标注入账金额：
+
+```beancount
+2030-05-10 ! "境外消费 merchant-x"
+    Liabilities:CreditCard:SPDB  -36.00 CNY
+    Expenses:FIXME  5.00 USD @@ 36.00 CNY
+```
+
+匹配账本时，信用卡 posting 记的是入账金额，或者是原币金额和原币币种，都算同一笔，按原币导入的旧条目也能匹配上。
+
+导出文件里没有账单周期，每张卡的对账范围取这张卡第一笔到最后一笔交易的日期。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+浦发银行信用卡按户管理：名下所有卡共用一个额度、一份账单，账本里通常也只建一个账户。`accounts` 的键是卡号后四位，把每张卡都指向这个账户：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  spdb_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:SPDB
+      "5678": Liabilities:CreditCard:SPDB
+    posting_metadata:
+      - card_last4
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+```
+
+多张卡共用一个账户时，账户名看不出是哪张卡。`posting_metadata` 里写上 `card_last4`，输出时会把卡号后四位写在信用卡 posting 下面。
+
+要进一步检查账本里已有的条目，可以把账户列入 `diagnostics.meta_check_accounts`。Bean-Sieve 会在匹配到的条目缺少 `card_last4` 或与账单不一致时输出提示，匹配结果不受影响：
+
+```yaml title="bean-sieve.yaml" config-partial
+diagnostics:
+  meta_check_accounts:
+    - Liabilities:CreditCard:SPDB
+```
+
+交易摘要写入描述，收款方为空，可以用规则的 `target_payee` 补上。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号末四位 | |
+| `card_type` | 卡片类型 | 为空或 `-` 时不出现 |
+| `original_amount` | 原始交易金额&币种 | 形如 `金额(币种)` 时出现 |
+| `original_currency` | 原始交易金额&币种 | 与 `original_amount` 一起出现 |
+| `original_transaction` | 原始交易金额&币种 | 该列有内容、但不是 `金额(币种)` 格式时保留原文 |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.spdb_credit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 对账范围只到每张卡第一笔和最后一笔交易的日期，账本里在这之前或之后的条目不会被报为 Extra。
+- 币种名只认人民币、美元、欧元、英镑、日元、港币，其他币种名转成大写后原样写进输出。
+- 日期、金额、币种或摘要无法解析的行会被跳过，并在日志里给出警告。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +83,8 @@ description: 解析浦发银行信用卡网银导出的交易明细，与账本�
 ```bash
 bean-sieve reconcile 浦发银行信用卡交易明细2030年05月.xls -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账单里有两张卡，配置把它们都指向 `Liabilities:CreditCard:SPDB`，信用卡 posting 下写了 `card_last4`。账本里已有的 5 月 3 日消费被匹配，不再输出；5 月 10 日的美元消费写成 `5.00 USD @@ 36.00 CNY`；账本里 5 月 13 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

@@ -3,35 +3,78 @@ title: 美团
 description: 解析美团导出的 CSV 交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+在美团 App 的钱包账单页申请导出交易账单，得到一个 CSV 文件，文件名形如 `美团账单(20300801-20300831).csv`。
+
+App 的菜单名称随版本调整，找不到时在 App 里搜索「账单」或「导出账单」。拿到的 CSV 直接交给 Bean-Sieve 即可，不必删掉表头。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="meituan" />
 
+文件是带 BOM 的 UTF-8 编码，前 19 行是账户信息、统计和提示，第 20 行是列名，其后是交易。表头的「起始时间」「终止时间」作为这份账单的对账范围。
+
+文件名里没有「美团」时，Bean-Sieve 会改看文件内容里的「美团交易账单明细」。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+account_mappings:
+  - pattern: "招商银行信用卡"
+    account: Liabilities:CreditCard:CMB
+
+providers:
+  meituan:
+    accounts:
+      "美团月付": Liabilities:Meituan:YueFu
+
+rules:
+  - payee: "餐厅"
+    contra_account: Expenses:Food:Meal
+  - description: "电费"
+    contra_account: Expenses:Housing:Utilities
+```
+
+两处账户配置各有用途：
+
+- `providers.meituan.accounts` 的键要与「支付方式」完全相同，适合美团月付这类美团自己的账户。这里列出的账户也是 Extra 的检查范围。
+- `account_mappings` 按「支付方式」列找账户，`pattern` 是该列的子串即算命中，适合银行卡。银行卡还会出现在银行自己的账单里，不要列进 `providers.meituan.accounts`。
+
+账单没有单独的商户列，商户名写在「订单标题」里，如 `餐厅甲-午餐套餐`。Bean-Sieve 以第一个 `-` 为界，前半段作 `payee`，后半段作 `description`；标题里没有 `-` 时 `payee` 为空，整个标题作 `description`。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易成功时间 | 时分秒；成功时间为空时取交易创建时间 |
+| `order_id` | 交易单号 | |
+| `card_last4` | 支付方式 | 从 `(1234)` 中取出的卡号后四位 |
+| `tx_type` | 交易类型 | 如 `支付`、`退款` |
+| `method` | 支付方式 | 如 `美团月付`、`招商银行信用卡(1234)` |
+| `merchant_id` | 商家单号 | 空值不输出 |
+| `remarks` | 备注 | 空值和 `/` 不输出 |
+| `order_amount` | 订单金额 | 仅在与实付金额不同时出现（用了优惠券或立减） |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.meituan.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 金额取「实付金额」，即实际扣款，优惠前的订单金额记在 `order_amount` 里。
+- 「收/支」为「不计收支」或为空的行不输出，如美团月付还款。月付还款要从银行账单里对账，或者手动记账。
+- 退款行单独输出为一笔收入，打上 `#refund` 标签。美团的退款单号和原订单没有关联，所以退款不会用 `^` 链接到原交易。
+- 商户名本身带 `-` 时，`payee` 只会取到第一个 `-` 之前的部分。
+- 金额一律按人民币处理。
 
 ## 输出样例
 
 仓库的 [`examples/meituan/`](https://github.com/Xm798/bean-sieve/tree/master/examples/meituan) 目录是一组虚构数据，也是端到端测试的输入。在该目录下运行：
 
 ```bash
-bean-sieve reconcile 美团账单(20300801-20300831).csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
+bean-sieve reconcile '美团账单(20300801-20300831).csv' -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 8 月 2 日午餐被匹配，不再输出；8 月 5 日的外卖用了优惠，按实付 25.00 入账；8 月 8 日的房费退款单独输出并带上 `#refund`，规则把对方科目也指向酒店费用；8 月 10 日的标题里没有 `-`，收款方为空；8 月 20 日的月付还款没有出现；账本里 8 月 12 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

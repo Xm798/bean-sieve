@@ -3,27 +3,66 @@ title: 中国银行借记卡
 description: 解析中国银行借记卡导出的 CSV 交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+用卡号登录[中国银行个人网上银行](https://ebsnew.boc.cn/boc15/login.html?locale=zh)，查询借记卡交易明细，把查询结果的表格复制出来，保存为 CSV 文件。文件用 UTF-8 或 GBK 编码都可以。
+
+自己保存的 CSV 要保持网银表格的列和顺序：
+
+```text
+交易时间,业务摘要,对方账户名称,对方账户账号,币种,钞/汇,收入金额,支出金额,余额,交易渠道/场所,附言
+```
+
+表头必须在前 10 行内，且同时含「交易时间」和「业务摘要」。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="boc_debit" />
 
+文件名不含「中国银行」也没关系，Bean-Sieve 会在文件开头找「业务摘要」。
+
+交易时间的格式是 `2030/04/01 09:00:00`。「币种」列会换成币种代码，如 `人民币元` → `CNY`、`港币` → `HKD`、`美元` → `USD`，表里没有的币种名原样保留。金额里的千位分隔符会被去掉。
+
+描述由「业务摘要」和「附言」拼成，附言开头的 `--` 会被去掉；收款方取「对方账户名称」。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  boc_debit:
+    accounts:
+      "1234": Assets:Bank:BOC
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - description: "结息"
+    contra_account: Income:Bank:Interest
+```
+
+复制出来的表格里没有卡号，所以 `accounts` 只能写一项：对账前 Bean-Sieve 把这一项的键当作每行的卡号，所有交易都记到这个账户。键可以随意取，习惯上写卡号后四位。
+
+加 `balance: true` 会在输出末尾追加一条 `balance` 断言，金额取最后一笔交易后的余额，日期是该笔交易的次日。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `summary` | 业务摘要 | |
+| `counterparty_account` | 对方账户账号 | |
+| `balance` | 余额 | 保留原文的千位分隔符 |
+| `cash_remit` | 钞/汇 | 值为 `-` 时不输出 |
+| `channel` | 交易渠道/场所 | |
+
+默认全部输出，空值、`/` 和 `-` 会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.boc_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- `accounts` 写了多项时，Bean-Sieve 只打印一条警告，不给交易分配卡号，这些交易的账户输出为 `Assets:FIXME`。
+- 同一份文件里有多个币种时，所有行仍记到同一个账户，只是币种各自不同。
+- 一行同时有收入和支出金额时，按支出处理并打印警告。
+- 对账范围是第一笔到最后一笔交易的日期，账本里晚于最后一笔交易的条目不会报 Extra。
 
 ## 输出样例
 
@@ -32,6 +71,8 @@ description: 解析中国银行借记卡导出的 CSV 交易明细，与账本�
 ```bash
 bean-sieve reconcile 中国银行借记卡.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+配置里唯一的 `accounts` 项让所有行都记到 `Assets:Bank:BOC`。账本里已有的 4 月 25 日晚餐被匹配，不再输出；4 月 6 日那笔没有规则命中，对方科目是 `Expenses:FIXME`；账本里 4 月 15 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

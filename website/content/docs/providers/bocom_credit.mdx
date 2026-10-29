@@ -3,27 +3,76 @@ title: 交通银行信用卡
 description: 解析交通银行信用卡电子邮件账单，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+交通银行信用卡按卡出账单，每张卡每月一封电子账单邮件。还没开通邮件账单时，到交通银行的信用卡渠道设置账单邮箱，具体入口以银行说明为准。
+
+收到账单后，在邮件客户端把整封邮件保存为 `.eml` 文件，每张卡的账单各存一份：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="bocom_credit" />
 
+文件名里没有「交通银行」时，Bean-Sieve 会解码邮件标题和正文，在里面找「交通银行信用卡电子账单」。
+
+交通银行有两种账单版式，都能解析：
+
+- 旧版：日期只写 `MM/DD`，每行带卡号末四位，金额写成 `HKD41.00` 这样币种和数字连在一起。年份按账单周期推断，跨年的 12 月和 1 月交易、延迟入账的交易都会归到正确的年份。
+- 新版：日期是 `YYYY-MM-DD`，交易表按卡分组，每组上方有一行「卡号末四位 1234」；没有分组的表，交易归到账单抬头那张卡上。
+
+交易的方向由所在区段决定：「还款、退货、费用返还明细」里的交易减少欠款，「消费、取现、其他费用明细」里的增加欠款。金额和币种取入账金额；交易金额的币种与入账币种不同时（境外交易），原币金额和币种记入 `original_amount` 和 `original_currency`，对方科目写成原币，并以 `@@` 标注入账金额：
+
+```beancount
+2030-03-09 ! "消费 overseas-shop-c"
+    Liabilities:CreditCard:BOCOM:4321  -90.00 CNY
+    Expenses:FIXME  100.00 HKD @@ 90.00 CNY
+```
+
+匹配账本时，信用卡 posting 记的是入账金额，或者是原币金额和原币币种，都算同一笔，按原币导入的旧条目也能匹配上。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+交通银行信用卡按卡管理，每张卡独立出账单、独立还款，账本里通常每张卡建一个账户。`accounts` 的键是卡号后四位：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  bocom_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:BOCOM:1234
+      "5678": Liabilities:CreditCard:BOCOM:5678
+
+rules:
+  - description: "信用卡还款"
+    contra_account: Assets:Bank:Checking
+```
+
+交易说明写入描述，收款方为空，可以用规则的 `target_payee` 补上。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡末四位 | 新版取分组行或账单抬头的卡号 |
+| `original_date` | 交易日期 | 原文，旧版为 `MM/DD`，新版为 `YYYY-MM-DD` |
+| `section` | 所在区段 | `payment`（还款、退货、费用返还）或 `spending`（消费、取现、其他费用）；找不到区段标题时为 `unknown` |
+| `original_amount` | 交易金额 | 仅在交易币种与入账币种不同时出现 |
+| `original_currency` | 交易币种 | 与 `original_amount` 一起出现 |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.bocom_credit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 找不到区段标题的交易表一律按消费处理，其中的还款和退货也会记成增加欠款，`section` 为 `unknown`。
+- 旧版账单里找不到账单周期时，`MM/DD` 日期的年份取运行当天所在的年份。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +81,8 @@ description: 解析交通银行信用卡电子邮件账单，与账本对账
 ```bash
 bean-sieve reconcile 交通银行个人信用卡2030年03月电子账单.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 3 月 3 日消费被匹配，不再输出；3 月 9 日的港币消费按人民币入账，对方科目写成 `100.00 HKD @@ 90.00 CNY`；退货、刷卡金返还和还款都在还款区段，记为减少欠款；账本里 3 月 25 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

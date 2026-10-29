@@ -3,27 +3,69 @@ title: 汇丰香港信用卡
 description: 解析汇丰香港信用卡导出的 CSV 交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+<Steps>
+<Step>
+
+登录 [HSBC HK Online Banking](https://www.hsbc.com.hk/)，打开信用卡的交易记录页，点 Download，选 CSV。下载的文件名是 `TransactionHistory.csv`。
+
+</Step>
+<Step>
+
+CSV 里没有卡号。有多张信用卡时，把每张卡的文件重命名为 `TransactionHistory_<卡号后四位>.csv`，如 `TransactionHistory_8888.csv`，Bean-Sieve 从文件名里取卡号来找账户。浏览器自动加的 ` (1)` 后缀不影响识别，如 `TransactionHistory_8888 (1).csv`。
+
+</Step>
+</Steps>
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="hsbchk_credit" />
 
+信用卡和储蓄账户导出的默认文件名都是 `TransactionHistory.csv`，所以不按文件名识别，而是看表头：以 `Transaction date,Post date,Description,Billing amount` 开头的是信用卡，储蓄账户交给 [`hsbchk_debit`](/docs/providers/hsbchk_debit)。
+
+CSV 有 10 列：Transaction date、Post date、Description、Billing amount、Billing currency、Transaction status、Merchant name、Country / region、Area / district、Credit / Debit。日期是 `DD/MM/YYYY`，取 Transaction date。金额和币种取 Billing amount 与 Billing currency，币种为空时按 `HKD`。Merchant name 写入收款方，Description 合并多余空格后写入描述。金额为 0 的行不输出。
+
+导出文件里没有账单周期，对账范围取第一笔到最后一笔交易的日期。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+defaults:
+  currency: HKD
+
+providers:
+  hsbchk_credit:
+    accounts:
+      "8888": Liabilities:CreditCard:HSBCHK:8888
+
+rules:
+  - description: "PAYMENT - THANK YOU"
+    contra_account: Assets:Bank:HSBCHK
+  - payee: "cafe-a"
+    contra_account: Expenses:Food:Meal
+```
+
+`accounts` 的键是文件名里的卡号后四位。商户名在收款方里，规则可以直接按 `payee` 写。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 文件名 | `_<后四位>` 后缀；没有后缀时不出现 |
+| `transaction_status` | Transaction status | 如 `POSTED`、`PENDING` |
+| `country` | Country / region | 如 `HONG KONG` |
+| `district` | Area / district | 如 `HKG` |
+| `direction` | Credit / Debit | `CREDIT` 或 `DEBIT` |
+
+各字段在源列为空时不出现。默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.hsbchk_credit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 文件名没有 `_<后四位>` 后缀时取不到卡号，交易的账户输出为 `Assets:FIXME`。
+- 状态为 `PENDING`、尚未入账的交易也会输出。下次导出时它可能已经入账，金额或日期也可能变了，核对时留意 `transaction_status`。
+- Billing currency 不是港币的行（如在内地扫码付人民币）按该币种记在信用卡账户上，账本里的信用卡账户需要允许这个币种。CSV 里没有另一种币种的金额，不生成 `@@` 价格。
+- 对账范围只到第一笔和最后一笔交易的日期，账本里在这之前或之后的条目不会被报为 Extra。
 
 ## 输出样例
 
@@ -32,6 +74,8 @@ description: 解析汇丰香港信用卡导出的 CSV 交易明细，与账本�
 ```bash
 bean-sieve reconcile TransactionHistory_8888.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+文件名后缀 `_8888` 让交易记到 `Liabilities:CreditCard:HSBCHK:8888`。账本里已有的 6 月 2 日消费被匹配，不再输出；6 月 9 日那笔按人民币记账；6 月 20 日那笔还是 `PENDING`，也输出了；账本里 6 月 12 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

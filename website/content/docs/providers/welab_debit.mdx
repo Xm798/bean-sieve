@@ -1,29 +1,75 @@
 ---
 title: 汇立银行
-description: 解析汇立银行PDF 账单，与账本对账
+description: 解析汇立银行的多币种综合月结单 PDF，与账本对账
 ---
-
-{/* Placeholder page: sections marked 待补充 still need writing. */}
 
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+在 WeLab Bank App 的「总览 → 月结单」下载电子月结单 PDF。这是多币种综合月结单，港币、人民币、美元等币种的交易都在同一份文件里。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="welab_debit" />
 
+文件名不含 `welab` 或「汇立」也没关系，Bean-Sieve 会读 PDF 第一页的文字，找到 `WeLab`、「汇立」或 `welab.bank`，或同时出现 `Global Wallet Core Account` 和 `GoSave` 即可识别。
+
+月结单按币种分段，段头形如 `Core Account (…) - 港元 HKD`，一段跨页时续页没有段头，按上一页的币种结转。账单周期从页眉的 `Your Bank Statement (1 Feb 2030 - 28 Feb 2030)` 读取。「承上结余」和「帐户结余」行会被跳过。
+
+每段是日期、种类、交易详情、金额四列，Bean-Sieve 按文字在页面上的位置把它们拼回交易行。金额在月结单里负数是支出。
+
+- 交易详情里的第一个 `Ref:` 记为 `order_id`。
+- `Receive money from …` 和 `Transfer to …` 后面的名字作为收款方；卡消费取商户名，如 `WEIXIN*store-c`。
+- 退款（`借记卡退款 Debit Card Refund`）打上 `#refund` 标签，并用 `^<order_id>` 关联。
+- 换汇在两个币种段里各有一行，共用同一个 `Ref: FX…`。两行保留为两笔交易，描述都是 `Foreign currency exchange`。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  welab_debit:
+    accounts:
+      HKD: Assets:Bank:WeLab:HKD
+      CNY: Assets:Bank:WeLab:CNY
+      USD: Assets:Bank:WeLab:USD
+
+rules:
+  - payee: "employer-a"
+    contra_account: Income:Salary
+  - description: "interest"
+    contra_account: Income:Bank:Interest
+```
+
+`accounts` 的键是币种代码，每个币种段的交易记到对应的账户。
+
+换汇的两行分别匹配账本里同一笔交易的两条 posting，账本可以这样记：
+
+```beancount
+2030-02-10 * "Foreign currency exchange"
+  Assets:Bank:WeLab:HKD  -1100.00 HKD
+  Assets:Bank:WeLab:CNY   1000.00 CNY @@ 1100.00 HKD
+```
+
+港币一行匹配 `-1100.00 HKD`，人民币一行匹配 `1000.00 CNY`。如果两个币种用同一个账户，写成 `Assets:Bank:WeLab -1100.00 HKD @@ 1000.00 CNY` 加 `Assets:Bank:WeLab 1000.00 CNY` 也一样能逐行匹配。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `order_id` | 交易详情 | 第一个 `Ref:` 后的编号 |
+| `transaction_type` | 种类 | 只保留英文，如 `Debit Card spending` |
+| `counterparty` | 交易详情 | 转账的对方名字，只在 `Receive money from` 和 `Transfer to` 行出现 |
+| `exchange_info` | 交易详情 | 换汇行的汇率和借贷记日期 |
+| `fx_ref` | 交易详情 | 外币消费经换汇结算时，对应换汇的 `FX Ref` |
+| `transaction_date` | 交易详情 | 实际交易日期，如 `7 Feb 2030`，与入账日不同时出现 |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.welab_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 月结单的交易行里没有余额，`balance: true` 不会生成余额断言。
+- 交易日期取月结单的日期列；卡消费的实际交易日只记在 `transaction_date` 里。
+- 列的划分按页面上的固定横坐标，汇立调整月结单版式后可能解析出错，遇到时请附上脱敏样例[提 issue](https://github.com/Xm798/bean-sieve/issues)。
+- 收款方只从转账和卡消费里取，其他交易的收款方为空。
 
 ## 输出样例
 
@@ -32,6 +78,8 @@ description: 解析汇立银行PDF 账单，与账本对账
 ```bash
 bean-sieve reconcile welab_203002.pdf -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 2 月 10 日换汇按两条 posting 匹配了月结单里的两行，不再输出；2 月 21 日的退款打上了 `#refund` 和 `^FT30F007`；2 月 24 日那笔没有规则命中，对方科目是 `Expenses:FIXME`；账本里 2 月 20 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

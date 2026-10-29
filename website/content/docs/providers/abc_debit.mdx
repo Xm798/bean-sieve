@@ -3,27 +3,59 @@ title: 农业银行借记卡
 description: 解析农业银行借记卡网银导出的交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+登录[农业银行个人网上银行](https://perbank.abchina.com/EbankSite/ebank/startup)，在「账户明细查询」里选好卡号和日期范围，点「导出」得到 Excel 文件。网银需要安装安全控件，macOS 上要用 Safari。
+
+导出的文件名形如 `detail20300331.xlsx`。Bean-Sieve 靠这个文件名识别账单，改过名的文件要用 `-p abc_debit` 指定。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="abc_debit" />
 
+文件内容是 XLSX，扩展名有时是 `.xls`，两种都能读。第 1 行必须是「账户明细查询」标题，否则整份文件被跳过；第 2 行是账户信息，卡号后四位从其中打码的卡号（如 `6228****1234`）里取；第 3 行是表头，其后是交易。
+
+「交易金额」带正负号，负数是支出。描述由「交易用途」和「交易摘要」拼成，收款方取「对方户名」。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  abc_debit:
+    accounts:
+      "1234": Assets:Bank:ABC
+      "5678": Assets:Bank:ABC:Salary
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - description: "结息"
+    contra_account: Income:Bank:Interest
+```
+
+`accounts` 的键是卡号后四位。网银每次导出一张卡的明细，有几张卡就列几项；对账时只把这份文件那张卡对应的账户纳入 Extra 检查。
+
+在 `providers.abc_debit` 下加 `balance: true`，输出末尾会追加一条 `balance` 断言，金额取这张卡最后一笔交易后的「本次余额」，日期是该笔交易的次日。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `summary` | 交易摘要 | |
+| `balance` | 本次余额 | |
+| `counterparty_account` | 对方账号 | |
+| `bank` | 交易行 | |
+| `channel` | 交易渠道 | |
+| `tx_type` | 交易类型 | |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.abc_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 金额一律按人民币处理。
+- 对账范围是这张卡第一笔到最后一笔交易的日期，第 2 行里的查询起止日期不读取。账本里晚于最后一笔交易的条目不会报 Extra。
+- 文件名不匹配 `detail` 加 8 位数字时不会被自动识别。
 
 ## 输出样例
 
@@ -32,6 +64,8 @@ description: 解析农业银行借记卡网银导出的交易明细，与账本�
 ```bash
 bean-sieve reconcile detail20300331.xlsx -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 3 月 25 日晚餐被匹配，不再输出；3 月 8 日那笔没有规则命中，对方科目是 `Expenses:FIXME`，标记为 `!`；账本里 3 月 15 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

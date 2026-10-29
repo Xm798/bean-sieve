@@ -1,29 +1,68 @@
 ---
 title: 众安银行
-description: 解析众安银行PDF 账单，与账本对账
+description: 解析众安银行的综合月结单 PDF，与账本对账
 ---
-
-{/* Placeholder page: sections marked 待补充 still need writing. */}
 
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+从众安银行 App 下载综合月结单 PDF，菜单位置以 App 当前版本为准。这份月结单按币种分段，港币、人民币、美元等账户的交易都在同一份文件里。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="zabank_debit" />
 
+文件名不含 `zabank`、「众安」或 `ZA Bank` 也没关系，Bean-Sieve 会读 PDF 第一页的文字，找到 `ZA Bank` 或「众安银行」即可识别。
+
+月结单按币种分段，能识别的段头有 `HKD Savings 港元活期储蓄`、`CNY 人民币`、`USD 美元`、`EUR 欧元`、`GBP 英镑`、`JPY 日元`。一段跨页时，续页按上一页的币种结转。账单周期从页眉的 `01 Mar 2030 - 31 Mar 2030` 读取。第一页的存款汇总表和「上期结余」行会被跳过。
+
+每行交易有日期、交易详情、存入、支出和余额。交易详情的第一行作为描述；其后几行里的交易编号记为 `order_id`，含 `*` 的对方名字（如 `EMPLOYER*A`）作为收款方。
+
+换汇在两个币种段里各有一行，共用同一个交易编号。对账前 Bean-Sieve 把这两行合并成一笔，保留卖出一侧，买入金额写成 `@@` 价格，描述改为 `Currency Exchange (HKD→CNY)` 这样的形式：
+
+```beancount
+2030-03-10 ! "Currency Exchange (HKD→CNY)"
+    Assets:Bank:ZABank  -1100.00 HKD @@ 1000.00 CNY
+    Assets:Bank:ZABank  1000.00 CNY
+```
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  zabank_debit:
+    accounts:
+      HKD: Assets:Bank:ZABank
+      CNY: Assets:Bank:ZABank
+    balance: true
+
+rules:
+  - payee: "EMPLOYER\\*A"
+    contra_account: Income:Salary
+  - description: "Interest"
+    contra_account: Income:Bank:Interest
+```
+
+`accounts` 的键是币种代码。合并后的换汇两条 posting 都记在卖出币种对应的账户上，所以上面把两个币种指向同一个账户。
+
+`balance: true` 会为每个账户和币种各追加一条 `balance` 断言，金额取该币种最后一笔交易后的余额，日期是账单周期结束日的次日。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `order_id` | 交易详情 | 交易编号，有时才出现 |
+| `counterparty` | 交易详情 | 含 `*` 的对方名字 |
+| `exchange_info` | 交易详情 | 换汇行以 `sell` 开头的买卖明细 |
+| `balance` | 余额 | |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.zabank_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 换汇合并后两条 posting 都记在卖出币种的账户上。给每个币种配了不同账户时（如 `HKD: Assets:Bank:ZABank:HKD`、`CNY: Assets:Bank:ZABank:CNY`），买入的人民币也会写到港币账户上，需要手工改。
+- 换汇的买入一行在合并时被去掉。如果它是某个币种当期的最后一笔交易，这个币种的 `balance` 断言取的是更早一笔交易后的余额。
+- 上面列出的六个币种以外的段不识别，其中的交易不会被读出。
+- 收款方只从含 `*` 的对方名字里取，其他交易的收款方为空。
 
 ## 输出样例
 
@@ -32,6 +71,8 @@ description: 解析众安银行PDF 账单，与账本对账
 ```bash
 bean-sieve reconcile zabank_203003.pdf -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 3 月 18 日晚餐被匹配，不再输出；3 月 10 日的换汇两行合并成一笔 `@@` 交易；账本里 3 月 25 日那笔在账单里找不到，被列为 Extra；末尾按币种各有一条 `balance` 断言，日期是账单周期结束后的 4 月 1 日。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

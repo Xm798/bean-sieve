@@ -3,27 +3,75 @@ title: 广发银行信用卡
 description: 解析广发银行信用卡电子邮件账单，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+广发银行信用卡每月把电子账单发到预留的邮箱，名下各卡的交易在同一封邮件里按卡分段列出。还没开通邮件账单时，到广发银行的信用卡渠道设置账单邮箱，具体入口以银行说明为准。
+
+收到账单后，在邮件客户端把整封邮件保存为 `.eml` 文件：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="cgb_credit" />
 
+文件名里没有「广发信用卡」或「广发银行」时（比如样例的 `cgb_credit-2030-03.eml`），Bean-Sieve 会解码邮件标题和正文，在里面找「广发银行信用卡」。
+
+正文按卡分段，每段以「卡号：6200********1234」开头。每行交易有交易日期、入账日期、`(类型)摘要`、交易金额、交易货币、入账金额、入账货币。类型是「消费」「还款」「赠送」之一，保留在描述开头，如 `(消费)store-e`。日期是 `YYYY/MM/DD`，取交易日期。对账范围取正文里的「账单周期:2030/03/01-2030/03/31」。
+
+金额和币种取入账金额与入账货币，中文币种名换成 ISO 代码（人民币 → `CNY`、美元 → `USD`、港币 → `HKD` 等）。交易货币与入账货币不同时（境外交易，或外币卡上以第三种币种消费），原币金额和币种记入 `original_amount` 和 `original_currency`，对方科目写成原币，并以 `@@` 标注入账金额：
+
+```beancount
+2030-03-09 ! "(消费)overseas-shop-c"
+    Liabilities:CreditCard:CGB:4321  -145.00 CNY
+    Expenses:FIXME  20.00 USD @@ 145.00 CNY
+```
+
+匹配账本时，信用卡 posting 记的是入账金额，或者是原币金额和原币币种，都算同一笔，按原币导入的旧条目也能匹配上。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+广发银行信用卡按卡管理：各卡账单日合并为同一天，但每张卡独立还款，账本里通常每张卡建一个账户。`accounts` 的键是卡号后四位：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  cgb_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:CGB:1234
+      "5678": Liabilities:CreditCard:CGB:5678
+
+rules:
+  - description: "赠送"
+    contra_account: Income:Rebate:CGB
+  - description: "网银还款"
+    contra_account: Assets:Bank:Checking
+```
+
+规则的 `description` 匹配的是带类型前缀的描述，可以直接按 `(赠送)` 这类类型写规则；元数据 `trans_type` 里也有同样的类型。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号 | 取所在分段的卡号后四位 |
+| `original_date` | 交易日期 | 原文，`YYYY/MM/DD` |
+| `trans_type` | 摘要前的类型 | `消费`、`还款` 或 `赠送` |
+| `original_amount` | 交易金额 | 仅在交易货币与入账货币不同时出现 |
+| `original_currency` | 交易货币 | 与 `original_amount` 一起出现 |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.cgb_credit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 币种对照表收录了人民币、美元、港币、澳门元、新台币、欧元、英镑、日元、韩元、新加坡元、澳大利亚元、加拿大元、瑞士法郎、泰铢。表外的币种名会原样写进输出，不是合法的 Beancount 币种，需要手工改。
+- 交易行是从正文文字里按格式匹配出来的。银行调整账单格式后，对不上格式的行会被直接略过，不给警告。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +80,8 @@ description: 解析广发银行信用卡电子邮件账单，与账本对账
 ```bash
 bean-sieve reconcile cgb_credit-2030-03.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账单里有两张卡，交易分别记到各自的账户。账本里已有的 3 月 3 日消费被匹配，不再输出；3 月 9 日的美元消费按人民币入账，对方科目写成 `20.00 USD @@ 145.00 CNY`；账本里 3 月 25 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

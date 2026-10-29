@@ -3,27 +3,78 @@ title: App Store
 description: 解析 App Store 购买记录（浏览器导出的 HAR），与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+Bean-Sieve 读取的是 [Report a Problem](https://reportaproblem.apple.com) 网页加载购买记录时浏览器收到的接口响应，要用浏览器开发者工具把这些响应保存成 HAR 文件。
+
+<Steps>
+<Step>
+
+用电脑浏览器登录 [reportaproblem.apple.com](https://reportaproblem.apple.com)，按 F12 打开开发者工具，切到「网络」（Network）面板。
+
+</Step>
+<Step>
+
+回到页面，一直向下滚动，直到要对账的那段时间的购买记录全部加载出来。页面每加载一批，网络面板里就会多一个 `search` 请求。
+
+</Step>
+<Step>
+
+在网络面板里把请求导出为 HAR 文件。导出全部请求也可以，Bean-Sieve 只读取地址含 `/api/purchase/search` 的请求，多批记录重叠的部分会自动去重。
+
+</Step>
+</Steps>
+
+各浏览器导出 HAR 的按钮位置不同，以浏览器自己的文档为准。HAR 文件可能包含登录 Cookie 等凭据，只在本地使用，不要上传或发给别人。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="app_store" />
 
+HAR 是 JSON 格式。文件名含 `apple` 或 `reportaproblem` 时直接识别，否则 Bean-Sieve 会在文件内容里查找 `reportaproblem.apple.com/api/purchase/search`。
+
+每条购买记录按商品拆成多行，一个订单里买了几样东西就输出几笔交易。交易时间是接口给出的 UTC 时间，换算成北京时间后取日期。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  app_store:
+    accounts:
+      "Apple ID": Assets:AppleID:Balance
+
+rules:
+  - payee: "某游戏"
+    contra_account: Expenses:Digital:Games
+  - payee: "某云盘"
+    contra_account: Expenses:Digital:Subscription
+```
+
+购买记录里没有付款方式，Bean-Sieve 不知道钱从哪个账户付出，生成的条目付款方一律是 `Assets:FIXME`，需要并入账本前手动改成实际账户。`account_mappings` 对 App Store 不起作用。
+
+`providers.app_store.accounts` 的键可以随意取，只有值起作用：这些账户是 Extra 的检查范围。账本里这些账户上的条目在购买记录里找不到时，会被报为 Extra。只有 `Assets` 和 `Liabilities` 开头的账户会参与匹配和 Extra 检查，所以这里要写 Apple ID 余额这类资产账户，写费用账户没有用。
+
+`payee` 是 App 或服务的名字，`description` 是商品名（如「月度会员」），规则可以按任一字段匹配。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源 | 说明 |
+| :--- | :--- | :--- |
+| `time` | `pliDate` | 北京时间的时分秒 |
+| `order_id` | `weborder`、`itemId` | 两者用 `-` 连接，如 `MXG0000000002-900000000000002`，同一订单的多个商品各有各的订单号 |
+| `media_type` | `localizedContent.mediaType` | 商品类型 |
+| `item_id` | `itemId` | 商品行编号 |
+| `adam_id` | `adamId` | App 在 App Store 中的编号 |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.app_store.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 付款方一律是 `Assets:FIXME`，见上文配置示例。
+- 匹配时不限定账户：账本里任何 `Assets` 或 `Liabilities` 账户上金额相同、日期在 `date_tolerance` 以内的条目都可能被认作同一笔。同一天有其他同金额的支出时，请核对匹配结果。
+- 购买记录不带起止时间。对账范围取第一笔到最后一笔交易的日期，两端再各放宽 `date_tolerance` 天；范围内 `accounts` 列出的账户上找不到对应交易的条目都会报为 Extra。要指定范围，在命令行加 `--date-range 2030-07-01:2030-07-31`。
+- 免费商品和金额为 0 的行不输出。退款（接口标记为 credit 的行）输出为收入，金额为负。
+- 货币按金额前的符号识别，如 `US$`、`HK$`、`€`。单独的 `¥` 按人民币处理，日区账号的 `¥` 也会被当成人民币；不认识的符号会跳过该行并打印警告。
 
 ## 输出样例
 
@@ -32,6 +83,8 @@ description: 解析 App Store 购买记录（浏览器导出的 HAR），与账�
 ```bash
 bean-sieve reconcile reportaproblem.apple.com.har -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 7 月 2 日 app-a 被匹配，不再输出；UTC 时间 7 月 3 日 17:30 的订单按北京时间记在 7 月 4 日，订单里的两件商品各输出一条，付款方都是 `Assets:FIXME`；7 月 5 日的免费商品没有出现；7 月 10 日的退款金额为负；账本里 7 月 6 日那笔在购买记录里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

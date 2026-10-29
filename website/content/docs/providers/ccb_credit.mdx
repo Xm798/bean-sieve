@@ -3,27 +3,59 @@ title: 建设银行信用卡
 description: 解析建设银行信用卡电子邮件账单，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+建设银行信用卡每月把电子账单发到预留的邮箱。还没开通邮件账单时，到建设银行的信用卡渠道设置账单邮箱，具体入口以银行说明为准。
+
+收到账单后，在邮件客户端把整封邮件保存为 `.eml` 文件：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="ccb_credit" />
 
+文件名里没有「建设银行」时，Bean-Sieve 会解码邮件标题和正文，在里面找「中国建设银行信用卡」或「龙卡信用卡对账单」。
+
+交易取自标题为「【交易明细】」的表格，每行有交易日、银行记账日、卡号后四位、交易描述、交易币种与金额、结算币种与金额。日期是 `YYYY-MM-DD`，取交易日。负数金额是还款或退款。对账范围取正文里的账单周期，如 `2030/03/01-2030/03/31`。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+建设银行信用卡按卡管理：各卡账单日合并为同一天，但每张卡独立还款，账本里通常每张卡建一个账户。一份账单里有多张卡时，每行按自己的卡号后四位找账户。`accounts` 的键是卡号后四位：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  ccb_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:CCB:1234
+      "5678": Liabilities:CreditCard:CCB:5678
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+```
+
+交易描述写入描述，收款方为空，可以用规则的 `target_payee` 补上。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号后四位 | |
+
+默认输出。在 `defaults.output_metadata` 里列出字段名后，只输出列出的字段。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 金额和币种取交易币种那一列，结算金额不读取。境外交易按原币金额和原币币种记账，不换算成人民币，也不生成 `@@` 价格。
+- 币种与金额分成两个单元格的版式只认 `CNY`、`USD`、`EUR` 三种币种，其他币种的交易行会被跳过。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +64,8 @@ description: 解析建设银行信用卡电子邮件账单，与账本对账
 ```bash
 bean-sieve reconcile 中国建设银行信用卡电子账单.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 3 月 3 日消费被匹配，不再输出；规则 `年费` 同时命中了年费和「积分兑换年费」，两笔互相抵消；账本里 3 月 25 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

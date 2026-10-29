@@ -3,27 +3,61 @@ title: 交通银行借记卡
 description: 解析交通银行借记卡网银导出的交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+登录[交通银行个人网上银行](https://pbank.bankcomm.cn/personbank/system/index.html#/login)，在「交易明细」里查询后下载 XLS 文件。网银需要安装安全控件，macOS 上要用 Safari。
+
+默认文件名是 `交易明细列表.xls`，不用改名。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="bocom_debit" />
 
+文件名里没有「交通银行」时，Bean-Sieve 会打开 XLS 读第一个单元格，标题含「交通银行」即可识别，所以默认文件名也能自动识别。
+
+第 1 行是标题「交通银行银行卡交易明细查询表」，第 2 行的账户信息里有「银行卡号」，卡号后四位从这里取，其后是表头和交易。
+
+日期取「记账日期」，时间从「交易时间」里取时分秒。描述由「交易方式」「交易地点」「摘要」拼成；摘要是 `|` 分隔的结构化文本时，只取其中「交易说明」那一段。摘要里有 `订单编号:`、`流水号:` 或 `交易流水号` 时，后面的编号记为 `order_id`。收款方取「对方户名」。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  bocom_debit:
+    accounts:
+      "1234": Assets:Bank:BOCOM
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - description: "零钱提现"
+    contra_account: Assets:WeChat:Balance
+```
+
+`accounts` 的键是卡号后四位。网银每次导出一张卡的明细，有几张卡就列几项；对账时只把这份文件那张卡对应的账户纳入 Extra 检查。
+
+加 `balance: true` 会在输出末尾追加一条 `balance` 断言，金额取这张卡最后一笔交易后的余额，日期是该笔交易的次日。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `order_id` | 摘要 | 订单编号或流水号，摘要里有时才出现 |
+| `summary` | 摘要 | 原文 |
+| `method` | 交易方式 | |
+| `location` | 交易地点 | |
+| `counterparty_account` | 对方账户 | |
+| `counterparty_bank` | 对方开户行 | |
+| `balance` | 余额 | 值为 `--` 时不出现 |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.bocom_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 交易日期取的是「记账日期」，与实际交易日不同的交易可能需要放宽 `date_tolerance` 才能匹配。
+- 金额一律按人民币处理。
+- 对账范围是这张卡第一笔到最后一笔交易的日期，账本里晚于最后一笔交易的条目不会报 Extra。
 
 ## 输出样例
 
@@ -32,6 +66,8 @@ description: 解析交通银行借记卡网银导出的交易明细，与账本�
 ```bash
 bean-sieve reconcile 交易明细列表.xls -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 5 月 26 日晚餐被匹配，不再输出；5 月 4 日、7 日和 10 日的交易从摘要里取出了 `order_id`；账本里 5 月 18 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

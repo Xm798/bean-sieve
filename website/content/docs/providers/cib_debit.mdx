@@ -3,27 +3,59 @@ title: 兴业银行借记卡
 description: 解析兴业银行借记卡网银导出的交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+登录[兴业银行个人网上银行](https://personalbank.cib.com.cn/)，进入「查询 → 交易明细查询 → 流水下载」，格式选 Excel。网银需要安装安全控件。
+
+导出的文件名形如 `测试用户的交易明细 20300701-20300731.xls`。Bean-Sieve 靠文件名里的「的交易明细 」加起止日期识别账单，改过名的文件要用 `-p cib_debit` 指定。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="cib_debit" />
 
+文件是 XLS，第一个单元格必须含「兴业银行」，否则整份文件被跳过。前几行是账户信息，卡号后四位取「账户账号」一行的末四位；接着是表头和交易，以「说明」开头的行之后不再读取。
+
+日期和时间取「交易时间」。描述由「摘要」和「用途」拼成，收款方取「对方户名」。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  cib_debit:
+    accounts:
+      "1234": Assets:Bank:CIB
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - payee: "friend-e"
+    contra_account: Assets:Receivables:Friend
+```
+
+`accounts` 的键是卡号后四位。网银每次导出一张卡的明细，有几张卡就列几项；对账时只把这份文件那张卡对应的账户纳入 Extra 检查。
+
+加 `balance: true` 会在输出末尾追加一条 `balance` 断言，金额取这张卡最后一笔交易后的账户余额，日期是该笔交易的次日。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `summary` | 摘要 | |
+| `balance` | 账户余额 | |
+| `counterparty_bank` | 对方银行 | |
+| `counterparty_account` | 对方账号 | |
+| `purpose` | 用途 | |
+| `channel` | 交易渠道 | |
+| `remark` | 备注 | |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.cib_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 金额一律按人民币处理。
+- 对账范围是这张卡第一笔到最后一笔交易的日期，表头里的起止日期不读取，账本里晚于最后一笔交易的条目不会报 Extra。
+- 一行同时有收入和支出金额时，按支出处理并打印警告。
 
 ## 输出样例
 
@@ -32,6 +64,8 @@ description: 解析兴业银行借记卡网银导出的交易明细，与账本�
 ```bash
 bean-sieve reconcile "测试用户的交易明细 20300701-20300731.xls" -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 7 月 27 日晚餐被匹配，不再输出；7 月 14 日的转入按收款方 `friend-e` 命中规则；账本里 7 月 18 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

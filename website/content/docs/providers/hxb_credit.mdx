@@ -3,27 +3,79 @@ title: 华夏银行信用卡
 description: 解析华夏银行信用卡电子邮件账单，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+华夏银行信用卡每月把电子对账单发到预留的邮箱，名下所有卡在同一份账单里。还没开通邮件账单时，到华夏银行的信用卡渠道设置账单邮箱，具体入口以银行说明为准。
+
+收到账单后，在邮件客户端把整封邮件保存为 `.eml` 文件：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="hxb_credit" />
 
+文件名里没有「华夏信用卡」时，Bean-Sieve 会解码邮件标题和正文，在里面找「华夏信用卡对账单」。
+
+每行交易有交易日、记账日、描述、卡号后四位和金额，日期取交易日。人民币金额以 `￥` 开头，美元账户的金额以 `＄` 开头，按 `USD` 记账。账单只写 `MM/DD`，年份按账单周期推断，跨年的 12 月和 1 月交易、延迟入账的交易都会归到正确的年份。
+
+对账范围按以下顺序确定：
+
+1. 正文里写明的周期，如 `2030/03/01-2030/03/31` 或 `2030年03月01日-2030年03月31日`。
+2. 账单月份加「账单日 每月26日」推算，如 3 月账单为 2 月 27 日至 3 月 26 日。账单月份优先取正文标题「对账单(2030/03)」，没有时取文件名里的 `YYYY年MM月`。
+3. 以上都没有时，取账单月份的整个自然月。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+华夏银行信用卡按户管理：名下所有卡共用一个额度、一份账单，账本里通常也只建一个账户。`accounts` 的键是卡号后四位，把每张卡都指向这个账户：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  hxb_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:HXB
+      "5678": Liabilities:CreditCard:HXB
+    posting_metadata:
+      - card_last4
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+```
+
+多张卡共用一个账户时，账户名看不出是哪张卡。`posting_metadata` 里写上 `card_last4`，输出时会把卡号后四位写在信用卡 posting 下面。
+
+要进一步检查账本里已有的条目，可以把账户列入 `diagnostics.meta_check_accounts`。Bean-Sieve 会在匹配到的条目缺少 `card_last4` 或与账单不一致时输出提示，匹配结果不受影响：
+
+```yaml title="bean-sieve.yaml" config-partial
+diagnostics:
+  meta_check_accounts:
+    - Liabilities:CreditCard:HXB
+```
+
+有美元交易时，账本里的信用卡账户要允许 `USD`，如 `open Liabilities:CreditCard:HXB CNY,USD`。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号后四位 | |
+| `original_date` | 交易日 | 原文，`MM/DD` |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.hxb_credit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 美元交易按美元记在同一个信用卡账户上，不换算成人民币，也不生成 `@@` 价格。
+- 记账日不读取，没有 `posting_date`。
+- 对账范围退回到自然月时，和实际账单周期并不一致，Extra 结果需要人工核对。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +84,8 @@ description: 解析华夏银行信用卡电子邮件账单，与账本对账
 ```bash
 bean-sieve reconcile 华夏信用卡-电子账单2030年03月.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账单里有两张卡，配置把它们都指向 `Liabilities:CreditCard:HXB`，信用卡 posting 下写了 `card_last4`。账本里已有的 3 月 3 日消费被匹配，不再输出；3 月 11 日的美元交易记为 `-20.00 USD`；账本里 3 月 18 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

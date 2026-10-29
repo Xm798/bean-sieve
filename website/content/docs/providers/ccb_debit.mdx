@@ -3,27 +3,57 @@ title: 建设银行借记卡
 description: 解析建设银行借记卡网银导出的交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+登录[建设银行个人网上银行](https://ibsbjstar.ccb.com.cn/CCBIS/V6/STY1/CN/login.jsp)，查询账户明细后导出 XLS 文件。用 Chrome 即可，不需要安全控件。
+
+导出的文件名形如 `交易明细_1234_20300601_20300630.xls`，中间四位是卡号后四位。Bean-Sieve 靠这个文件名识别账单，改过名的文件要用 `-p ccb_debit` 指定。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="ccb_debit" />
 
+文件是 XLS，前几行是开户行、币种、账号等信息，接着是表头，最后一行「以上数据仅供参考」之后的内容不再读取。卡号后四位从账号行打码的卡号里取，取不到时从文件名里取。
+
+日期取「交易日期」，时间取「交易时间」。描述由「摘要」和「交易地点」拼成，收款方取「对方户名」，值为 `0` 时视为空。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  ccb_debit:
+    accounts:
+      "1234": Assets:Bank:CCB
+
+rules:
+  - description: "代发工资"
+    contra_account: Income:Salary
+  - description: "信用卡还款"
+    contra_account: Liabilities:CreditCard:CCB
+```
+
+`accounts` 的键是卡号后四位。网银每次导出一张卡的明细，有几张卡就列几项；对账时只把这份文件那张卡对应的账户纳入 Extra 检查。
+
+加 `balance: true` 会在输出末尾追加一条 `balance` 断言，金额取这张卡最后一笔交易后的账户余额，日期是该笔交易的次日。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `time` | 交易时间 | 时分秒 |
+| `summary` | 摘要 | |
+| `balance` | 账户余额 | 值为 `0` 时不出现 |
+| `counterparty_account` | 对方账号 | 值为 `0` 时不出现 |
+| `location` | 交易地点 | |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.ccb_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- XLS 里的金额是数字单元格，输出时按浮点数的写法写出，不补齐两位小数：`7000.00` 写成 `7000.0`，`1.80` 写成 `1.8`。数值不变，匹配不受影响，但格式和账本里的其他条目不一致。`balance` 元数据和 `balance` 断言也是这样，整数余额还会去掉小数部分（`5000`）。
+- 金额一律按人民币处理。
+- 对账范围是这张卡第一笔到最后一笔交易的日期，账本里晚于最后一笔交易的条目不会报 Extra。
+- 文件名不匹配 `交易明细_四位数字_八位日期_八位日期` 时不会被自动识别。
 
 ## 输出样例
 
@@ -32,6 +62,8 @@ description: 解析建设银行借记卡网银导出的交易明细，与账本�
 ```bash
 bean-sieve reconcile 交易明细_1234_20300601_20300630.xls -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 6 月 26 日晚餐被匹配，不再输出；输出的金额都只有一位小数，如 `7000.0`；账本里 6 月 18 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

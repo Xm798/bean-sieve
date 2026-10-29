@@ -3,27 +3,55 @@ title: 汇丰香港储蓄账户
 description: 解析汇丰香港储蓄账户导出的 CSV 交易明细，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+登录 [HSBC HK Online Banking](https://www.hsbc.com.hk/)，在储蓄账户的交易记录页点「Download」，格式选 CSV。导出的文件名是 `TransactionHistory.csv`。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="hsbchk_debit" />
 
+汇丰香港信用卡（`hsbchk_credit`）导出的文件同名，Bean-Sieve 按表头区分：储蓄账户的表头以 `Date,Description,Billing amount,Billing currency,Balance` 开头，信用卡的以 `Transaction date,Post date` 开头。
+
+文件有 6 列：`Date`、`Description`、`Billing amount`、`Billing currency`、`Balance`、`Balance currency`。日期格式是 `日/月/年`。`Billing amount` 正数是入账、负数是支出，币种取 `Billing currency`，为空时按港币处理。
+
+描述是 `Description` 原文。描述以 `HC` 加一串数字或 `NET-` 加一串数字这类参考编号开头时，编号记为 `order_id`。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+```yaml title="bean-sieve.yaml" config
+providers:
+  hsbchk_debit:
+    accounts:
+      "default": Assets:Bank:HSBCHK:HKD
+
+rules:
+  - description: "^NET-"
+    contra_account: Liabilities:CreditCard:HSBCHK
+  - description: "CREDIT INTEREST"
+    contra_account: Income:Bank:Interest
+```
+
+`accounts` 里列出的账户是 Extra 的检查范围。CSV 里没有账号，键写什么都不会被读取，见下面的已知限制。
+
+CSV 没有交易对方列，收款方为空，规则只能按描述匹配，要写收款方就在规则里用 `target_payee`。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `order_id` | Description | 开头的参考编号，有时才出现 |
+| `balance` | Balance | 保留原文的千位分隔符 |
+| `balance_currency` | Balance currency | 仅在与交易币种不同时出现 |
+
+默认全部输出，空值会被略去。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.hsbchk_debit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 交易行没有账号，`accounts` 的键（包括 `"default"`）不会被用来查账户，银行一侧的 posting 输出为 `Assets:FIXME`，需要手工改成实际账户。匹配和 Extra 检查不受影响。
+- 同样因为行没有账户，`balance: true` 不会生成余额断言。
+- 没有交易对方，收款方只能靠规则补上。
+- 对账范围是第一笔到最后一笔交易的日期，前后各放宽 `date_tolerance` 天。
 
 ## 输出样例
 
@@ -32,6 +60,8 @@ description: 解析汇丰香港储蓄账户导出的 CSV 交易明细，与账�
 ```bash
 bean-sieve reconcile TransactionHistory.csv -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+银行一侧的 posting 都是 `Assets:FIXME`，配置里的 `"default"` 键没有被用上。账本里已有的 10 月 18 日晚餐被匹配，不再输出；10 月 1 日和 3 日的交易带出了 `order_id`；账本里 10 月 22 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

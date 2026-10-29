@@ -3,27 +3,70 @@ title: 上海银行信用卡
 description: 解析上海银行信用卡电子邮件账单，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+上海银行信用卡每月把电子对账单发到预留的邮箱。还没开通邮件账单时，到上海银行的信用卡渠道设置账单邮箱，具体入口以银行说明为准。
+
+收到账单后，在邮件客户端把整封邮件保存为 `.eml` 文件：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="bosc_credit" />
 
+文件名里没有「上海银行信用卡」时，Bean-Sieve 会解码邮件标题和正文，在里面找「上海银行信用卡电子对账单」或 `bosc.cn`。
+
+明细每行有交易日、记账日、交易摘要、金额和卡号末四位。日期写成 `2030年03月06日`，取交易日。金额后面的符号表示方向：`+` 是消费，`-` 是还款或退款。「人民币账户」「上期余额」这类不带日期的行会被跳过。对账范围取正文里的账单周期，如 `2030年03月01日-2030年03月31日`。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+上海银行信用卡按户管理：名下所有卡共用一个额度、一份账单，账本里通常也只建一个账户。`accounts` 的键是卡号后四位，把每张卡都指向这个账户：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  bosc_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:BOSC
+      "5678": Liabilities:CreditCard:BOSC
+    posting_metadata:
+      - card_last4
+
+rules:
+  - description: "^还款$"
+    contra_account: Assets:Bank:Checking
+```
+
+多张卡共用一个账户时，账户名看不出是哪张卡。`posting_metadata` 里写上 `card_last4`，输出时会把卡号后四位写在信用卡 posting 下面。
+
+要进一步检查账本里已有的条目，可以把账户列入 `diagnostics.meta_check_accounts`。Bean-Sieve 会在匹配到的条目缺少 `card_last4` 或与账单不一致时输出提示，匹配结果不受影响：
+
+```yaml title="bean-sieve.yaml" config-partial
+diagnostics:
+  meta_check_accounts:
+    - Liabilities:CreditCard:BOSC
+```
+
+交易摘要写入描述，收款方为空，可以用规则的 `target_payee` 补上。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号末四位 | 该列为空时不出现 |
+
+默认输出。在 `defaults.output_metadata` 里列出字段名后，只输出列出的字段。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 金额一律按人民币处理。
+- 卡号末四位为空的行找不到账户，账户输出为 `Assets:FIXME`；卡号不在 `accounts` 里的行也一样。
 
 ## 输出样例
 
@@ -32,6 +75,8 @@ description: 解析上海银行信用卡电子邮件账单，与账本对账
 ```bash
 bean-sieve reconcile 上海银行信用卡2030年03月电子对账单.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账本里已有的 3 月 3 日消费被匹配，不再输出；`^还款$` 只命中摘要恰好是「还款」的那一行；账本里 3 月 25 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

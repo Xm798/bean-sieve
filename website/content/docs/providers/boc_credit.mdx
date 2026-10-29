@@ -1,29 +1,58 @@
 ---
 title: 中国银行信用卡
-description: 解析中国银行信用卡PDF 账单，与账本对账
+description: 解析中国银行信用卡的 PDF 账单，与账本对账
 ---
-
-{/* Placeholder page: sections marked 待补充 still need writing. */}
 
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+Bean-Sieve 读取中国银行信用卡的 PDF 电子合并账单，一份账单列出名下所有卡。拿到 PDF 后直接交给 Bean-Sieve，不需要转换格式。PDF 从哪里获取（邮件附件或银行渠道）以中国银行的说明为准。
+
+PDF 需要带文本层，扫描或截图生成的 PDF 读不出交易。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="boc_credit" />
 
+文件名里没有「中国银行」时，Bean-Sieve 会读 PDF 第一页开头的文字，找「中国银行信用卡账单」或「信用卡账单」。
+
+合并账单按卡分段，每段以「(卡号：…)」开头，下面是交易表，列为交易日、银行记账日、卡号后四位、交易描述、存入、支出。支出列是消费，存入列是还款和退货。日期取交易日。
+
+对账范围从第一页的账单日往前推一个月。第一页找不到账单日时，按文件名里的 `YYYY年MM月` 取上月 1 日到本月月底。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+中国银行信用卡按卡管理：合并账单里每张卡独立还款，账本里通常每张卡建一个账户。`accounts` 的键是卡号后四位：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  boc_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:BOC:1234
+      "5678": Liabilities:CreditCard:BOC:5678
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+```
+
+交易描述写入描述，收款方为空，可以用规则的 `target_payee` 补上。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号后四位 | 行内没有卡号时取所在分段的卡号 |
+| `original_trans_date` | 交易日 | 原文，`YYYY-MM-DD` |
+| `original_post_date` | 银行记账日 | 原文，可能为空 |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.boc_credit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 金额一律按人民币处理，不读取币种。
+- 存入和支出靠文字在页面上的横向位置区分，银行调整 PDF 版式后，金额方向可能判断错。
+- 内容关键词「信用卡账单」比较宽泛，其他银行的 PDF 信用卡账单也可能被识别成中国银行。遇到这种情况，用 `-p` 指定 Provider。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +61,8 @@ description: 解析中国银行信用卡PDF 账单，与账本对账
 ```bash
 bean-sieve reconcile 中国银行信用卡电子合并账单2030年03月账单.pdf -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+合并账单里有两张卡，交易分别记到各自的账户。账本里已有的 2 月 6 日消费被匹配，不再输出；账本里 2 月 18 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 

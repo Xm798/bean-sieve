@@ -3,27 +3,75 @@ title: 民生银行信用卡
 description: 解析民生银行信用卡电子邮件账单，与账本对账
 ---
 
-{/* Placeholder page: sections marked 待补充 still need writing. */}
-
 ## 账单下载方式
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+民生银行信用卡每月把电子对账单发到预留的邮箱，名下所有卡在同一份账单里。还没开通邮件账单时，到民生银行的信用卡渠道设置账单邮箱，具体入口以银行说明为准。
+
+收到账单后，在邮件客户端把整封邮件保存为 `.eml` 文件：
+
+| 客户端 | 操作 |
+| :--- | :--- |
+| Gmail 网页版 | 打开邮件，点右上角「⋮ → 下载邮件」 |
+| Apple Mail | 把邮件从列表拖到访达 |
+| Thunderbird | 选中邮件，「文件 → 另存为 → 文件」 |
+
+只复制正文或另存为 HTML 得到的文件无法解析。
 
 ## 支持的文件格式与识别方式
 
 <ProviderFacts id="cmbc_credit" />
 
+文件名里没有「民生信用卡」或「民生银行信用卡」时，Bean-Sieve 会解码邮件标题和正文，在里面找「民生银行」或 `cmbc.com.cn`。
+
+账单的交易分三个区段：消费、退货、还款。每行有交易日、记账日、交易摘要、交易金额和卡号末四位，日期取交易日。账单只写 `MM/DD`，年份按账单月份推断，跨年的 12 月和 1 月交易会归到正确的年份。
+
+账单日从正文的 Statement Date 读取，对账范围是上一个账单日的次日到本期账单日。正文里找不到账单日时，按文件名里的 `YYYY年MM月` 取当月 10 日作为账单日；文件名里也没有时，取运行当月的 10 日。
+
 ## 配置示例
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+民生银行信用卡按户管理：名下所有卡共用一个额度、一份账单，账本里通常也只建一个账户。`accounts` 的键是卡号后四位，把每张卡都指向这个账户：
+
+```yaml title="bean-sieve.yaml" config
+providers:
+  cmbc_credit:
+    accounts:
+      "1234": Liabilities:CreditCard:CMBC
+      "5678": Liabilities:CreditCard:CMBC
+    posting_metadata:
+      - card_last4
+
+rules:
+  - description: "还款"
+    contra_account: Assets:Bank:Checking
+```
+
+多张卡共用一个账户时，账户名看不出是哪张卡。`posting_metadata` 里写上 `card_last4`，输出时会把卡号后四位写在信用卡 posting 下面。
+
+要进一步检查账本里已有的条目，可以把账户列入 `diagnostics.meta_check_accounts`。Bean-Sieve 会在匹配到的条目缺少 `card_last4` 或与账单不一致时输出提示，匹配结果不受影响：
+
+```yaml title="bean-sieve.yaml" config-partial
+diagnostics:
+  meta_check_accounts:
+    - Liabilities:CreditCard:CMBC
+```
+
+交易摘要写入描述，收款方为空，可以用规则的 `target_payee` 补上。
 
 ## 解析出的元数据字段
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+| 字段 | 来源列 | 说明 |
+| :--- | :--- | :--- |
+| `card_last4` | 卡号末四位 | |
+| `posting_date` | 记账日 | 仅消费区段，且记账日与交易日不同时出现 |
+
+默认全部输出。要只输出其中几项，在 `defaults.output_metadata` 里列出字段名；`providers.cmbc_credit.output_metadata` 列出的字段会追加到全局列表上。
 
 ## 已知限制
 
-<Callout type="warn" title="待补充">本节内容尚未整理。</Callout>
+- 退货和还款区段各只解析第一行。一期里有多笔退货或多笔还款时，只有第一笔出现在输出里，其余几笔对应的账本条目会被报为 Extra。
+- 退货和还款行不读记账日，没有 `posting_date`。
+- 金额一律按人民币处理。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。
 
 ## 输出样例
 
@@ -32,6 +80,8 @@ description: 解析民生银行信用卡电子邮件账单，与账本对账
 ```bash
 bean-sieve reconcile 民生信用卡2030年03月电子对账单.eml -c bean-sieve.yaml -l ledger.bean -o pending.bean
 ```
+
+账单里有两张卡，配置把它们都指向 `Liabilities:CreditCard:CMBC`，信用卡 posting 下写了 `card_last4`。账本里已有的 3 月 3 日消费被匹配，不再输出；退货和还款区段各有一行，都被解析出来；账本里 3 月 18 日那笔在账单里找不到，被列为 Extra。
 
 <Tabs items={['账单', '配置', '已有账本', '输出']}>
 
