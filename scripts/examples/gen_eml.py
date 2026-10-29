@@ -470,18 +470,22 @@ def cmb_credit(out_dir: Path) -> None:
         ("0313", "0314", "退款-store-d", "-123.10", "8765", "-123.10", "CN"),
         ("", "0318", "银联在线网络还款", "-1,502.10", "4321", "-1,502.10", ""),
     ]
+    labels = [
+        "",
+        "交易日",
+        "记账日",
+        "交易摘要",
+        "人民币金额",
+        "卡号末四位",
+        "交易地金额",
+        "交易地",
+    ]
+    header = "".join(f"<td>{label}</td>" for label in labels)
     body = "\n".join(
-        f"""    <tr>
-        <td>{t}{p}{d}¥ {a}{c}{o}</td>
-        <td></td>
-        <td>{t}</td>
-        <td>{p}</td>
-        <td>{d}</td>
-        <td>¥ {a}</td>
-        <td>{c}</td>
-        <td>{o}</td>
-        <td>{n}</td>
-    </tr>"""
+        f"""        <tr><td><table><tr>
+            <td></td><td>{t}</td><td>{p}</td><td>{d}</td><td>¥ {a}</td><td>{c}</td>
+            <td>{o}</td><td>{n}</td>
+        </tr></table></td></tr>"""
         for t, p, d, a, c, o, n in rows
     )
     html = f"""<!DOCTYPE HTML>
@@ -489,14 +493,59 @@ def cmb_credit(out_dir: Path) -> None:
 <head><meta charset="UTF-8"><title>招商银行信用卡电子账单</title></head>
 <body>
 <div>您2030年03月信用卡账单已出</div>
-<table class="bgTable">
+<span id="loopBand2">
+<span id="loopHeader2"><span id="fixBand14">
+    <table><tr>{header}</tr></table>
+</span></span>
+<span id="fixBand15">
+    <table class="bgTable">
 {body}
-</table>
+    </table>
+</span>
+</span>
 </body>
 </html>"""
     write_eml(
         out_dir / "招商银行信用卡电子账单2030年03月.eml",
         html,
+        "招商银行信用卡电子账单",
+        encoding="base64",
+    )
+
+    # Older mails draw the column header as an image, put each row in a table
+    # of its own with 交易地 before 交易地金额, and print the billing cycle in
+    # place of the statement month.
+    old_rows = [
+        ("", "0105", "银联在线网络还款", "-864.20", "4321", "-864.20", ""),
+        ("0107", "0108", "支付宝-store-a", "26.40", "4321", "26.40", "CN"),
+        ("0109", "0110", "财付通-restaurant-b午餐", "71.30", "4321", "71.30", "CN"),
+        ("0112", "0113", "overseas-shop-c", "44.60", "8765", "47.20", "HK"),
+        ("0115", "0116", "store-d", "19.70", "8765", "19.70", "CN"),
+    ]
+    old_body = "\n".join(
+        f"""<span id="fixBand15"><table><tr>
+    <td></td><td>{t}</td><td>{p}</td><td>{d}</td><td>¥ {a}</td><td>{c}</td>
+    <td>{n}</td><td>{o}</td>
+</tr></table></span>
+<span id="fixBand2"><img src="line.jpg"></span>"""
+        for t, p, d, a, c, o, n in old_rows
+    )
+    old_html = f"""<!DOCTYPE HTML>
+<html>
+<head><meta charset="UTF-8"><title>招商银行信用卡电子账单</title></head>
+<body>
+<div>以下是您的招商银行信用卡账单</div>
+<table><tr><td>2029/12/19-2030/01/18</td><td>¥ 160.90</td></tr></table>
+<span id="loopBand2">
+<span id="loopHeader2"><span id="fixBand14"><img src="header.jpg"></span></span>
+{old_body}
+</span>
+<div>您本期账单所查询到的积分值截至2029年12月底，敬请留意。</div>
+</body>
+</html>"""
+    write_eml(
+        out_dir / "招商银行信用卡电子账单2030年01月.eml",
+        old_html,
         "招商银行信用卡电子账单",
         encoding="base64",
     )

@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 修复
 
+- 招商银行信用卡：解析表头为图片的旧版账单邮件，邮件账单月份按正文、账单周期和标题识别
 - 建设银行信用卡：境外交易按结算币种和金额入账，原币金额记在 `original_amount`，不再按原币记账
 - 中信银行（国际）、汇丰香港储蓄账户：交易记到配置里唯一的账户，不再输出 `Assets:FIXME`，`balance: true` 会生成余额断言
 - 汇丰香港信用卡：文件名不带卡号后缀时，交易记到配置里唯一的账户

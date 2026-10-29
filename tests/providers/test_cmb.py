@@ -3,6 +3,7 @@
 import base64
 from datetime import date
 from decimal import Decimal
+from email.header import Header
 from pathlib import Path
 
 import pytest
@@ -11,11 +12,11 @@ from bean_sieve.providers import get_provider
 from bean_sieve.providers.banks.credit.cmb import CMBCreditProvider
 
 
-def create_cmb_eml(html_content: str) -> str:
+def create_cmb_eml(html_content: str, subject: str = "招商银行信用卡电子账单") -> str:
     """Create an EML file content with the given HTML (base64 encoded)."""
     encoded = base64.b64encode(html_content.encode("utf-8")).decode("ascii")
     return f"""From: creditcard@cmbchina.com
-Subject: =?utf-8?B?5oub5ZWG6ZO26KGM5L+h55So5Y2h55S15a2Q6LSm5Y2V?=
+Subject: {Header(subject, "utf-8").encode()}
 To: test@example.com
 MIME-Version: 1.0
 Content-Type: text/html; charset="utf-8"
@@ -25,8 +26,28 @@ Content-Transfer-Encoding: base64
 """
 
 
+_TEXT_HEADER = (
+    "",
+    "交易日",
+    "记账日",
+    "交易摘要",
+    "人民币金额",
+    "卡号末四位",
+    "交易地金额",
+    "交易地",
+)
+
+
+def _cells(values) -> str:
+    return "".join(f"<td>{v}</td>" for v in values)
+
+
 def create_cmb_html_with_transactions(
-    transactions: list[dict], statement_month: str = "2025年12月"
+    transactions: list[dict],
+    statement_month: str = "2025年12月",
+    *,
+    template: str = "text",
+    usd_transactions: list[dict] | None = None,
 ) -> str:
     """Create CMB statement HTML with transaction rows.
 
@@ -39,34 +60,64 @@ def create_cmb_html_with_transactions(
     - original_amount: optional 交易地金额, defaults to amount
     - country: optional 交易地, defaults to empty
 
-    statement_month is the 账单 header CMB derives the billing cycle from.
+    template "text" is the current mail: a row of column labels over one
+    bgTable. "image" is the older mail: the header is an image, each row a
+    table of its own with 交易地 before 交易地金额, and the month only shows
+    as the billing cycle, which statement_month places from the 1st to the
+    28th. usd_transactions adds a 美元账户 section to a "text" mail.
     """
-    rows = []
-    for txn in transactions:
-        original_amount = txn.get("original_amount", txn["amount"])
-        country = txn.get("country", "")
-        # Create 9-cell row structure matching CMB format
-        row = f"""<tr>
-            <td>{txn["trans_date"]}{txn["post_date"]}{txn["description"]}¥ {txn["amount"]}{txn["card_last4"]}{txn["amount"]}</td>
-            <td></td>
-            <td>{txn["trans_date"]}</td>
-            <td>{txn["post_date"]}</td>
-            <td>{txn["description"]}</td>
-            <td>¥ {txn["amount"]}</td>
-            <td>{txn["card_last4"]}</td>
-            <td>{original_amount}</td>
-            <td>{country}</td>
-        </tr>"""
-        rows.append(row)
 
+    def fields(txn: dict) -> tuple:
+        return (
+            txn["trans_date"],
+            txn["post_date"],
+            txn["description"],
+            txn["amount"],
+            txn["card_last4"],
+            txn.get("original_amount", txn["amount"]),
+            txn.get("country", ""),
+        )
+
+    year, month = (int(x) for x in statement_month.rstrip("月").split("年"))
+    if template == "image":
+        rows = "".join(
+            f"""<span id="fixBand15"><table><tr>
+            {_cells(["", t, p, d, f"¥ {a}", c, n, o])}
+            </tr></table></span><span id="fixBand2"><img src="line.jpg"></span>"""
+            for t, p, d, a, c, o, n in map(fields, transactions)
+        )
+        return f"""<html><body>
+<div>以下是您的招商银行信用卡账单</div>
+<table><tr><td>{year}/{month:02d}/01-{year}/{month:02d}/28</td></tr></table>
+<span id="loopBand2">
+<span id="loopHeader2"><span id="fixBand14"><img src="header.jpg"></span></span>
+{rows}
+</span>
+<div>您本期账单所查询到的积分值截至{year - 1}年01月底，敬请留意。</div>
+</body></html>"""
+
+    def section(header: tuple, txns: list[dict], symbol: str) -> str:
+        body = "".join(
+            f"""<tr><td><table><tr>
+            {_cells(["", t, p, d, f"{symbol} {a}", c, o, n])}
+            </tr></table></td></tr>"""
+            for t, p, d, a, c, o, n in map(fields, txns)
+        )
+        return f"""<span id="loopBand2">
+<span id="loopHeader2"><span id="fixBand14"><table><tr>{_cells(header)}</tr></table></span></span>
+<span id="fixBand15"><table class="bgTable">{body}</table></span>
+</span>"""
+
+    sections = section(_TEXT_HEADER, transactions, "¥")
+    if usd_transactions:
+        usd_header = tuple("美元金额" if h == "人民币金额" else h for h in _TEXT_HEADER)
+        sections += section(usd_header, usd_transactions, "$")
     return f"""<!DOCTYPE HTML>
 <html>
 <head><meta charset="UTF-8"></head>
 <body>
 <div>您{statement_month}信用卡账单已出</div>
-<table class="bgTable">
-    {"".join(rows)}
-</table>
+{sections}
 </body>
 </html>"""
 
@@ -379,15 +430,7 @@ class TestCMBEmptyStatement:
 
     def test_empty_statement(self, tmp_path):
         """Test handling of statement with no transactions."""
-        html = """<!DOCTYPE HTML>
-<html>
-<head><meta charset="UTF-8"></head>
-<body>
-<div>您2025年12月信用卡账单已出</div>
-<table class="bgTable">
-</table>
-</body>
-</html>"""
+        html = create_cmb_html_with_transactions([])
         file_path = tmp_path / "招商银行信用卡电子账单.eml"
         file_path.write_text(create_cmb_eml(html), encoding="utf-8")
 
@@ -429,6 +472,244 @@ class TestCMBStatementPeriod:
         periods = {txn.card_last4: txn.statement_period for txn in txns}
         assert periods["2468"] == (date(2030, 2, 27), date(2030, 3, 31))
         assert periods["1357"] == (date(2030, 3, 1), date(2030, 3, 31))
+
+
+_TEMPLATE_ROWS = [
+    {
+        "trans_date": "",
+        "post_date": "0305",
+        "description": "银联在线网络还款",
+        "card_last4": "4321",
+        "amount": "-652.40",
+    },
+    {
+        "trans_date": "0225",
+        "post_date": "0306",
+        "description": "消费分期-payee-a 002-006",
+        "card_last4": "4321",
+        "amount": "45.50",
+    },
+    {
+        "trans_date": "0310",
+        "post_date": "0311",
+        "description": "payee-b",
+        "card_last4": "8765",
+        "amount": "31.60",
+        "original_amount": "36.90",
+        "country": "HK",
+    },
+    {
+        "trans_date": "0314",
+        "post_date": "0315",
+        "description": "退款-payee-c",
+        "card_last4": "8765",
+        "amount": "-12.60",
+        "country": "CN",
+    },
+]
+
+
+class TestCMBMailTemplates:
+    """Tests for the two mail layouts of the transaction table."""
+
+    def _parse(self, tmp_path: Path, html: str, name: str = "statement.eml"):
+        path = tmp_path / name
+        path.write_text(create_cmb_eml(html), encoding="utf-8")
+        provider = CMBCreditProvider()
+        txns = provider.parse(path)
+        return txns, provider.coverage(path, txns)
+
+    @staticmethod
+    def _shape(txns) -> list[tuple]:
+        return [
+            (
+                t.date,
+                t.amount,
+                t.currency,
+                t.description,
+                t.card_last4,
+                t.metadata,
+                t.statement_period,
+                t.source_line,
+            )
+            for t in txns
+        ]
+
+    def test_both_templates_yield_the_same_transactions(self, tmp_path):
+        text, _ = self._parse(
+            tmp_path,
+            create_cmb_html_with_transactions(_TEMPLATE_ROWS, "2030年03月"),
+            "text.eml",
+        )
+        image, _ = self._parse(
+            tmp_path,
+            create_cmb_html_with_transactions(
+                _TEMPLATE_ROWS, "2030年03月", template="image"
+            ),
+            "image.eml",
+        )
+
+        assert len(text) == 4
+        assert self._shape(image) == self._shape(text)
+        assert text[2].metadata["original_amount"] == Decimal("36.90")
+        assert text[2].metadata["country"] == "HK"
+
+    def test_image_header_mail_is_itemized_for_the_cycle_month(self, tmp_path):
+        txns, (cov,) = self._parse(
+            tmp_path,
+            create_cmb_html_with_transactions(
+                _TEMPLATE_ROWS, "2030年03月", template="image"
+            ),
+        )
+
+        assert cov.itemized
+        assert (cov.start, cov.end) == (date(2030, 3, 1), date(2030, 3, 31))
+        assert cov.rows == txns
+
+    def test_amount_with_a_gap_after_the_sign(self, tmp_path):
+        html = create_cmb_html_with_transactions(
+            [{**_TEMPLATE_ROWS[0], "amount": "- 652.40"}],
+            "2030年03月",
+            template="image",
+        ).replace("¥", "￥")
+
+        (txn,), _ = self._parse(tmp_path, html)
+
+        assert txn.amount == Decimal("-652.40")
+
+    def test_usd_section_is_left_to_the_reissue(self, tmp_path):
+        html = create_cmb_html_with_transactions(
+            _TEMPLATE_ROWS[:1],
+            "2030年03月",
+            usd_transactions=[{**_TEMPLATE_ROWS[2], "amount": "4.70"}],
+        )
+
+        txns, covs = self._parse(tmp_path, html)
+
+        assert [t.description for t in txns] == ["银联在线网络还款"]
+        assert [c.account for c in covs] == ["CNY"]
+
+    def test_header_without_rows_is_an_itemized_quiet_month(self, tmp_path):
+        txns, (cov,) = self._parse(
+            tmp_path, create_cmb_html_with_transactions([], "2030年03月")
+        )
+
+        assert txns == []
+        assert cov.itemized
+
+    def test_unrecognised_layout_warns_and_is_not_itemized(self, tmp_path, caplog):
+        html = create_cmb_html_with_transactions(_TEMPLATE_ROWS, "2030年03月").replace(
+            "<td>记账日</td>", "<td>入账日</td>"
+        )
+
+        txns, (cov,) = self._parse(tmp_path, html, "changed.eml")
+
+        assert txns == []
+        assert not cov.itemized
+        assert "Unrecognised CMB statement layout" in caplog.text
+        assert "changed.eml" in caplog.text
+
+    def test_rows_that_fit_no_column_order_warn_and_are_not_itemized(
+        self, tmp_path, caplog
+    ):
+        html = create_cmb_html_with_transactions(
+            _TEMPLATE_ROWS, "2030年03月", template="image"
+        ).replace("<tr>", "<tr><td></td>")
+
+        txns, (cov,) = self._parse(tmp_path, html, "changed.eml")
+
+        assert txns == []
+        assert not cov.itemized
+        assert "changed.eml" in caplog.text
+
+    def test_summary_row_of_a_quiet_month_is_not_a_layout_change(
+        self, tmp_path, caplog
+    ):
+        summary = (
+            "<table><tr><td>卡号末四位</td><td>8765</td>"
+            "<td>本期应还</td><td>¥ 0.00</td></tr></table>"
+        )
+        html = create_cmb_html_with_transactions([], "2030年03月").replace(
+            "</body>", f"{summary}</body>"
+        )
+
+        txns, (cov,) = self._parse(tmp_path, html)
+
+        assert txns == []
+        assert cov.itemized
+        assert "Unrecognised" not in caplog.text
+
+    def test_section_ends_with_its_band(self, tmp_path):
+        trailer = "<table><tr>{}</tr></table>".format(
+            "".join(
+                f"<td>{v}</td>"
+                for v in ["", "0320", "0321", "payee-z", "¥ 3.10", "4321", "", ""]
+            )
+        )
+        html = create_cmb_html_with_transactions(
+            _TEMPLATE_ROWS, "2030年03月", template="image"
+        ).replace("</body>", f"{trailer}</body>")
+
+        txns, _ = self._parse(tmp_path, html)
+
+        assert [t.description for t in txns] == [
+            r["description"] for r in _TEMPLATE_ROWS
+        ]
+
+
+class TestCMBMailMonth:
+    """Tests for reading the statement month of a mail."""
+
+    def _month(
+        self,
+        tmp_path: Path,
+        html: str,
+        name="statement.eml",
+        subject="招商银行信用卡电子账单",
+    ):
+        path = tmp_path / name
+        path.write_text(create_cmb_eml(html, subject), encoding="utf-8")
+        (cov,) = CMBCreditProvider().coverage(path, [])
+        return cov.start, cov.end
+
+    def test_cycle_end_gives_the_month(self, tmp_path):
+        html = create_cmb_html_with_transactions([], "2030年03月", template="image")
+
+        assert self._month(tmp_path, html) == (date(2030, 3, 1), date(2030, 3, 31))
+
+    def test_cycle_end_bounds_the_row_year(self, tmp_path):
+        """A row posted after the closing date belongs to the year before."""
+        rows = [{**_TEMPLATE_ROWS[0], "post_date": "0330"}]
+        html = create_cmb_html_with_transactions(rows, "2030年03月", template="image")
+        path = tmp_path / "statement.eml"
+        path.write_text(create_cmb_eml(html), encoding="utf-8")
+
+        (txn,) = CMBCreditProvider().parse(path)
+
+        assert txn.date == date(2029, 3, 30)
+
+    def test_summary_only_mail_takes_the_subject_month(self, tmp_path):
+        html = "<html><body><div>本期应还金额 ¥ 52.10</div></body></html>"
+
+        assert self._month(
+            tmp_path, html, subject="招商银行信用卡电子账单2030年4月"
+        ) == (date(2030, 4, 1), date(2030, 4, 30))
+
+    def test_falls_back_to_the_file_name(self, tmp_path):
+        html = "<html><body><div>本期应还金额 ¥ 52.10</div></body></html>"
+
+        assert self._month(tmp_path, html, "账单2030年05月.eml") == (
+            date(2030, 5, 1),
+            date(2030, 5, 31),
+        )
+
+    def test_no_month_anywhere_warns(self, tmp_path, caplog):
+        html = "<html><body><div>本期应还金额 ¥ 52.10</div></body></html>"
+
+        start, _ = self._month(tmp_path, html, "statement.eml")
+
+        assert (start.year, start.month) == (date.today().year, date.today().month)
+        assert "No statement month in" in caplog.text
 
 
 # x of each table column in the reissued PDF, as the bank's template places them.
