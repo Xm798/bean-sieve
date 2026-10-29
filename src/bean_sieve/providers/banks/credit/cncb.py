@@ -8,11 +8,10 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import xlrd
-from xlrd.biffh import XLRDError
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import normalize_cell_str
+from ..._tabular import normalize_cell_str, sheet_head_contains
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -54,7 +53,6 @@ class CNCBCreditProvider(BaseProvider):
     COL_TRANS_AMOUNT = 6  # 交易金额
     COL_SETTLE_AMOUNT = 7  # 结算金额
 
-    HEADER_KEYWORDS = ("交易日期", "入账日期")
     EXPECTED_HEADERS = (
         "交易日期",
         "入账日期",
@@ -65,28 +63,11 @@ class CNCBCreditProvider(BaseProvider):
         "交易金额",
         "结算金额",
     )
+    HEADER_KEYWORDS = EXPECTED_HEADERS[:2]
 
     @classmethod
     def _match_content(cls, file_path: Path) -> bool:
-        """Match the credit export's exact column header within the first 10 rows."""
-        try:
-            workbook = xlrd.open_workbook(str(file_path), on_demand=True)
-        except (OSError, XLRDError):
-            return False
-        try:
-            sheet = workbook.sheet_by_index(0)
-            if sheet.ncols < len(cls.EXPECTED_HEADERS):
-                return False
-            return any(
-                tuple(
-                    normalize_cell_str(sheet.cell_value(row_idx, col))
-                    for col in range(len(cls.EXPECTED_HEADERS))
-                )
-                == cls.EXPECTED_HEADERS
-                for row_idx in range(min(10, sheet.nrows))
-            )
-        finally:
-            workbook.release_resources()
+        return sheet_head_contains(file_path, cls.EXPECTED_HEADERS, nrows=10)
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse CNCB credit card XLS statement."""
