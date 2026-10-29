@@ -25,7 +25,7 @@ class BOCDebitProvider(BaseProvider):
     Path: 使用卡号登录 → 查询 → 复制表格 → 保存为 CSV
 
     File format:
-    - Encoding: UTF-8
+    - Encoding: UTF-8, or UTF-16 LE with a BOM
     - Row 0: column headers
     - Row 1+: data rows
     - Columns: 交易时间, 业务摘要, 对方账户名称, 对方账户账号, 币种, 钞/汇,

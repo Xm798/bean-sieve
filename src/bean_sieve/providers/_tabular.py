@@ -8,6 +8,7 @@ would add an interface layer without adding depth.
 
 from __future__ import annotations
 
+import codecs
 import csv
 import re
 import shutil
@@ -52,8 +53,31 @@ def normalize_cell_str(value: object) -> str:
 CJK_ENCODINGS: tuple[str, ...] = ("utf-8-sig", "utf-8", "gbk")
 
 
+_BOM_ENCODINGS: tuple[tuple[bytes, str], ...] = (
+    (codecs.BOM_UTF8, "utf-8-sig"),
+    (codecs.BOM_UTF16_LE, "utf-16"),
+    (codecs.BOM_UTF16_BE, "utf-16"),
+)
+
+
+def _bom_encoding(path: Path) -> str | None:
+    with open(path, "rb") as f:
+        head = f.read(3)
+    for bom, encoding in _BOM_ENCODINGS:
+        if head.startswith(bom):
+            return encoding
+    return None
+
+
 def read_text_lines(path: Path, encodings: Sequence[str] = CJK_ENCODINGS) -> list[str]:
-    """Read a text statement, trying each encoding in turn."""
+    """Read a text statement, trying each encoding in turn.
+
+    A byte-order mark names the encoding outright, so it is tried before
+    ``encodings``; some banks export UTF-16, which no CJK fallback can decode.
+    """
+    bom_encoding = _bom_encoding(path)
+    if bom_encoding:
+        encodings = (bom_encoding, *encodings)
     for encoding in encodings:
         try:
             with open(path, encoding=encoding) as f:

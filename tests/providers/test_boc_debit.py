@@ -313,3 +313,22 @@ class TestBOCDebitProvider:
         pdf_file.write_bytes(b"%PDF-1.4")
 
         assert not BOCDebitProvider.can_handle(pdf_file)
+
+    def test_parse_utf16_le_export(self, tmp_path: Path) -> None:
+        """Test parsing a UTF-16 LE export with a BOM."""
+        csv_file = tmp_path / "中国银行.csv"
+        content = _make_csv(
+            [
+                '2030/01/02 09:00:00,网上快捷支付,payee-a,X100******999N,人民币元,-,,"20.00","1,000.00",在线交易网关,remark-a',
+            ]
+        )
+        csv_file.write_bytes(("﻿" + content).encode("utf-16-le"))
+
+        provider = BOCDebitProvider()
+        assert provider.can_handle(csv_file)
+        txns = provider.parse(csv_file)
+
+        assert len(txns) == 1
+        assert txns[0].date.isoformat() == "2030-01-02"
+        assert txns[0].amount == Decimal("20.00")
+        assert txns[0].payee == "payee-a"

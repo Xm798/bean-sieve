@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### 修复
+
+- 中国银行借记卡：解析 UTF-16 编码的 CSV 导出文件
+
 ## [0.8.0] - 2026-10-29
 
 ### 新增

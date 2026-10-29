@@ -92,6 +92,19 @@ class TestReadTextLines:
 
         assert read_text_lines(path) == ["日期,金额\n", "2030-01-02,10.00\n"]
 
+    @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+    def test_utf16_bom_selects_utf16(self, tmp_path: Path, encoding: str) -> None:
+        path = tmp_path / "utf16.csv"
+        path.write_bytes("﻿日期,金额\n2030-01-02,10.00\n".encode(encoding))
+
+        assert read_text_lines(path) == ["日期,金额\n", "2030-01-02,10.00\n"]
+
+    def test_bom_overrides_given_encodings(self, tmp_path: Path) -> None:
+        path = tmp_path / "utf16.csv"
+        path.write_bytes("﻿摘要\n".encode("utf-16-le"))
+
+        assert read_text_lines(path, ("gbk",)) == ["摘要\n"]
+
     def test_gbk_falls_back_after_utf8(self, tmp_path: Path) -> None:
         path = tmp_path / "gbk.csv"
         path.write_bytes("摘要,金额\n".encode("gbk"))
