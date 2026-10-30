@@ -1259,3 +1259,22 @@ class TestABCUnreadableMail:
 
         assert "刷卡金抵扣 ---" not in output
         assert "状态: ✅ 平账 (刷卡金 5.00，账单周期未读出，未生成分录)" in output
+
+
+def test_mail_without_html_part_warns(tmp_path, caplog):
+    path = tmp_path / "plain.eml"
+    path.write_text(
+        "From: sender@example.com\n"
+        "MIME-Version: 1.0\n"
+        'Content-Type: multipart/alternative; boundary="b"\n\n'
+        "--b\n"
+        "Content-Type: text/plain; charset=utf-8\n\n"
+        "payee-a\n"
+        "--b--\n",
+        encoding="utf-8",
+    )
+
+    with caplog.at_level(logging.WARNING):
+        assert ABCCreditProvider().parse(path) == []
+
+    assert "No HTML body in ABC mail plain.eml" in caplog.text

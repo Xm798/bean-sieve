@@ -4,7 +4,8 @@ Pins which accounts a statement period is attributed to when one provider
 config maps several keys to different accounts, the preserving rule that keeps
 platform statements (alipay/wechat/zabank) covering every configured account,
 and what a per-card statement refuses to claim. Also pins how
-``assign_statement_periods`` derives those periods.
+``assign_statement_periods`` derives those periods, and how ``stamp_cycle`` and
+``cycle_coverages`` turn a printed cycle into one coverage per card.
 """
 
 from datetime import date
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from bean_sieve.config import Config
 from bean_sieve.config.schema import ProviderConfig
+from bean_sieve.core.metadata_keys import STATEMENT_CYCLE
 from bean_sieve.core.types import Transaction
 from bean_sieve.providers.base import BaseProvider
 
@@ -336,6 +338,42 @@ def test_missing_cycle_falls_back_to_each_card_row_span() -> None:
     assert first.statement_period == span
     assert last.statement_period == span
     assert other.statement_period == (date(2030, 2, 14), date(2030, 2, 14))
+
+
+def test_stamp_cycle_records_the_printed_cycle_beside_the_widened_period() -> None:
+    delayed = make_bare_txn(date(2030, 1, 20), "1111", post_date=date(2030, 2, 2))
+
+    BaseProvider.stamp_cycle([delayed], PERIOD_JAN)
+
+    assert delayed.statement_period == (date(2030, 1, 1), date(2030, 2, 2))
+    assert delayed.metadata[STATEMENT_CYCLE] == PERIOD_JAN
+
+
+def test_stamp_cycle_without_a_cycle_records_none() -> None:
+    row = make_bare_txn(date(2030, 1, 5), "1111")
+
+    BaseProvider.stamp_cycle([row], None)
+
+    assert STATEMENT_CYCLE not in row.metadata
+
+
+def test_cycle_coverages_cover_each_card_for_the_printed_cycle() -> None:
+    delayed = make_bare_txn(date(2030, 1, 20), "1111", post_date=date(2030, 2, 2))
+    other = make_bare_txn(date(2030, 1, 8), "2222")
+    unkeyed = make_bare_txn(date(2030, 1, 9), "")
+    BaseProvider.stamp_cycle([delayed, other, unkeyed], PERIOD_JAN)
+    unstamped = make_bare_txn(date(2030, 1, 10), "1111")
+
+    coverages = BaseProvider.cycle_coverages(
+        [delayed, other, unkeyed, unstamped], source="export", clip=True
+    )
+
+    assert [(c.account, c.start, c.end, c.rows) for c in coverages] == [
+        ("1111", *PERIOD_JAN, [delayed]),
+        ("2222", *PERIOD_JAN, [other]),
+        ("", *PERIOD_JAN, [unkeyed]),
+    ]
+    assert all(c.source == "export" and c.clip for c in coverages)
 
 
 class FakeUnnamedPerCardBank(FakePerCardBank):

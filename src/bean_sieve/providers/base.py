@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import codecs
 import email
 import quopri
 import re
@@ -18,11 +19,36 @@ from bs4 import BeautifulSoup
 
 from ..config import Config
 from ..core.coverage import Coverage
+from ..core.metadata_keys import STATEMENT_CYCLE
 from ..core.types import ReconcileContext, ReconcileResult, Transaction
+from ._pdf import first_page_text
 from ._tabular import with_bom_encoding
 
 if TYPE_CHECKING:
     from ..core.preset_rules import PresetRule
+
+
+_META_CHARSET_RE = re.compile(rb"<meta[^>]*charset=[\"']?([\w-]+)", re.IGNORECASE)
+_GB_CHARSETS = ("gb2312", "gbk")
+
+
+def _decode_body(part: Message, body: bytes) -> str:
+    """Decode a mail body by the charset its MIME header or HTML <meta> declares.
+
+    Some banks leave the MIME charset empty and name GBK only in a <meta> tag,
+    or declare gb2312 while using characters outside it; GB18030 decodes every
+    member of that family.
+    """
+    charset = part.get_content_charset()
+    if not charset and (meta := _META_CHARSET_RE.search(body)):
+        charset = meta.group(1).decode("ascii").lower()
+    if charset in _GB_CHARSETS:
+        charset = "gb18030"
+    try:
+        codecs.lookup(charset or "utf-8")
+    except LookupError:
+        charset = None
+    return body.decode(charset or "utf-8", errors="replace")
 
 
 class BaseProvider(ABC):
@@ -129,10 +155,7 @@ class BaseProvider(ABC):
     @classmethod
     def _read_pdf_first_page(cls, file_path: Path) -> str:
         """Return the text of a PDF's first page; PDF bytes are compressed."""
-        import fitz
-
-        with fitz.open(file_path) as doc:
-            return str(doc[0].get_text()) if doc.page_count else ""
+        return first_page_text(file_path)
 
     @classmethod
     def _read_eml_text(cls, file_path: Path) -> str:
@@ -234,7 +257,45 @@ class BaseProvider(ABC):
         """
         return []
 
+    @staticmethod
+    def cycle_coverages(
+        transactions: list[Transaction],
+        *,
+        source: str = "statement",
+        clip: bool = False,
+    ) -> list[Coverage]:
+        """Cover each card for the cycle stamped on its rows by stamp_cycle().
+
+        statement_period also spans any row booked outside the cycle, which
+        would make consecutive statements overlap, so this reads the cycle as
+        printed. Rows without a stamp cover nothing.
+        """
+        by_card: dict[str, list[Transaction]] = {}
+        for txn in transactions:
+            if STATEMENT_CYCLE in txn.metadata:
+                by_card.setdefault(txn.card_last4 or "", []).append(txn)
+        return [
+            Coverage(
+                card,
+                *rows[0].metadata[STATEMENT_CYCLE],
+                rows=rows,
+                source=source,
+                clip=clip,
+            )
+            for card, rows in by_card.items()
+        ]
+
     # === Statement Period ===
+
+    @classmethod
+    def stamp_cycle(
+        cls, transactions: list[Transaction], cycle: tuple[date, date] | None
+    ) -> None:
+        """Assign statement periods and record the printed cycle on every row."""
+        cls.assign_statement_periods(transactions, cycle)
+        if cycle:
+            for txn in transactions:
+                txn.metadata[STATEMENT_CYCLE] = cycle
 
     @staticmethod
     def assign_statement_periods(
@@ -446,29 +507,29 @@ class BaseProvider(ABC):
         """Decode email payload with proper encoding handling."""
         payload = part.get_payload(decode=False)
         encoding = part.get("Content-Transfer-Encoding", "").lower()
-        charset = part.get_content_charset() or "utf-8"
 
         if isinstance(payload, bytes):
-            return payload.decode(charset, errors="replace")
+            return _decode_body(part, payload)
 
         if not isinstance(payload, str):
             return ""
 
         if encoding == "base64":
             try:
-                decoded = base64.b64decode(payload)
-                return decoded.decode(charset, errors="replace")
+                return _decode_body(part, base64.b64decode(payload))
             except Exception:
                 return payload
 
         if encoding == "quoted-printable":
             try:
-                decoded = quopri.decodestring(payload.encode())
-                return decoded.decode(charset, errors="replace")
+                return _decode_body(part, quopri.decodestring(payload.encode()))
             except Exception:
                 return payload
 
-        return payload
+        # The str form of a 7bit/8bit body is already decoded as ASCII, losing
+        # its non-ASCII bytes; the decoded form returns them as received.
+        body = part.get_payload(decode=True)
+        return _decode_body(part, body) if isinstance(body, bytes) else payload
 
     def decode_subject(self, msg: Message) -> str:
         """Decode email subject with proper encoding handling."""

@@ -6,12 +6,13 @@ import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from ....core.coverage import Coverage
-from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY, STATEMENT_CYCLE
+from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
 from ....core.types import Transaction
 from ... import register_provider
+from ..._pdf import pdf_lines
 from ...base import BaseProvider
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -24,8 +25,6 @@ _CYCLE = r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})"
 _MAIL_CYCLE_RE = re.compile(rf"账单周期(?:\s*Statement Cycle)?\s*{_CYCLE}")
 # The reissue prints the cycle as a cell of its own, under a header row.
 _PDF_CYCLE_RE = re.compile(rf"^{_CYCLE}$")
-# Spans of one PDF line have tops within this many points of each other.
-_PDF_LINE_TOLERANCE = 2.0
 
 
 @register_provider
@@ -63,29 +62,15 @@ class CCBCreditProvider(BaseProvider):
             for row_idx, cells in enumerate(rows, start=1)
             if (txn := self._parse_row(cells, file_path, row_idx)) is not None
         ]
-        self.assign_statement_periods(transactions, cycle)
-        if cycle:
-            for txn in transactions:
-                txn.metadata[STATEMENT_CYCLE] = cycle
+        self.stamp_cycle(transactions, cycle)
         return transactions
 
     def coverage(
         self, file_path: Path, transactions: list[Transaction]
     ) -> list[Coverage]:
-        """Cover each card for the printed cycle; the mail outranks its reissue.
-
-        statement_period also spans any row booked outside the cycle, so
-        coverage reads the cycle as printed.
-        """
+        """Cover each card for the printed cycle; the mail outranks its reissue."""
         source = "reissue" if file_path.suffix.lower() == ".pdf" else "statement"
-        by_card: dict[str, list[Transaction]] = {}
-        for txn in transactions:
-            if STATEMENT_CYCLE in txn.metadata:
-                by_card.setdefault(txn.card_last4 or "", []).append(txn)
-        return [
-            Coverage(card, *rows[0].metadata[STATEMENT_CYCLE], rows=rows, source=source)
-            for card, rows in by_card.items()
-        ]
+        return self.cycle_coverages(transactions, source=source)
 
     def _read_eml(
         self, file_path: Path
@@ -110,7 +95,7 @@ class CCBCreditProvider(BaseProvider):
         A row's cells share a line: two dates, the card suffix, the
         description (absent when blank) and two currency and amount pairs.
         """
-        lines = _pdf_lines(file_path)
+        lines = pdf_lines(file_path)
         cycle = next(
             (m for line in lines for cell in line if (m := _PDF_CYCLE_RE.match(cell))),
             None,
@@ -214,54 +199,3 @@ def _pdf_row(cells: list[str]) -> list[str] | None:
     ):
         return None
     return [*cells[:3], " ".join(cells[3:-4]), *cells[-4:]]
-
-
-def _pdf_lines(file_path: Path) -> list[list[str]]:
-    """Return the PDF's printed lines, each as its cells read left to right.
-
-    A line is the spans whose tops lie within _PDF_LINE_TOLERANCE of its
-    first span's. PyMuPDF can join neighbouring cells into one span, so a
-    span is cut into cells wherever its characters leave a gap wider than
-    the font size.
-    """
-    import fitz
-
-    lines: list[list[str]] = []
-    with fitz.open(file_path) as doc:
-        for page in doc:
-            layout = cast(dict[str, Any], page.get_text("rawdict"))
-            cells = sorted(
-                cell
-                for block in layout["blocks"]
-                for line in block.get("lines", [])
-                for span in line["spans"]
-                for cell in _span_cells(span)
-            )
-            row: list[tuple[float, float, str]] = []
-            for cell in cells:
-                if row and cell[0] - row[0][0] > _PDF_LINE_TOLERANCE:
-                    lines.append([text for _, _, text in sorted(row, key=_cell_x)])
-                    row = []
-                row.append(cell)
-            if row:
-                lines.append([text for _, _, text in sorted(row, key=_cell_x)])
-    return lines
-
-
-def _span_cells(span: dict[str, Any]) -> list[tuple[float, float, str]]:
-    """Cut a span into (top, x, text) cells at gaps wider than its font size."""
-    runs: list[list[dict[str, Any]]] = [[]]
-    for char in span["chars"]:
-        if runs[-1] and char["bbox"][0] - runs[-1][-1]["bbox"][2] > span["size"]:
-            runs.append([])
-        runs[-1].append(char)
-    top = span["bbox"][1]
-    return [
-        (top, run[0]["bbox"][0], text)
-        for run in runs
-        if run and (text := "".join(char["c"] for char in run).strip())
-    ]
-
-
-def _cell_x(cell: tuple[float, float, str]) -> float:
-    return cell[1]

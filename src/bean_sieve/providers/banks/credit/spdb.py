@@ -21,6 +21,7 @@ from ....core.metadata_keys import (
 )
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import currency_code
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -174,11 +175,9 @@ class SPDBCreditProvider(BaseProvider):
                 row, source_line=index, file_path=file_path, datemode=0
             )
             if transaction:
-                if cycle:
-                    transaction.metadata[STATEMENT_CYCLE] = cycle
                 transactions.append(transaction)
 
-        self.assign_statement_periods(transactions, cycle)
+        self.stamp_cycle(transactions, cycle)
         return transactions
 
     @staticmethod
@@ -452,12 +451,4 @@ class SPDBCreditProvider(BaseProvider):
     @staticmethod
     def _map_currency(value: str) -> str:
         """Map statement currency labels to ISO currency codes."""
-        mapping = {
-            "人民币": "CNY",
-            "美元": "USD",
-            "欧元": "EUR",
-            "英镑": "GBP",
-            "日元": "JPY",
-            "港币": "HKD",
-        }
-        return mapping.get(value, value.upper())
+        return currency_code(value) or value.upper()

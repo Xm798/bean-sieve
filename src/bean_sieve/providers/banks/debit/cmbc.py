@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from ....core.types import Transaction
 from ... import register_provider
+from ..._tabular import currency_code
 from ...base import BaseProvider
 
 if TYPE_CHECKING:
@@ -27,14 +28,6 @@ _PERIOD_RE = re.compile(r"起止日期:\s*(\d{4}/\d{2}/\d{2})-(\d{4}/\d{2}/\d{2}
 _CURRENCY_RE = re.compile(r"币\s*种:\s*(\S+)")
 _COUNT_RE = re.compile(r"合计笔数:\s*(\d+)")
 _DATE_RE = re.compile(r"\d{4}/\d{2}/\d{2}")
-_CURRENCIES = {
-    "人民币": "CNY",
-    "美元": "USD",
-    "港币": "HKD",
-    "欧元": "EUR",
-    "英镑": "GBP",
-    "日元": "JPY",
-}
 # The rule line, the totals line or the print stamp closes the table on a page.
 _FOOTER_PREFIXES = ("__", "支出交易总额", "打印渠道")
 
@@ -174,7 +167,7 @@ class CMBCDebitProvider(BaseProvider):
                 rows.extend(page_rows)
 
         currency_name = _CURRENCY_RE.search(header)
-        currency = _CURRENCIES.get(currency_name.group(1)) if currency_name else None
+        currency = currency_code(currency_name.group(1)) if currency_name else None
         if currency is None:
             logger.warning("Unsupported currency in %s", file_path)
             return []

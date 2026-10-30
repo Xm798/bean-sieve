@@ -16,6 +16,7 @@ import shutil
 import tempfile
 import warnings
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -36,6 +37,14 @@ def to_decimal(value: object) -> Decimal | None:
         d = Decimal(cleaned)
         return d if d != 0 else None
     except InvalidOperation:
+        return None
+
+
+def parse_stamp(value: str, fmt: str) -> datetime | None:
+    """Parse a date or time cell with ``fmt``; None when it does not fit."""
+    try:
+        return datetime.strptime(value, fmt)
+    except ValueError:
         return None
 
 
@@ -135,6 +144,33 @@ def first_masked_card_last4(lines: Iterable[str]) -> str | None:
         if last4:
             return last4
     return None
+
+
+# Chinese currency names as statements print them. A provider adds its own
+# spellings (e.g. 人民币元) on top of this table.
+CURRENCY_CODES: dict[str, str] = {
+    "人民币": "CNY",
+    "美元": "USD",
+    "港币": "HKD",
+    "澳门元": "MOP",
+    "新台币": "TWD",
+    "欧元": "EUR",
+    "英镑": "GBP",
+    "日元": "JPY",
+    "韩元": "KRW",
+    "新加坡元": "SGD",
+    "澳大利亚元": "AUD",
+    "澳元": "AUD",
+    "加拿大元": "CAD",
+    "瑞士法郎": "CHF",
+    "新西兰元": "NZD",
+    "泰铢": "THB",
+}
+
+
+def currency_code(name: str | None) -> str | None:
+    """Return the ISO code of a Chinese currency name, or None if unknown."""
+    return CURRENCY_CODES.get(name or "")
 
 
 def join_description(*parts: str) -> str:

@@ -8,16 +8,17 @@ from dataclasses import dataclass
 from datetime import date, time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from ....core.coverage import Coverage
 from ....core.metadata_keys import (
     ORIGINAL_AMOUNT,
     ORIGINAL_CURRENCY,
-    STATEMENT_CYCLE,
 )
 from ....core.types import Transaction
 from ... import register_provider
+from ..._pdf import pdf_layouts, span_runs
+from ..._tabular import currency_code
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -34,23 +35,6 @@ _CYCLE_RE = re.compile(rf"账单周期\s*{_CN_DATE}\s*[—–-]+\s*{_CN_DATE}")
 _EXPORT_RANGE_RE = re.compile(
     r"起止日期[:：]\s*(\d{4}-\d{2}-\d{2})\s*[—–-]+\s*(\d{4}-\d{2}-\d{2})"
 )
-
-# The export names currencies in Chinese; the statements print ISO codes.
-_CURRENCY_NAMES = {
-    "人民币": "CNY",
-    "港币": "HKD",
-    "美元": "USD",
-    "欧元": "EUR",
-    "英镑": "GBP",
-    "日元": "JPY",
-    "澳门元": "MOP",
-    "新台币": "TWD",
-    "新加坡元": "SGD",
-    "澳大利亚元": "AUD",
-    "加拿大元": "CAD",
-    "瑞士法郎": "CHF",
-    "韩元": "KRW",
-}
 
 # Header labels of the export table; "收支" is printed as two stacked
 # characters, so its column is found by "收".
@@ -115,10 +99,7 @@ class ICBCCreditProvider(BaseProvider):
             html = self.extract_html_from_eml(file_path)
             tokens = list(self.parse_html(html).stripped_strings)
         else:
-            import fitz
-
-            with fitz.open(file_path) as doc:
-                pages = [cast(dict[str, Any], page.get_text("rawdict")) for page in doc]
+            pages = list(pdf_layouts(file_path))
             if source == "export":
                 return self._finish(*self._export_transactions(pages, file_path))
             tokens = [
@@ -144,10 +125,7 @@ class ICBCCreditProvider(BaseProvider):
         """
         # A waived annual fee is listed at 0.00 and moves no money.
         transactions = [txn for txn in transactions if txn.amount]
-        self.assign_statement_periods(transactions, cycle)
-        if cycle:
-            for txn in transactions:
-                txn.metadata[STATEMENT_CYCLE] = cycle
+        self.stamp_cycle(transactions, cycle)
         return transactions
 
     def coverage(
@@ -155,25 +133,13 @@ class ICBCCreditProvider(BaseProvider):
     ) -> list[Coverage]:
         """Cover each card for the printed cycle, or the export's range.
 
-        statement_period also spans any row booked outside the cycle, so
-        coverage reads the cycle as printed. The mailed statement outranks its
-        reissue, and the export only fills days no statement speaks for.
+        The mailed statement outranks its reissue, and the export only fills
+        days no statement speaks for.
         """
         source = self._source(file_path)
-        by_card: dict[str, list[Transaction]] = {}
-        for txn in transactions:
-            if STATEMENT_CYCLE in txn.metadata:
-                by_card.setdefault(txn.card_last4 or "", []).append(txn)
-        return [
-            Coverage(
-                card,
-                *rows[0].metadata[STATEMENT_CYCLE],
-                rows=rows,
-                source=source,
-                clip=source == "export",
-            )
-            for card, rows in by_card.items()
-        ]
+        return self.cycle_coverages(
+            transactions, source=source, clip=source == "export"
+        )
 
     @classmethod
     def _source(cls, file_path: Path) -> str:
@@ -269,7 +235,7 @@ class ICBCCreditProvider(BaseProvider):
 
         dates = cells.get("date", [])
         card = cell("card")
-        currency = _CURRENCY_NAMES.get(cell("booked_currency"))
+        currency = currency_code(cell("booked_currency"))
         amount = _decimal(cell("booked_amount"))
         direction = cell("direction")
         if (
@@ -289,7 +255,7 @@ class ICBCCreditProvider(BaseProvider):
         }
         if (balance := _decimal(cell("balance"))) is not None:
             metadata["balance"] = balance
-        original_currency = _CURRENCY_NAMES.get(cell("currency"))
+        original_currency = currency_code(cell("currency"))
         original_amount = _decimal(cell("amount"))
         if (
             original_currency
@@ -366,18 +332,10 @@ def _pdf_lines(page: dict[str, Any]) -> list[_Line]:
             dx, dy = line["dir"]
             direction = (round(dx, 3), round(dy, 3))
             for span in line["spans"]:
-                run: list[dict[str, Any]] = []
-                last_end: float | None = None
-                for char in span["chars"]:
-                    x0, y0, x1, y1 = char["bbox"]
-                    a, b = x0 * dx + y0 * dy, x1 * dx + y1 * dy
-                    begin, end = min(a, b), max(a, b)
-                    if last_end is not None and begin - last_end > span["size"]:
-                        lines.append(_cell(run, span["size"], direction))
-                        run = []
-                    run.append(char)
-                    last_end = end
-                lines.append(_cell(run, span["size"], direction))
+                lines.extend(
+                    _cell(run, span["size"], direction)
+                    for run in span_runs(span, (dx, dy))
+                )
     return [line for line in lines if line.text]
 
 

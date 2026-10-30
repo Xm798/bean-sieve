@@ -7,12 +7,14 @@ import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 from ....core.coverage import Coverage
-from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY, STATEMENT_CYCLE
+from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
 from ....core.types import Transaction
 from ... import register_provider
+from ..._pdf import pdf_lines
+from ..._tabular import CURRENCY_CODES, currency_code
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -21,27 +23,12 @@ logger = logging.getLogger(__name__)
 _ISSUER_SHORT = "\u5e7f\u53d1"
 _ISSUER = f"{_ISSUER_SHORT}\u94f6\u884c"
 
-_CURRENCY_CODES = {
-    "人民币": "CNY",
-    "美元": "USD",
-    "港币": "HKD",
-    "澳门元": "MOP",
-    "新台币": "TWD",
-    "欧元": "EUR",
-    "英镑": "GBP",
-    "日元": "JPY",
-    "韩元": "KRW",
-    "新加坡元": "SGD",
-    "澳大利亚元": "AUD",
-    "加拿大元": "CAD",
-    "瑞士法郎": "CHF",
-    "泰铢": "THB",
-}
-
 _DATE = r"\d{4}/\d{2}/\d{2}"
 _AMOUNT = r"[-\d,.]+"
 _CJK = r"[\u4e00-\u9fff]+"
-_KNOWN_CURRENCY = "|".join(sorted(_CURRENCY_CODES, key=len, reverse=True))
+_KNOWN_CURRENCY = "|".join(
+    map(re.escape, sorted(CURRENCY_CODES, key=len, reverse=True))
+)
 
 _CYCLE = re.compile(rf"账单周期[:：]?\s*({_DATE})\s*[-至]\s*({_DATE})")
 # 卡号末四位 本期账单金额 最低还款额 最后还款日 入账货币 ...; a card that owes
@@ -64,9 +51,6 @@ def _row_pattern(currency: str) -> re.Pattern[str]:
 # unknown currency so it can be reported.
 _ROW_PATTERNS = (_row_pattern(_KNOWN_CURRENCY), _row_pattern(_CJK))
 _INTEREST = re.compile(rf"({_CJK}利息)\s+({_AMOUNT})\s+({_CJK})\s+({_AMOUNT})")
-
-# Spans of one PDF line have tops within this many points of each other.
-_PDF_LINE_TOLERANCE = 2.0
 
 
 class _Row(NamedTuple):
@@ -126,7 +110,7 @@ class CGBCreditProvider(BaseProvider):
         if file_path.suffix.lower() == ".pdf":
             # Joining a line's cells with spaces gives the mail's text:
             # "date date (type)summary amount currency ...".
-            text = "\n".join(" ".join(line) for line in _pdf_lines(file_path))
+            text = "\n".join(" ".join(line) for line in pdf_lines(file_path))
         else:
             html = self.extract_html_from_eml(file_path)
             text = self.parse_html(html).get_text()
@@ -139,8 +123,8 @@ class CGBCreditProvider(BaseProvider):
         card_currencies: dict[str, list[str]] = {}
         for card, name in _CARD_CURRENCY.findall(head):
             codes = card_currencies.setdefault(card, [])
-            if name in _CURRENCY_CODES and _CURRENCY_CODES[name] not in codes:
-                codes.append(_CURRENCY_CODES[name])
+            if (code := currency_code(name)) and code not in codes:
+                codes.append(code)
         transactions: list[Transaction] = []
         for header, section in zip(sections[::2], sections[1::2], strict=True):
             card = header[-4:]
@@ -157,34 +141,20 @@ class CGBCreditProvider(BaseProvider):
         for line, txn in enumerate(transactions, 1):
             txn.source_line = line
 
-        self.assign_statement_periods(transactions, statement_period)
         if statement_period is None:
             logger.warning(
                 "%s: no statement cycle found; the file covers no period",
                 file_path.name,
             )
-        else:
-            for txn in transactions:
-                txn.metadata[STATEMENT_CYCLE] = statement_period
+        self.stamp_cycle(transactions, statement_period)
         return transactions
 
     def coverage(
         self, file_path: Path, transactions: list[Transaction]
     ) -> list[Coverage]:
-        """Cover each card for the printed cycle; the mail outranks its reissue.
-
-        statement_period also spans any row booked outside the cycle, so
-        coverage reads the cycle as printed.
-        """
+        """Cover each card for the printed cycle; the mail outranks its reissue."""
         source = "reissue" if file_path.suffix.lower() == ".pdf" else "statement"
-        by_card: dict[str, list[Transaction]] = {}
-        for txn in transactions:
-            if STATEMENT_CYCLE in txn.metadata:
-                by_card.setdefault(txn.card_last4 or "", []).append(txn)
-        return [
-            Coverage(card, *rows[0].metadata[STATEMENT_CYCLE], rows=rows, source=source)
-            for card, rows in by_card.items()
-        ]
+        return self.cycle_coverages(transactions, source=source)
 
     def _extract_statement_period(self, text: str) -> tuple[date, date] | None:
         match = _CYCLE.search(text)
@@ -218,7 +188,7 @@ class CGBCreditProvider(BaseProvider):
                 amount, currency_name, posting_amount, posting_currency = match.group(
                     5, 6, 7, 8
                 )
-                if posting_currency not in _CURRENCY_CODES and not posting_column:
+                if currency_code(posting_currency) is None and not posting_column:
                     posting_currency = None
                 row_end = match.end() if posting_currency else match.end(7)
                 description = f"({trans_type}){summary.strip()}"
@@ -274,7 +244,7 @@ class CGBCreditProvider(BaseProvider):
         transactions: list[Transaction] = []
         skipped = 0
         for row in rows:
-            currency = _CURRENCY_CODES.get(row.posting_currency or "")
+            currency = currency_code(row.posting_currency)
             if row.posting_currency and currency is None:
                 logger.warning(
                     "%s: unknown 入账货币 %s in %s of card %s; billed in the card's"
@@ -288,7 +258,7 @@ class CGBCreditProvider(BaseProvider):
                 currency = card_currencies[0]
             elif currency is None:
                 # A dual-currency card bills each row in its 交易货币's account.
-                original = _CURRENCY_CODES.get(row.currency_name)
+                original = currency_code(row.currency_name)
                 currency = original if original in card_currencies else None
             if currency is None:
                 skipped += 1
@@ -313,7 +283,7 @@ class CGBCreditProvider(BaseProvider):
             return None
 
         metadata = dict(row.metadata)
-        original_currency = _CURRENCY_CODES.get(row.currency_name)
+        original_currency = currency_code(row.currency_name)
         if original_currency is None:
             logger.warning(
                 "%s: unknown currency %s in %s of card %s; original amount dropped",
@@ -352,54 +322,3 @@ class CGBCreditProvider(BaseProvider):
             return Decimal(cleaned)
         except Exception:
             return None
-
-
-def _pdf_lines(file_path: Path) -> list[list[str]]:
-    """Return the PDF's printed lines, each as its cells read left to right.
-
-    A line is the spans whose tops lie within _PDF_LINE_TOLERANCE of its
-    first span's. PyMuPDF can join neighbouring cells into one span, so a
-    span is cut into cells wherever its characters leave a gap wider than
-    the font size.
-    """
-    import fitz
-
-    lines: list[list[str]] = []
-    with fitz.open(file_path) as doc:
-        for page in doc:
-            layout = cast(dict[str, Any], page.get_text("rawdict"))
-            cells = sorted(
-                cell
-                for block in layout["blocks"]
-                for line in block.get("lines", [])
-                for span in line["spans"]
-                for cell in _span_cells(span)
-            )
-            row: list[tuple[float, float, str]] = []
-            for cell in cells:
-                if row and cell[0] - row[0][0] > _PDF_LINE_TOLERANCE:
-                    lines.append([text for _, _, text in sorted(row, key=_cell_x)])
-                    row = []
-                row.append(cell)
-            if row:
-                lines.append([text for _, _, text in sorted(row, key=_cell_x)])
-    return lines
-
-
-def _span_cells(span: dict[str, Any]) -> list[tuple[float, float, str]]:
-    """Cut a span into (top, x, text) cells at gaps wider than its font size."""
-    runs: list[list[dict[str, Any]]] = [[]]
-    for char in span["chars"]:
-        if runs[-1] and char["bbox"][0] - runs[-1][-1]["bbox"][2] > span["size"]:
-            runs.append([])
-        runs[-1].append(char)
-    top = span["bbox"][1]
-    return [
-        (top, run[0]["bbox"][0], text)
-        for run in runs
-        if run and (text := "".join(char["c"] for char in run).strip())
-    ]
-
-
-def _cell_x(cell: tuple[float, float, str]) -> float:
-    return cell[1]

@@ -3,25 +3,17 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import to_decimal
+from ..._tabular import parse_stamp, to_decimal
 from ...base import BaseProvider
 
 _TITLE = "上海浦东发展银行个人客户交易流水专用回单"
 _ACCOUNT_RE = re.compile(r"账号:\s*(\d+)")
 _PERIOD_RE = re.compile(r"起止日期:\s*(\d{8})-(\d{8})")
 _CURRENCY_RE = re.compile(r"Currency:\s*([A-Z]{3})")
-
-
-def _parse_stamp(value: str, fmt: str) -> datetime | None:
-    try:
-        return datetime.strptime(value, fmt)
-    except ValueError:
-        return None
 
 
 def _unwrap(cell: str | None) -> str:
@@ -97,8 +89,8 @@ class SPDBDebitProvider(BaseProvider):
         period = _PERIOD_RE.search(header)
         cycle = None
         if period:
-            start = _parse_stamp(period.group(1), "%Y%m%d")
-            end = _parse_stamp(period.group(2), "%Y%m%d")
+            start = parse_stamp(period.group(1), "%Y%m%d")
+            end = parse_stamp(period.group(2), "%Y%m%d")
             if start and end:
                 cycle = (start.date(), end.date())
         if transactions:
@@ -126,7 +118,7 @@ class SPDBDebitProvider(BaseProvider):
             counterparty_account,
             summary,
         ) = (_unwrap(cell) for cell in row[: self.NUM_COLS])
-        tx_date = _parse_stamp(date_str, "%Y%m%d")
+        tx_date = parse_stamp(date_str, "%Y%m%d")
         if tx_date is None:
             return None
         value = to_decimal(amount_str)
@@ -135,7 +127,7 @@ class SPDBDebitProvider(BaseProvider):
 
         # 交易名称 keeps its line breaks: they separate the name from its reference.
         name, reference = _split_name(row[3])
-        tx_time = _parse_stamp(time_str, "%H%M%S")
+        tx_time = parse_stamp(time_str, "%H%M%S")
         metadata = {
             "balance": balance,
             "counterparty_account": counterparty_account,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import tempfile
 import zipfile
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -13,12 +14,14 @@ import xlwt
 from openpyxl import Workbook
 
 from bean_sieve.providers._tabular import (
+    currency_code,
     find_header_line,
     first_masked_card_last4,
     join_description,
     load_openpyxl_workbook,
     masked_card_last4,
     normalize_cell_str,
+    parse_stamp,
     read_csv_rows,
     read_text_lines,
     sheet_head_contains,
@@ -356,3 +359,23 @@ class TestSheetHeadContains:
 
     def test_missing_file_is_false(self, tmp_path: Path) -> None:
         assert not sheet_head_contains(tmp_path / "absent.xls", ["title-a"], nrows=3)
+
+
+class TestParseStamp:
+    def test_matching_value_parses(self) -> None:
+        assert parse_stamp("20300102", "%Y%m%d") == datetime(2030, 1, 2)
+
+    def test_mismatched_value_is_none(self) -> None:
+        assert parse_stamp("2030-01-02", "%Y%m%d") is None
+
+
+class TestCurrencyCode:
+    @pytest.mark.parametrize(
+        ("name", "code"), [("人民币", "CNY"), ("港币", "HKD"), ("澳元", "AUD")]
+    )
+    def test_known_names(self, name: str, code: str) -> None:
+        assert currency_code(name) == code
+
+    @pytest.mark.parametrize("name", ["人民币元", "USD", "", None])
+    def test_unknown_names_are_none(self, name: str | None) -> None:
+        assert currency_code(name) is None

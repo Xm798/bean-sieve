@@ -10,7 +10,13 @@ from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import find_header_line, join_description, read_text_lines, to_decimal
+from ..._tabular import (
+    currency_code,
+    find_header_line,
+    join_description,
+    read_text_lines,
+    to_decimal,
+)
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -57,19 +63,8 @@ class BOCDebitProvider(BaseProvider):
     }
     HEADER_KEYWORDS = ("业务摘要", "收入金额", "支出金额")
 
-    CURRENCY_MAP: dict[str, str] = {
-        "人民币元": "CNY",
-        "港币": "HKD",
-        "美元": "USD",
-        "欧元": "EUR",
-        "英镑": "GBP",
-        "日元": "JPY",
-        "澳元": "AUD",
-        "加拿大元": "CAD",
-        "瑞士法郎": "CHF",
-        "新西兰元": "NZD",
-        "新加坡元": "SGD",
-    }
+    # BOC spells the yuan out in full.
+    CURRENCY_ALIASES: dict[str, str] = {"人民币元": "CNY"}
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse BOC debit card CSV statement."""
@@ -121,7 +116,8 @@ class BOCDebitProvider(BaseProvider):
         if tx_date is None:
             return None
 
-        currency = self.CURRENCY_MAP.get(row["currency"], row["currency"])
+        name = row["currency"]
+        currency = self.CURRENCY_ALIASES.get(name) or currency_code(name) or name
 
         amount = self._parse_amount(row)
         if amount is None:

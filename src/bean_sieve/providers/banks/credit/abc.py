@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import codecs
 import email
 import logging
 import re
@@ -11,13 +10,13 @@ from datetime import date
 from decimal import Decimal
 from itertools import dropwhile
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import NamedTuple
 
 from ....config.schema import ProviderConfig
 from ....core.coverage import Coverage
-from ....core.metadata_keys import STATEMENT_CYCLE
 from ....core.types import ReconcileContext, ReconcileResult, Transaction
 from ... import register_provider
+from ..._pdf import pdf_lines
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -29,15 +28,11 @@ _MASKED_CARD_RE = re.compile(r"^\d{6}\*{5,6}\d{4}$")
 _ROW_DATE_RE = re.compile(r"^\d{6}(?:\d{2})?$")
 # "2030/01/01-2030/01/31", or "20300101-20300131" in the older mail template
 _CYCLE_RE = re.compile(r"(\d{4})/?(\d{2})/?(\d{2})-(\d{4})/?(\d{2})/?(\d{2})")
-_META_CHARSET_RE = re.compile(rb"<meta[^>]*charset=[\"']?([\w-]+)", re.IGNORECASE)
-_GB_CHARSETS = ("gb2312", "gbk")
 _FORMULA_OPERATORS = ("-", "=", "+")
 _CARD_CELL_RE = re.compile(r"^(\d{4})[主附]?$")
 _ROW_AMOUNT_RE = re.compile(r"^-?[\d,]+\.\d+/[A-Z]{3}$")
 _SUMMARY_AMOUNT_RE = re.compile(r"^-?[\d,]+\.\d{2}$")
 _PDF_TITLE = "农业银行信用卡对账单"
-# Spans of one PDF line have tops within this many points of each other.
-_PDF_LINE_TOLERANCE = 2.0
 
 
 class _MailTemplate(NamedTuple):
@@ -148,29 +143,15 @@ class ABCCreditProvider(BaseProvider):
                 "No statement cycle found in ABC statement %s", file_path.name
             )
 
-        self.assign_statement_periods(transactions, statement_period)
-        if statement_period:
-            for txn in transactions:
-                txn.metadata[STATEMENT_CYCLE] = statement_period
+        self.stamp_cycle(transactions, statement_period)
         return transactions
 
     def coverage(
         self, file_path: Path, transactions: list[Transaction]
     ) -> list[Coverage]:
-        """Cover each card for the printed cycle; the mail outranks its reissue.
-
-        statement_period also spans any row booked outside the cycle, so
-        coverage reads the cycle as printed.
-        """
+        """Cover each card for the printed cycle; the mail outranks its reissue."""
         source = "reissue" if file_path.suffix.lower() == ".pdf" else "statement"
-        by_card: dict[str, list[Transaction]] = {}
-        for txn in transactions:
-            if STATEMENT_CYCLE in txn.metadata:
-                by_card.setdefault(txn.card_last4 or "", []).append(txn)
-        return [
-            Coverage(card, *rows[0].metadata[STATEMENT_CYCLE], rows=rows, source=source)
-            for card, rows in by_card.items()
-        ]
+        return self.cycle_coverages(transactions, source=source)
 
     def _pdf_transactions(
         self,
@@ -205,7 +186,7 @@ class ABCCreditProvider(BaseProvider):
 
     def _lines(self, file_path: Path) -> list[list[str]]:
         if file_path.suffix.lower() == ".pdf":
-            return _pdf_lines(file_path)
+            return pdf_lines(file_path)
         return self._mail_lines(file_path)
 
     def _mail_lines(self, file_path: Path) -> list[list[str]]:
@@ -214,7 +195,11 @@ class ABCCreditProvider(BaseProvider):
         Layout rows wrap whole blocks in one cell, so the readers match cells
         by their full text and rows by their cell count.
         """
-        soup = self.parse_html(_mail_html(file_path))
+        with open(file_path, "rb") as f:
+            msg = email.message_from_binary_file(f)
+        if not any(part.get_content_type() == "text/html" for part in msg.walk()):
+            logger.warning("No HTML body in ABC mail %s", file_path.name)
+        soup = self.parse_html(self._extract_html_from_message(msg))
         return [
             [
                 self.clean_text(td.get_text())
@@ -629,32 +614,6 @@ def _parse_cycle(text: str) -> tuple[date, date] | None:
     return date(y1, m1, d1), date(y2, m2, d2)
 
 
-def _mail_html(file_path: Path) -> str:
-    """Decode the mail's HTML part by the charset it declares.
-
-    Older mails leave the MIME charset empty and name GBK only in a <meta>
-    tag, or declare gb2312 while using characters outside it; GB18030
-    decodes every member of that family.
-    """
-    with open(file_path, "rb") as f:
-        msg = email.message_from_binary_file(f)
-    part = next((p for p in msg.walk() if p.get_content_type() == "text/html"), msg)
-    raw = part.get_payload(decode=True)
-    if not isinstance(raw, bytes):
-        logger.warning("No HTML body in ABC mail %s", file_path.name)
-        return ""
-    charset = part.get_content_charset()
-    if not charset and (meta := _META_CHARSET_RE.search(raw)):
-        charset = meta.group(1).decode("ascii").lower()
-    if charset in _GB_CHARSETS:
-        charset = "gb18030"
-    try:
-        codecs.lookup(charset or "utf-8")
-    except LookupError:
-        charset = None
-    return raw.decode(charset or "utf-8", errors="replace")
-
-
 def _compact(cell: str) -> str:
     return re.sub(r"\s+", "", cell)
 
@@ -738,54 +697,3 @@ def _formula_value(formula: list[tuple[str, str]], label: str) -> Decimal | None
         if name.startswith(label) and _SUMMARY_AMOUNT_RE.match(value):
             return _decimal(value)
     return None
-
-
-def _pdf_lines(file_path: Path) -> list[list[str]]:
-    """Return the PDF's printed lines, each as its cells read left to right.
-
-    A line is the spans whose tops lie within _PDF_LINE_TOLERANCE of its
-    first span's. PyMuPDF can join neighbouring cells into one span, so a
-    span is cut into cells wherever its characters leave a gap wider than
-    the font size.
-    """
-    import fitz
-
-    lines: list[list[str]] = []
-    with fitz.open(file_path) as doc:
-        for page in doc:
-            layout = cast(dict[str, Any], page.get_text("rawdict"))
-            cells = sorted(
-                cell
-                for block in layout["blocks"]
-                for line in block.get("lines", [])
-                for span in line["spans"]
-                for cell in _span_cells(span)
-            )
-            row: list[tuple[float, float, str]] = []
-            for cell in cells:
-                if row and cell[0] - row[0][0] > _PDF_LINE_TOLERANCE:
-                    lines.append([text for _, _, text in sorted(row, key=_cell_x)])
-                    row = []
-                row.append(cell)
-            if row:
-                lines.append([text for _, _, text in sorted(row, key=_cell_x)])
-    return lines
-
-
-def _span_cells(span: dict[str, Any]) -> list[tuple[float, float, str]]:
-    """Cut a span into (top, x, text) cells at gaps wider than its font size."""
-    runs: list[list[dict[str, Any]]] = [[]]
-    for char in span["chars"]:
-        if runs[-1] and char["bbox"][0] - runs[-1][-1]["bbox"][2] > span["size"]:
-            runs.append([])
-        runs[-1].append(char)
-    top = span["bbox"][1]
-    return [
-        (top, run[0]["bbox"][0], text)
-        for run in runs
-        if run and (text := "".join(char["c"] for char in run).strip())
-    ]
-
-
-def _cell_x(cell: tuple[float, float, str]) -> float:
-    return cell[1]

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -14,6 +13,7 @@ from ... import register_provider
 from ..._tabular import (
     join_description,
     normalize_cell_str,
+    parse_stamp,
     sheet_head_contains,
     to_decimal,
 )
@@ -48,13 +48,6 @@ _METADATA_FIELDS = (
     "status",
 )
 _HEAD_ROWS = 10
-
-
-def _parse_stamp(value: str, fmt: str) -> datetime | None:
-    try:
-        return datetime.strptime(value, fmt)
-    except ValueError:
-        return None
 
 
 @register_provider
@@ -121,8 +114,8 @@ class CNCBDebitProvider(BaseProvider):
 
         cycle = None
         if period := _PERIOD_RE.search(title):
-            start = _parse_stamp(period.group(1), "%Y%m%d")
-            end = _parse_stamp(period.group(2), "%Y%m%d")
+            start = parse_stamp(period.group(1), "%Y%m%d")
+            end = parse_stamp(period.group(2), "%Y%m%d")
             if start and end:
                 cycle = (start.date(), end.date())
         self.assign_statement_periods(transactions, cycle)
@@ -156,13 +149,13 @@ class CNCBDebitProvider(BaseProvider):
         currency: str,
         file_path: Path,
     ) -> Transaction | None:
-        tx_date = _parse_stamp(cells["date"], "%Y%m%d")
+        tx_date = parse_stamp(cells["date"], "%Y%m%d")
         if tx_date is None:
             return None
         amount = self._amount(cells)
         if amount is None:
             return None
-        tx_time = _parse_stamp(cells["time"], "%H:%M:%S")
+        tx_time = parse_stamp(cells["time"], "%H:%M:%S")
 
         card_number = " ".join(cells["card_number"].split())
         metadata = {key: cells[key] for key in _METADATA_FIELDS}

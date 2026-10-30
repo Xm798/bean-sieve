@@ -11,7 +11,7 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import normalize_cell_str, sheet_head_contains
+from ..._tabular import currency_code, normalize_cell_str, sheet_head_contains
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -171,12 +171,4 @@ class CNCBCreditProvider(BaseProvider):
     @staticmethod
     def _map_currency(currency_str: str) -> str:
         """Map Chinese currency name to ISO code."""
-        mapping = {
-            "人民币": "CNY",
-            "美元": "USD",
-            "欧元": "EUR",
-            "英镑": "GBP",
-            "日元": "JPY",
-            "港币": "HKD",
-        }
-        return mapping.get(currency_str, currency_str)
+        return currency_code(currency_str) or currency_str
