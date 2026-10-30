@@ -200,6 +200,8 @@ class CMBCreditProvider(BaseProvider):
         statement = self._statements[file_path]
         if statement is None:
             return []
+        # Accounts come from the statement, not the rows: a currency account
+        # may list no rows or no table, which cycle_coverages() cannot express.
         return [
             Coverage(
                 currency,

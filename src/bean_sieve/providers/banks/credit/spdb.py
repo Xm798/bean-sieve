@@ -14,13 +14,10 @@ import xlrd
 from xlrd.biffh import XLRDError
 
 from ....core.coverage import Coverage
-from ....core.metadata_keys import (
-    ORIGINAL_AMOUNT,
-    ORIGINAL_CURRENCY,
-    STATEMENT_CYCLE,
-)
+from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY
 from ....core.types import Transaction
 from ... import register_provider
+from ..._pdf import pdf_text
 from ..._tabular import amount_cell_str, currency_code
 from ...base import BaseProvider
 
@@ -143,27 +140,10 @@ class SPDBCreditProvider(BaseProvider):
         stays inside the cycle without reaching into the previous one.
         """
         source = "reissue" if file_path.suffix.lower() == ".pdf" else "statement"
-        by_card: dict[str, list[Transaction]] = {}
-        for txn in transactions:
-            by_card.setdefault(txn.card_last4 or "", []).append(txn)
-
-        coverages: list[Coverage] = []
-        for card, rows in by_card.items():
-            cycle = rows[0].metadata.get(STATEMENT_CYCLE)
-            if isinstance(cycle, tuple):
-                start, end = cycle
-            else:
-                booked = [txn.booked_date for txn in rows]
-                start, end = min(booked), max(booked)
-            coverages.append(Coverage(card, start, end, rows=rows, source=source))
-        return coverages
+        return self.cycle_coverages(transactions, source=source, uncycled_span=True)
 
     def _parse_pdf(self, file_path: Path) -> list[Transaction]:
-        import fitz
-
-        with fitz.open(file_path) as doc:
-            pages = [str(page.get_text()) for page in doc]
-        text = "\n".join(pages)
+        text = pdf_text(file_path)
 
         closing = self._parse_pdf_closing(text)
         if closing is None:

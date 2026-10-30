@@ -395,7 +395,7 @@ class WeLabProvider(BaseProvider):
 
     @classmethod
     def _match_content(cls, file_path: Path) -> bool:
-        """Check if PDF content matches WeLab (binary, so read via fitz).
+        """Check if PDF content matches WeLab.
 
         The bank name ("汇立"/"welab.bank") only appears in the notes on a later,
         variable page. The first page always carries WeLab-specific product names
@@ -403,13 +403,7 @@ class WeLabProvider(BaseProvider):
         those.
         """
         try:
-            import fitz
-
-            doc = fitz.open(file_path)
-            try:
-                text = doc[0].get_text() if doc.page_count else ""
-            finally:
-                doc.close()
+            text = cls._read_pdf_first_page(file_path)
         except Exception:
             return False
         if any(kw in text for kw in ("WeLab", "汇立", "welab.bank")):

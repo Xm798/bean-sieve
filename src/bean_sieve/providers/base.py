@@ -291,21 +291,23 @@ class BaseProvider(ABC):
         *,
         source: str = "statement",
         clip: bool = False,
+        uncycled_span: bool = False,
     ) -> list[Coverage]:
         """Cover each card for the cycle stamped on its rows by stamp_cycle().
 
         statement_period also spans any row booked outside the cycle, which
         would make consecutive statements overlap, so this reads the cycle as
-        printed. Rows without a stamp cover nothing.
+        printed. A card whose rows carry no stamp covers nothing, or with
+        ``uncycled_span`` its rows' booked-date span.
         """
         by_card: dict[str, list[Transaction]] = {}
         for txn in transactions:
-            if STATEMENT_CYCLE in txn.metadata:
+            if uncycled_span or STATEMENT_CYCLE in txn.metadata:
                 by_card.setdefault(txn.card_last4 or "", []).append(txn)
         return [
             Coverage(
                 card,
-                *rows[0].metadata[STATEMENT_CYCLE],
+                *_cycle_or_span(rows),
                 rows=rows,
                 source=source,
                 clip=clip,
@@ -650,3 +652,10 @@ class BaseProvider(ABC):
             return ""
         # Remove excessive whitespace
         return " ".join(text.split())
+
+
+def _cycle_or_span(rows: list[Transaction]) -> tuple[date, date]:
+    if STATEMENT_CYCLE in rows[0].metadata:
+        return rows[0].metadata[STATEMENT_CYCLE]
+    booked = [txn.booked_date for txn in rows]
+    return min(booked), max(booked)

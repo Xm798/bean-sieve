@@ -327,19 +327,3 @@ class BOCCreditProvider(BaseProvider):
             return date(int(parts[0]), int(parts[1]), int(parts[2]))
         except (ValueError, IndexError):
             return None
-
-    @classmethod
-    def _match_content(cls, file_path: Path) -> bool:
-        """Check if PDF content contains BOC credit card keywords."""
-        try:
-            import fitz
-
-            doc = fitz.open(file_path)
-            if doc.page_count > 0:
-                text = doc[0].get_text()[:1000]
-                doc.close()
-                return any(kw in text for kw in cls.content_keywords)
-            doc.close()
-        except Exception:
-            pass
-        return False

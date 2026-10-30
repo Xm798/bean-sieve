@@ -39,6 +39,10 @@ SECTION_MARKERS: dict[str, str] = {
     "JPY 日元": "JPY",
 }
 
+_TITLE = "综合月结单"
+# The title and bank name print above the statement period, at the top of page 1.
+_HEADER_CHARS = 500
+
 
 @register_provider
 class ZABankProvider(BaseProvider):
@@ -58,6 +62,19 @@ class ZABankProvider(BaseProvider):
     supported_formats = [".pdf"]
     filename_keywords = ["zabank", "众安", "ZA Bank"]
     content_keywords = ["ZA Bank", "众安银行"]
+
+    @classmethod
+    def _match_content(cls, file_path: Path) -> bool:
+        """Match the statement title next to the bank name in the page header.
+
+        Another bank's statement names ZA Bank on a transfer row, so the name
+        alone anywhere on the page would claim it.
+        """
+        try:
+            header = cls._read_pdf_first_page(file_path)[:_HEADER_CHARS]
+        except Exception:
+            return False
+        return _TITLE in header and any(kw in header for kw in cls.content_keywords)
 
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse ZA Bank consolidated monthly PDF statement."""
@@ -350,7 +367,7 @@ class ZABankProvider(BaseProvider):
         """Extract statement period from PDF header."""
         if doc.page_count < 1:
             return None
-        text = doc[0].get_text()[:500]
+        text = doc[0].get_text()[:_HEADER_CHARS]
         match = re.search(
             r"(\d{1,2}\s+\w{3}\s+\d{4})\s*-\s*(\d{1,2}\s+\w{3}\s+\d{4})", text
         )
@@ -360,19 +377,3 @@ class ZABankProvider(BaseProvider):
             if start and end:
                 return (start, end)
         return None
-
-    @classmethod
-    def _match_content(cls, file_path: Path) -> bool:
-        """Check if PDF content contains ZA Bank keywords."""
-        try:
-            import fitz
-
-            doc = fitz.open(file_path)
-            if doc.page_count > 0:
-                text = doc[0].get_text()[:1000]
-                doc.close()
-                return "ZA Bank" in text or "众安银行" in text
-            doc.close()
-        except Exception:
-            pass
-        return False

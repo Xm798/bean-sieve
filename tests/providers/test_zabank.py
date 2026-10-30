@@ -382,13 +382,11 @@ class TestZABankContentDetection:
     def test_match_content_zabank(self, tmp_path):
         """Test content detection for ZA Bank PDFs."""
         mock_page = MagicMock()
-        mock_page.get_text.return_value = (
-            "ZA Bank Limited 众安银行有限公司\nCONSOLIDATED MONTHLY STATEMENT\n"
-        )
+        mock_page.get_text.return_value = "ZA Bank Limited 众安银行有限公司\nCONSOLIDATED MONTHLY STATEMENT 综合月结单\n"
         mock_doc = MagicMock()
         mock_doc.page_count = 1
         mock_doc.__getitem__ = MagicMock(return_value=mock_page)
-        mock_doc.close = MagicMock()
+        mock_doc.__enter__.return_value = mock_doc
 
         with patch("fitz.open", return_value=mock_doc):
             assert ZABankProvider._match_content(tmp_path / "test.pdf")
@@ -400,7 +398,23 @@ class TestZABankContentDetection:
         mock_doc = MagicMock()
         mock_doc.page_count = 1
         mock_doc.__getitem__ = MagicMock(return_value=mock_page)
-        mock_doc.close = MagicMock()
+        mock_doc.__enter__.return_value = mock_doc
+
+        with patch("fitz.open", return_value=mock_doc):
+            assert not ZABankProvider._match_content(tmp_path / "test.pdf")
+
+    def test_no_match_for_a_transfer_naming_za_bank(self, tmp_path):
+        """Another bank's statement listing a transfer to ZA Bank is not claimed."""
+        mock_page = MagicMock()
+        mock_page.get_text.return_value = (
+            "Other Bank 综合月结单\n01 Mar 2030 - 31 Mar 2030\n"
+            + "padding\n" * 80
+            + "Transfer to ZA Bank 众安银行\n"
+        )
+        mock_doc = MagicMock()
+        mock_doc.page_count = 1
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
+        mock_doc.__enter__.return_value = mock_doc
 
         with patch("fitz.open", return_value=mock_doc):
             assert not ZABankProvider._match_content(tmp_path / "test.pdf")

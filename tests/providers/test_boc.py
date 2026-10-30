@@ -42,6 +42,7 @@ class TestBOCCreditProvider:
         mock_doc = MagicMock()
         mock_doc.page_count = 1
         mock_doc.__getitem__ = MagicMock(return_value=mock_page)
+        mock_doc.__enter__.return_value = mock_doc
 
         file_path = tmp_path / "2030-01_statement.pdf"
         file_path.write_bytes(b"%PDF-1.4")

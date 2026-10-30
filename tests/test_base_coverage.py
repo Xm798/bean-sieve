@@ -404,6 +404,20 @@ def test_cycle_coverages_cover_each_card_for_the_printed_cycle() -> None:
     assert all(c.source == "export" and c.clip for c in coverages)
 
 
+def test_cycle_coverages_cover_an_unstamped_card_over_its_booked_dates() -> None:
+    stamped = make_bare_txn(date(2030, 1, 20), "1111")
+    BaseProvider.stamp_cycle([stamped], PERIOD_JAN)
+    early = make_bare_txn(date(2030, 2, 1), "2222", post_date=date(2030, 2, 3))
+    late = make_bare_txn(date(2030, 2, 10), "2222")
+
+    coverages = BaseProvider.cycle_coverages([stamped, early, late], uncycled_span=True)
+
+    assert [(c.account, c.start, c.end, c.rows) for c in coverages] == [
+        ("1111", *PERIOD_JAN, [stamped]),
+        ("2222", date(2030, 2, 3), date(2030, 2, 10), [early, late]),
+    ]
+
+
 class FakeUnnamedPerCardBank(FakePerCardBank):
     """Per-card provider whose file names no card."""
 

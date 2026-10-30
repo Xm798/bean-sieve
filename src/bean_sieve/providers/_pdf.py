@@ -26,6 +26,14 @@ def first_page_text(file_path: Path) -> str:
         return str(doc[0].get_text()) if doc.page_count else ""
 
 
+def pdf_text(file_path: Path) -> str:
+    """Return the plain text of every page, pages joined by a newline."""
+    import fitz
+
+    with fitz.open(file_path) as doc:
+        return "\n".join(str(page.get_text()) for page in doc)
+
+
 def span_runs(
     span: dict[str, Any], direction: tuple[float, float] = (1.0, 0.0)
 ) -> list[list[dict[str, Any]]]:

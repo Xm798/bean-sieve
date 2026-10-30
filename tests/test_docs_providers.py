@@ -76,10 +76,12 @@ def test_site_data_carries_category_titles_and_detection_facts(exporter) -> None
     }
     scopes = {p["id"]: p["contentScope"] for p in data["providers"]}
     assert scopes["alipay"] == "header"
-    assert scopes["spdb_debit"] == "pdf"
+    for pid in ("spdb_debit", "boc_credit"):
+        assert scopes[pid] == "pdf"
     for pid in ("icbc_credit", "ccb_credit", "cgb_credit", "abc_credit"):
         assert scopes[pid] == "eml-pdf"
-    assert scopes["zabank_debit"] == "custom"
+    for pid in ("welab_debit", "zabank_debit"):
+        assert scopes[pid] == "custom"
 
 
 def test_content_scope_is_custom_for_any_provider_specific_content_check(
