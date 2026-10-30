@@ -484,3 +484,73 @@ def test_uncovered_exchange_leg_is_not_reported(tmp_path: Path) -> None:
 
     assert result.matched[0][1].posting.account == "Assets:Bank:CNY"
     assert result.extra == []
+
+
+def test_three_currency_legs_pair_through_price_currency(tmp_path: Path) -> None:
+    result = _fx_match(
+        tmp_path,
+        """
+2020-01-01 open Assets:Bank:USD USD
+2020-01-01 open Assets:Bank:EUR EUR
+2030-01-05 * "payee-n" "cross exchange"
+    Assets:Bank:USD  -100.00 USD @ 7.00 CNY
+    Assets:Bank:EUR    50.00 EUR @ 14.00 CNY
+""",
+        amount="100.00",
+        currency="USD",
+        account="Assets:Bank:USD",
+        groups=[{"Assets:Bank:USD", "Assets:Bank:EUR"}],
+    )
+
+    assert result.matched[0][1].posting.account == "Assets:Bank:USD"
+    assert result.extra == []
+
+
+BROKER_OPENS = """
+2020-01-01 open Assets:Broker:Cash CNY
+2020-01-01 open Assets:Broker:Stock STOCK
+2020-01-01 open Income:PnL CNY
+"""
+BROKER_GROUP = [{"Assets:Broker:Cash", "Assets:Broker:Stock"}]
+
+
+@pytest.mark.parametrize(
+    ("ledger_body", "amount"),
+    [
+        pytest.param(
+            """
+2030-01-05 * "payee-o" "buy"
+    Assets:Broker:Cash   -70.00 CNY
+    Assets:Broker:Stock   10 STOCK {7.00 CNY}
+""",
+            "70.00",
+            id="buy",
+        ),
+        pytest.param(
+            """
+2030-01-04 * "payee-o" "buy"
+    Assets:Broker:Cash   -70.00 CNY
+    Assets:Broker:Stock   10 STOCK {7.00 CNY}
+2030-01-05 * "payee-p" "sell at a gain"
+    Assets:Broker:Cash    80.00 CNY
+    Assets:Broker:Stock  -10 STOCK {7.00 CNY} @ 8.00 CNY
+    Income:PnL           -10.00 CNY
+""",
+            "-80.00",
+            id="sell",
+        ),
+    ],
+)
+def test_cost_lot_leg_settled_by_matched_cash_leg(
+    tmp_path: Path, ledger_body: str, amount: str
+) -> None:
+    result = _fx_match(
+        tmp_path,
+        BROKER_OPENS + ledger_body,
+        amount=amount,
+        account="Assets:Broker:Cash",
+        groups=BROKER_GROUP,
+    )
+
+    assert result.matched[0][1].txn.date == date(2030, 1, 5)
+    assert [e for e in result.extra if e.txn.date == date(2030, 1, 5)] == []

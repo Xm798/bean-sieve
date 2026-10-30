@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from beancount import loader
+from beancount.core.convert import get_weight
 from beancount.core.data import Directive, Posting, TxnPosting
 from beancount.core.data import Transaction as BeanTransaction
 
@@ -280,8 +281,9 @@ class Sieve:
         as a single statement row, which consumes one leg; that same row also
         accounts for the opposite leg. One row settles one two-sided transfer,
         so each matched leg pairs with at most one opposite leg. The two legs
-        of a currency exchange offset each other in the price currency, and a
-        fee or rebate booked beside the exchange closes the gap between them.
+        of a currency exchange or a `{}` lot trade offset each other in the
+        price or cost currency, and a fee or rebate booked beside such a
+        conversion closes the gap between the two legs.
         """
         if covered_groups is None and covered_accounts is not None:
             covered_groups = [set(covered_accounts)]
@@ -635,15 +637,15 @@ def _balance_key(posting: Posting) -> tuple[str, str | None]:
 
 
 def _amounts_by_currency(posting: Posting) -> dict[str, Decimal]:
-    """Beancount stores an `@@` total as a per-unit price, so units × price
-    recovers the total in the price currency."""
+    """The units, plus the weight Beancount balances the posting at: the
+    total cost of a `{}` lot, else the total price of `@` / `@@`."""
     units = posting.units
     if units is None or units.number is None:
         return {}
     amounts = {units.currency: units.number}
-    price = posting.price
-    if price is not None and price.number is not None:
-        amounts[price.currency] = units.number * price.number
+    weight = get_weight(posting)
+    if isinstance(weight.number, Decimal):
+        amounts[weight.currency] = weight.number
     return amounts
 
 
