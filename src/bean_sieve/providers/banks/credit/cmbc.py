@@ -68,6 +68,9 @@ class CMBCCreditProvider(BaseProvider):
     supported_formats = [".eml"]
     filename_keywords = ["民生信用卡", "民生银行信用卡"]
     content_keywords = ["民生银行", "cmbc.com.cn"]
+    # Every card of the household account shares one statement, so a row
+    # whose card cell is missing still belongs to that account.
+    unkeyed_rows_share_account = True
 
     def __init__(self) -> None:
         super().__init__()

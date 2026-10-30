@@ -805,3 +805,62 @@ class TestCMBCCycleAcrossStatements:
         assert result.coverage is not None
         assert result.coverage.drops == []
         assert len(result.match_result.missing) == 2
+
+
+class TestCMBCRowsWithoutCard:
+    """A row whose card cell is missing belongs to the household account."""
+
+    def reconcile(self, tmp_path: Path, accounts: str) -> str:
+        rows = [
+            {
+                "trans_date": "03/05",
+                "post_date": "03/05",
+                "description": "payee-a",
+                "amount": "36.70",
+                "card_last4": "0001",
+            },
+            {
+                "trans_date": "03/07",
+                "post_date": "03/07",
+                "description": "fee-b",
+                "amount": "28.60",
+                "card_last4": "",
+            },
+        ]
+        mail = tmp_path / "statement.eml"
+        mail.write_text(
+            create_cmbc_eml(
+                create_cmbc_html_with_transactions(rows, statement_date="2030/03/25")
+            ),
+            encoding="utf-8",
+        )
+        config = tmp_path / "bean-sieve.yaml"
+        config.write_text(
+            f"providers:\n  cmbc_credit:\n    accounts:\n{accounts}", encoding="utf-8"
+        )
+        ledger = tmp_path / "main.bean"
+        ledger.write_text("", encoding="utf-8")
+        output = tmp_path / "pending.bean"
+        from bean_sieve.api import full_reconcile
+
+        full_reconcile([mail], ledger, config_path=config, output_path=output)
+        return output.read_text(encoding="utf-8")
+
+    def test_row_takes_the_account_every_card_maps_to(self, tmp_path):
+        output = self.reconcile(
+            tmp_path,
+            '      "0001": Liabilities:CreditCard:CMBC\n'
+            '      "1234": Liabilities:CreditCard:CMBC\n',
+        )
+
+        assert "Assets:FIXME" not in output
+        assert "Liabilities:CreditCard:CMBC  -28.60 CNY" in output
+
+    def test_cards_on_several_accounts_leave_the_row_unassigned(self, tmp_path):
+        output = self.reconcile(
+            tmp_path,
+            '      "0001": Liabilities:CreditCard:CMBC\n'
+            '      "1234": Liabilities:CreditCard:CMBC:Other\n',
+        )
+
+        assert output.count("Assets:FIXME") == 1
