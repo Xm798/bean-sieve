@@ -761,6 +761,202 @@ class TestABCPostOutput:
         assert sorted(reads) == statements
 
 
+def two_currency_html(
+    formula: tuple[str, ...] = ("CNY", "USD"), rows: tuple[str, ...] = ("CNY", "USD")
+) -> str:
+    """A mail with rows in ``rows`` whose 账务说明 prints ``formula``.
+
+    Like the bank's, the 本期应还款额 block lists the formula's currencies CNY
+    first, each amount after its currency cell, whatever the formula's order.
+    """
+    labels = "".join(
+        f"<td><span>{label}</span></td>"
+        for label in (
+            "币种",
+            "本期应还金额",
+            "-",
+            "本期账户溢缴款",
+            "=",
+            "上期账单应还金额",
+            "-",
+            "上期账户溢缴款",
+            "+",
+            "本期账单金额",
+            "-",
+            "本期还款、退货金额",
+            "-",
+            "本期调整金额",
+        )
+    )
+    formula_rows = {
+        "CNY": (
+            "人民币(CNY)",
+            "40.00",
+            "0.00",
+            "0.00",
+            "0.00",
+            "40.00",
+            "0.00",
+            "0.00",
+        ),
+        "USD": ("美元(USD)", "7.00", "0.00", "0.00", "0.00", "9.00", "2.00", "0.00"),
+    }
+    value_rows = [formula_rows[currency] for currency in formula]
+    balances = "".join(
+        f"<tr><td>{row[0]}</td><td>-{row[1]}</td></tr>"
+        for row in sorted(value_rows, key=lambda row: row[0] != "人民币(CNY)")
+    )
+    values = "".join(
+        "<table><tr>"
+        + "".join(f"<td><span>{v}</span></td>" for v in row)
+        + "</tr></table>"
+        for row in value_rows
+    )
+    details = [
+        ("300102", "300102", "1234", "payee-a", "-10.00/CNY", "-10.00/CNY"),
+        ("300103", "300103", "1234", "payee-b", "-30.00/CNY", "-30.00/CNY"),
+        ("300104", "300105", "1234", "payee-c", "-9.00/USD", "-9.00/USD"),
+        ("300106", "300107", "1234", "退货 payee-c", "2.00/USD", "2.00/USD"),
+    ]
+    body = "".join(
+        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
+        for row in details
+        if row[-1][-3:] in rows
+    )
+    return f"""<html><body>
+<table>
+    <tr><td><span>620000******1234</span></td></tr>
+    <tr><td><span>2030/01/01-2030/01/31</span></td></tr>
+    <tr><td><span>本期应还款额</span></td></tr>
+    {balances}
+</table>
+<table><tr>{labels}</tr></table>
+{values}
+<table>{NEW_HEADER}{body}</table>
+</body></html>"""
+
+
+EXPECTED_TWO_CURRENCY_REPORT = """
+; ============================================================
+; 农业银行信用卡 账单核对
+; ============================================================
+;
+; 卡号: 620000******1234 (尾号 1234)
+; 账单周期: 2030/01/01-2030/01/31
+;
+;   币种: CNY
+;   解析消费:              40.00 CNY
+;   账单消费:              40.00 CNY
+;   账单应还:              40.00 CNY
+;
+;   状态: ✅ 平账
+;
+;   币种: USD
+;   解析消费:               9.00 USD
+;   账单消费:               9.00 USD
+;
+;   状态: ✅ 平账
+; ============================================================
+"""
+
+
+class TestABCCurrencies:
+    """账务说明 prints one row per currency; each is compared on its own."""
+
+    @staticmethod
+    def write(tmp_path, html: str) -> Path:
+        path = tmp_path / "农业银行金穗信用卡.eml"
+        path.write_text(create_abc_eml(html), encoding="utf-8")
+        return path
+
+    def test_summary_reads_every_currency_row(self, tmp_path):
+        path = self.write(tmp_path, two_currency_html())
+
+        summary = ABCCreditProvider()._extract_summary(path)
+
+        assert summary.new_charges == {"CNY": Decimal("40.00"), "USD": Decimal("9.00")}
+        assert summary.balance_currency == "CNY"
+
+    def test_report_compares_each_currency(self, tmp_path):
+        path = self.write(tmp_path, two_currency_html())
+
+        output = ABCCreditProvider().post_output(
+            "",
+            empty_result(),
+            ReconcileContext(statement_paths=[path], provider_ids={path: "abc_credit"}),
+        )
+
+        assert output == EXPECTED_TWO_CURRENCY_REPORT
+
+    def test_spending_in_a_currency_the_formula_omits_is_a_difference(self, tmp_path):
+        path = self.write(tmp_path, two_currency_html(formula=("CNY",)))
+
+        output = ABCCreditProvider().post_output(
+            "",
+            empty_result(),
+            ReconcileContext(statement_paths=[path], provider_ids={path: "abc_credit"}),
+        )
+
+        assert output.endswith(
+            ";   币种: USD\n"
+            ";   解析消费:               9.00 USD\n"
+            ";\n"
+            ";   差额: +9.00 USD\n"
+            "; " + "=" * 60 + "\n"
+        )
+
+    def test_formula_currency_without_rows_is_a_difference(self, tmp_path):
+        path = self.write(tmp_path, two_currency_html(rows=("CNY",)))
+
+        output = ABCCreditProvider().post_output(
+            "",
+            empty_result(),
+            ReconcileContext(statement_paths=[path], provider_ids={path: "abc_credit"}),
+        )
+
+        assert output.endswith(
+            ";   币种: USD\n"
+            ";   解析消费:               0.00 USD\n"
+            ";   账单消费:               9.00 USD\n"
+            ";\n"
+            ";   差额: -9.00 USD\n"
+            "; " + "=" * 60 + "\n"
+        )
+
+    def test_balance_takes_the_currency_marked_beside_it(self, tmp_path):
+        path = self.write(tmp_path, two_currency_html(formula=("USD",)))
+
+        summary = ABCCreditProvider()._extract_summary(path)
+
+        assert summary.new_charges == {"USD": Decimal("9.00")}
+        assert summary.balance_currency == "USD"
+
+    def test_balance_currency_does_not_follow_formula_order(self, tmp_path):
+        path = self.write(tmp_path, two_currency_html(formula=("USD", "CNY")))
+
+        summary = ABCCreditProvider()._extract_summary(path)
+
+        assert list(summary.new_charges) == ["USD", "CNY"]
+        assert summary.balance_currency == "CNY"
+        assert summary.statement_balance == Decimal("-40.00")
+
+    def test_formula_ends_at_the_first_row_without_a_currency(self, tmp_path):
+        stray = (
+            "<table><tr><td><span>payee-z</span></td></tr></table>"
+            + "<table><tr><td><span>美元(USD)</span></td>"
+            + "<td><span>0.00</span></td>" * 7
+            + "</tr></table>"
+        )
+        html = two_currency_html(formula=("CNY",)).replace(
+            "<table>" + NEW_HEADER, stray + "<table>" + NEW_HEADER
+        )
+        path = self.write(tmp_path, html)
+
+        summary = ABCCreditProvider()._extract_summary(path)
+
+        assert list(summary.new_charges) == ["CNY"]
+
+
 class TestABCRebateAdjustment:
     """The rebate entry books 本期调整金额, the net that reduced the debt."""
 
@@ -791,7 +987,7 @@ class TestABCRebateAdjustment:
 
         summary = ABCCreditProvider()._extract_summary(file_path)
 
-        assert summary.new_charges == Decimal("30.00")
+        assert summary.new_charges == {"CNY": Decimal("30.00")}
         assert summary.adjustment == Decimal("3.00")
         assert summary.rebate_used == Decimal("5.00")
 
@@ -998,7 +1194,7 @@ class TestABCReissue:
         assert summary.card_number == CARD
         assert summary.statement_period == (date(2030, 3, 1), date(2030, 3, 31))
         assert summary.statement_balance == Decimal("-1186.00")
-        assert summary.new_charges is None
+        assert summary.new_charges == {}
         assert summary.rebate_used == Decimal(0)
 
     def test_post_output_reports_the_reissue(self, tmp_path):
@@ -1213,7 +1409,7 @@ class TestABCOldTemplate:
         assert summary.card_number == OLD_CARD
         assert summary.statement_period == (date(2030, 3, 1), date(2030, 3, 31))
         assert summary.statement_balance == Decimal("-1186.00")
-        assert summary.new_charges == Decimal("130.00")
+        assert summary.new_charges == {"CNY": Decimal("130.00")}
         assert summary.adjustment is None
         assert summary.rebate_used == Decimal(0)
 

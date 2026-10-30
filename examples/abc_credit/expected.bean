@@ -82,8 +82,14 @@
     Liabilities:CreditCard:ABC:4321  -6.00 CNY
     Expenses:Finance:Fee  6.00 CNY
 
+2030-03-22 ! "网上消费 store-k"
+    card_last4: "4321"
+    source: "abc_credit"
+    Liabilities:CreditCard:ABC:4321  -13.00 USD
+    Expenses:FIXME  13.00 USD
+
 ; --- Summary ---
-; Matched: 1, Missing: 12, Extra: 1
+; Matched: 1, Missing: 13, Extra: 1
 
 ; ============================================================
 ; Extra entries in ledger (1)
@@ -124,10 +130,17 @@
 ; 卡号: 620000******4321 (尾号 4321)
 ; 账单周期: 2030/03/01-2030/03/31
 ;
+;   币种: CNY
 ;   解析消费:             220.00 CNY
 ;   账单消费:             220.00 CNY
 ;   账单应还:              95.00 CNY
 ;   刷卡金抵扣:             5.00 CNY
 ;
 ;   状态: ✅ 平账 (刷卡金 5.00)
+;
+;   币种: USD
+;   解析消费:              13.00 USD
+;   账单消费:              13.00 USD
+;
+;   状态: ✅ 平账
 ; ============================================================

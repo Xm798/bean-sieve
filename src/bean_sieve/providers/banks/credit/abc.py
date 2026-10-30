@@ -5,7 +5,7 @@ from __future__ import annotations
 import email
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from itertools import dropwhile
@@ -33,6 +33,8 @@ _CARD_CELL_RE = re.compile(r"^(\d{4})[主附]?$")
 _ROW_AMOUNT_RE = re.compile(r"^-?[\d,]+\.\d+/[A-Z]{3}$")
 _SUMMARY_AMOUNT_RE = re.compile(r"^-?[\d,]+\.\d{2}$")
 _PDF_TITLE = "农业银行信用卡对账单"
+# Currency marker on 账务说明 and balance cells: "人民币(CNY)"
+_CURRENCY_RE = re.compile(r"\(([A-Z]{3})\)")
 
 
 class _MailTemplate(NamedTuple):
@@ -88,8 +90,11 @@ class StatementSummary:
     card_number: str | None = None  # 卡号 (masked, e.g., 620000******1234)
     statement_period: tuple[date, date] | None = None  # 账单周期
     statement_balance: Decimal | None = None  # 本期应还款额
-    new_charges: Decimal | None = None  # 本期账单金额 (from 账务说明)
-    adjustment: Decimal | None = None  # 本期调整金额 (from 账务说明)
+    # The currency marked beside 本期应还款额; CNY when none is printed.
+    balance_currency: str = "CNY"
+    # 本期账单金额 per currency, one 账务说明 row each
+    new_charges: dict[str, Decimal] = field(default_factory=dict)
+    adjustment: Decimal | None = None  # CNY 本期调整金额, where 刷卡金 lands
     rebate_used: Decimal = Decimal(0)  # 本期使用刷卡金
 
     @property
@@ -407,13 +412,8 @@ class ABCCreditProvider(BaseProvider):
             parsed = context.parsed.get(file_path)
             txns = self.parse(file_path) if parsed is None else parsed
             summary = self._extract_summary(file_path)
-
-            # Get card info
             card_last4 = summary.card_number[-4:] if summary.card_number else "????"
             card_display = summary.card_number or "未知卡号"
-
-            # Calculate totals from parsed transactions (expenses only)
-            expenses = sum(t.amount for t in txns if t.amount > 0)
 
             summary_lines.append(";")
             summary_lines.append(f"; 卡号: {card_display} (尾号 {card_last4})")
@@ -427,72 +427,27 @@ class ABCCreditProvider(BaseProvider):
             ]
             # The reissue never prints the 账务说明 formula.
             if file_path.suffix.lower() != ".pdf":
-                fields.append(("账务说明", summary.new_charges))
+                fields.append(("账务说明", summary.new_charges or None))
             unread = [name for name, value in fields if value is None]
             if unread:
                 summary_lines.append(f";   未读出: {'、'.join(unread)}")
-            summary_lines.append(";")
 
-            # Statement balance (negative in source = debt)
-            stmt_balance = (
-                -summary.statement_balance if summary.statement_balance else Decimal(0)
-            )
-            rebate = summary.rebate_offset
-            rebate_used = summary.rebate_used
-            new_charges = summary.new_charges
-
-            summary_lines.append(f";   解析消费:       {expenses:>12.2f} CNY")
-            if new_charges is not None:
-                summary_lines.append(f";   账单消费:       {new_charges:>12.2f} CNY")
-            summary_lines.append(f";   账单应还:       {stmt_balance:>12.2f} CNY")
-            if rebate > 0:
-                summary_lines.append(f";   刷卡金抵扣:     {rebate:>12.2f} CNY")
-            if rebate < rebate_used:
-                summary_lines.append(
-                    f";     (本期使用刷卡金 {rebate_used:.2f}, 本期调整 {rebate:.2f})"
+            # Spending in a currency the formula omits is still reported, so
+            # that it shows as a difference.
+            currencies = list(
+                dict.fromkeys(
+                    [*summary.new_charges, *(t.currency for t in txns if t.amount > 0)]
                 )
-            elif summary.adjustment is not None and summary.adjustment > rebate_used:
-                summary_lines.append(
-                    f";   ⚠️ 调整金额 {summary.adjustment:.2f} 超出刷卡金使用"
-                    f" {rebate_used:.2f}，差额需手工核对"
+            ) or [summary.balance_currency]
+            for currency in currencies:
+                summary_lines.append(";")
+                if len(currencies) > 1:
+                    summary_lines.append(f";   币种: {currency}")
+                summary_lines.extend(
+                    self._currency_report(
+                        summary, currency, txns, result, context, rebate_entries
+                    )
                 )
-
-            # Compare parsed expenses against 本期账单金额 (new charges)
-            # This is more accurate than comparing against 本期应还 which includes
-            # carry-over balance, payments, refunds, and adjustments
-            if new_charges is not None:
-                diff = expenses - new_charges
-            else:
-                # Fallback: compare against stmt_balance + rebate (inaccurate
-                # if there are carry-over balances or payments)
-                diff = expenses - (stmt_balance + rebate)
-            summary_lines.append(";")
-
-            if stmt_balance == Decimal(0) and expenses == Decimal(0):
-                summary_lines.append(";   状态: ✅ 无消费")
-            elif abs(diff) < Decimal("0.01"):
-                if rebate > 0 and summary.statement_period is None:
-                    # The entry is dated on the cycle's last day.
-                    summary_lines.append(
-                        f";   状态: ✅ 平账 (刷卡金 {rebate:.2f}，"
-                        "账单周期未读出，未生成分录)"
-                    )
-                elif rebate > 0:
-                    # Check if rebate already recorded in ledger
-                    rebate_entry = self._generate_rebate_entry(
-                        summary, rebate, result, context
-                    )
-                    if rebate_entry:
-                        summary_lines.append(f";   状态: ✅ 平账 (刷卡金 {rebate:.2f})")
-                        rebate_entries.append(rebate_entry)
-                    else:
-                        summary_lines.append(
-                            f";   状态: ✅ 平账 (刷卡金 {rebate:.2f} 已记录)"
-                        )
-                else:
-                    summary_lines.append(";   状态: ✅ 平账")
-            else:
-                summary_lines.append(f";   差额: {diff:>+.2f} CNY")
 
         summary_lines.append("; " + "=" * 60)
 
@@ -504,6 +459,84 @@ class ABCCreditProvider(BaseProvider):
         output_parts.append("\n".join(summary_lines) + "\n")
 
         return "".join(output_parts)
+
+    def _currency_report(
+        self,
+        summary: StatementSummary,
+        currency: str,
+        txns: list[Transaction],
+        result: ReconcileResult,
+        context: ReconcileContext,
+        rebate_entries: list[str],
+    ) -> list[str]:
+        """Compare one currency's parsed spending with its 本期账单金额.
+
+        本期账单金额 is compared rather than 本期应还, which also carries the
+        previous balance, payments, refunds and adjustments.
+        """
+        lines: list[str] = []
+        expenses = sum(
+            (t.amount for t in txns if t.amount > 0 and t.currency == currency),
+            Decimal(0),
+        )
+        new_charges = summary.new_charges.get(currency)
+        # 本期应还款额 prints the debt as a negative amount.
+        stmt_balance = Decimal(0)
+        if currency == summary.balance_currency and summary.statement_balance:
+            stmt_balance = -summary.statement_balance
+        # 刷卡金 only pays CNY debt.
+        is_cny = currency == "CNY"
+        rebate = summary.rebate_offset if is_cny else Decimal(0)
+        rebate_used = summary.rebate_used if is_cny else Decimal(0)
+        adjustment = summary.adjustment if is_cny else None
+
+        lines.append(f";   解析消费:       {expenses:>12.2f} {currency}")
+        if new_charges is not None:
+            lines.append(f";   账单消费:       {new_charges:>12.2f} {currency}")
+        if currency == summary.balance_currency:
+            lines.append(f";   账单应还:       {stmt_balance:>12.2f} {currency}")
+        if rebate > 0:
+            lines.append(f";   刷卡金抵扣:     {rebate:>12.2f} {currency}")
+        if rebate < rebate_used:
+            lines.append(
+                f";     (本期使用刷卡金 {rebate_used:.2f}, 本期调整 {rebate:.2f})"
+            )
+        elif adjustment is not None and adjustment > rebate_used:
+            lines.append(
+                f";   ⚠️ 调整金额 {adjustment:.2f} 超出刷卡金使用"
+                f" {rebate_used:.2f}，差额需手工核对"
+            )
+
+        if new_charges is not None:
+            diff = expenses - new_charges
+        else:
+            # Inexact once a carry-over balance or a payment is involved.
+            diff = expenses - (stmt_balance + rebate)
+        lines.append(";")
+
+        if stmt_balance == Decimal(0) and expenses == Decimal(0) and not new_charges:
+            lines.append(";   状态: ✅ 无消费")
+        elif abs(diff) < Decimal("0.01"):
+            if rebate > 0 and summary.statement_period is None:
+                # The entry is dated on the cycle's last day.
+                lines.append(
+                    f";   状态: ✅ 平账 (刷卡金 {rebate:.2f}，"
+                    "账单周期未读出，未生成分录)"
+                )
+            elif rebate > 0:
+                rebate_entry = self._generate_rebate_entry(
+                    summary, rebate, result, context
+                )
+                if rebate_entry:
+                    lines.append(f";   状态: ✅ 平账 (刷卡金 {rebate:.2f})")
+                    rebate_entries.append(rebate_entry)
+                else:
+                    lines.append(f";   状态: ✅ 平账 (刷卡金 {rebate:.2f} 已记录)")
+            else:
+                lines.append(";   状态: ✅ 平账")
+        else:
+            lines.append(f";   差额: {diff:>+.2f} {currency}")
+        return lines
 
     def _generate_rebate_entry(
         self,
@@ -660,19 +693,27 @@ def _read_summary(lines: list[list[str]]) -> StatementSummary:
     本期使用刷卡金.
     """
     cells = [cell for line in lines for cell in line]
+    balance, balance_currency = _marked_amount_after(cells, "本期应还款额")
     summary = StatementSummary(
         card_number=next((c for c in cells if _MASKED_CARD_RE.match(c)), None),
         statement_period=next(filter(None, map(_parse_cycle, cells)), None),
-        statement_balance=_amount_after(cells, "本期应还款额"),
+        statement_balance=balance,
+        balance_currency=balance_currency,
         rebate_used=_amount_after(cells, "本期使用刷卡金") or Decimal(0),
     )
     for template in _TEMPLATES:
         formula = _read_formula(lines, template.new_charges_label)
-        if formula is not None:
-            summary.new_charges = _formula_value(formula, template.new_charges_label)
-            if template.adjustment_label:
-                summary.adjustment = _formula_value(formula, template.adjustment_label)
-            break
+        if not formula:
+            continue
+        for currency, row in formula.items():
+            new_charges = _formula_value(row, template.new_charges_label)
+            if new_charges is not None:
+                summary.new_charges[currency] = new_charges
+        if template.adjustment_label and "CNY" in formula:
+            summary.adjustment = _formula_value(
+                formula["CNY"], template.adjustment_label
+            )
+        break
     return summary
 
 
@@ -683,27 +724,58 @@ def _amount_after(cells: list[str], label: str) -> Decimal | None:
     )
 
 
+def _marked_amount_after(cells: list[str], label: str) -> tuple[Decimal | None, str]:
+    """First amount after the label, with the last currency marked before it.
+
+    Every layout prints a currency cell ahead of each 本期应还款额 amount, one
+    row per currency.
+    """
+    currency = "CNY"
+    for cell in dropwhile(lambda cell: not cell.startswith(label), cells):
+        if marker := _CURRENCY_RE.search(cell):
+            currency = marker.group(1)
+        if _SUMMARY_AMOUNT_RE.match(cell):
+            return _decimal(cell), currency
+    return None, "CNY"
+
+
 def _decimal(cell: str) -> Decimal:
     return Decimal(cell.replace(",", ""))
 
 
-def _read_formula(lines: list[list[str]], anchor: str) -> list[tuple[str, str]] | None:
-    """Pair each 账务说明 label with its value, or None without the formula.
+def _read_formula(
+    lines: list[list[str]], anchor: str
+) -> dict[str, list[tuple[str, str]]]:
+    """Pair each 账务说明 label with its value, per currency in printed order.
 
-    The label row holds operator cells that have no value cell; the value
-    row is the first later row with one cell per label and an amount.
+    The label row holds operator cells that have no value cell; a value row
+    is a later row with one cell per label and an amount. Each currency gets
+    a row of its own, its first cell naming it, and the first row after them
+    whose first cell names no currency ends the formula. A value row without
+    a currency cell is taken as the only, CNY, row.
     """
     for i, line in enumerate(lines):
         labels = [_compact(cell) for cell in line if cell not in _FORMULA_OPERATORS]
         if not any(label.startswith(anchor) for label in labels):
             continue
+        formula: dict[str, list[tuple[str, str]]] = {}
         for values in lines[i + 1 :]:
-            if len(values) == len(labels) and any(
+            is_value_row = len(values) == len(labels) and any(
                 _SUMMARY_AMOUNT_RE.match(value) for value in values
-            ):
-                return list(zip(labels, values, strict=True))
-        return None
-    return None
+            )
+            first = next((cell for cell in values if cell), "")
+            currency = _CURRENCY_RE.search(first)
+            if currency is None:
+                if formula:
+                    break
+                if is_value_row:
+                    return {"CNY": list(zip(labels, values, strict=True))}
+            elif is_value_row:
+                formula.setdefault(
+                    currency.group(1), list(zip(labels, values, strict=True))
+                )
+        return formula
+    return {}
 
 
 def _formula_value(formula: list[tuple[str, str]], label: str) -> Decimal | None:

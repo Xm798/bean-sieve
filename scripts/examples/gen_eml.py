@@ -121,14 +121,22 @@ def abc_credit(out_dir: Path) -> None:
             ("300218", "300218", "", "约定还款", "893.00"),
         ],
     )
-    # (trans_date, post_date, card, description, bank-signed amount)
+    # (trans_date, post_date, card, description, bank-signed amount, currency)
     rows = [
-        ("300303", "300303", "4321", "网上消费 支付宝，store-a", "-38.00"),
-        ("300306", "300307", "4321", "网上消费 财付通，restaurant-b午餐", "-56.00"),
-        ("300309", "300310", "4321", "消费 store-c", "-120.00"),
-        ("300312", "300313", "4321", "退货 store-c", "120.00"),
-        ("300315", "300315", "", "约定还款", "1,500.00"),
-        ("300320", "300320", "4321", "分期手续费", "-6.00"),
+        ("300303", "300303", "4321", "网上消费 支付宝，store-a", "-38.00", "CNY"),
+        (
+            "300306",
+            "300307",
+            "4321",
+            "网上消费 财付通，restaurant-b午餐",
+            "-56.00",
+            "CNY",
+        ),
+        ("300309", "300310", "4321", "消费 store-c", "-120.00", "CNY"),
+        ("300312", "300313", "4321", "退货 store-c", "120.00", "CNY"),
+        ("300315", "300315", "", "约定还款", "1,500.00", "CNY"),
+        ("300320", "300320", "4321", "分期手续费", "-6.00", "CNY"),
+        ("300322", "300323", "4321", "网上消费 store-k", "-13.00", "USD"),
     ]
     formula_labels = [
         ("币种", "Curr"),
@@ -147,14 +155,17 @@ def abc_credit(out_dir: Path) -> None:
         ("本期调整金额", "Adjustment"),
     ]
     formula_values = [
-        "人民币(CNY)",
-        "95.00",
-        "0.00",
-        "1500.00",
-        "0.00",
-        "220.00",
-        "1620.00",
-        "5.00",
+        [
+            "人民币(CNY)",
+            "95.00",
+            "0.00",
+            "1500.00",
+            "0.00",
+            "220.00",
+            "1620.00",
+            "5.00",
+        ],
+        ["美元(USD)", "13.00", "0.00", "0.00", "0.00", "13.00", "0.00", "0.00"],
     ]
     labels = "\n".join(
         f"<td><span>{c}</span></td>"
@@ -162,17 +173,22 @@ def abc_credit(out_dir: Path) -> None:
         else f"<td><span>{c[0]}</span><span>{c[1]}</span></td>"
         for c in formula_labels
     )
-    values = "\n".join(f"<td><span>{v}</span></td>" for v in formula_values)
+    values = "\n".join(
+        "<table>\n<tr>\n"
+        + "\n".join(f"<td><span>{v}</span></td>" for v in row)
+        + "\n</tr>\n</table>"
+        for row in formula_values
+    )
     body = "\n".join(
         f"""    <tr>
         <td>{t}</td>
         <td>{p}</td>
         <td>{c}</td>
         <td>{d}</td>
-        <td>{a}/CNY</td>
-        <td>{a}/CNY</td>
+        <td>{a}/{currency}</td>
+        <td>{a}/{currency}</td>
     </tr>"""
-        for t, p, c, d, a in rows
+        for t, p, c, d, a, currency in rows
     )
     html = f"""<html>
 <head><title>金穗信用卡电子对账单</title></head>
@@ -189,11 +205,7 @@ def abc_credit(out_dir: Path) -> None:
 {labels}
 </tr>
 </table>
-<table>
-<tr>
 {values}
-</tr>
-</table>
 </div>
 <table>
 <tr>
