@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 招商银行信用卡：解析 PDF 补发账单；同月邮件与补发同时传入时只采用邮件，美元账户取自补发
 - 建设银行信用卡：解析 PDF 补发账单；同一账单周期邮件与 PDF 同时传入时只采用邮件
 - 广发银行信用卡：解析 PDF 补发账单；同一账单周期邮件与 PDF 同时传入时只采用邮件
+- 民生银行信用卡：同一账单周期的正本与补发邮件同时传入时只采用靠前的一份
 - 农业银行信用卡：解析 PDF 补发账单；同一账单周期邮件与 PDF 同时传入时只采用邮件
 - 配置项 `fee_account`（`defaults` 和 `providers.<id>` 下均可设置）：账单里单列的手续费另记一条 posting，默认记到 `Expenses:FIXME`
 

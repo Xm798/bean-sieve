@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from bean_sieve.core.coverage import CoverageEntry, select
+from bean_sieve.core.metadata_keys import STATEMENT_CYCLE
 from bean_sieve.providers import get_provider
 from bean_sieve.providers.banks.credit.cmbc import CMBCCreditProvider
 
@@ -451,8 +453,13 @@ class TestCMBCSingleTableTemplate:
             (date(2030, 3, 2), "退货-payee-a", Decimal("-37.00"), "1111"),
             (date(2030, 3, 5), "还款", Decimal("-800.00"), "2222"),
         ]
-        assert txns[0].metadata == {"posting_date": "2030-02-26"}
-        assert txns[1].metadata == {}
+        assert txns[0].metadata == {
+            "posting_date": "2030-02-26",
+            STATEMENT_CYCLE: (date(2030, 2, 21), date(2030, 3, 20)),
+        }
+        assert txns[1].metadata == {
+            STATEMENT_CYCLE: (date(2030, 2, 21), date(2030, 3, 20))
+        }
         assert [t.source_line for t in txns] == [1, 2, 3]
         assert txns[0].statement_period == (date(2030, 2, 21), date(2030, 3, 20))
 
@@ -466,7 +473,10 @@ class TestCMBCPostingDate:
         )
         (txn,) = parse_html(tmp_path, html)
 
-        assert txn.metadata == {"posting_date": "2030-03-06"}
+        assert txn.metadata == {
+            "posting_date": "2030-03-06",
+            STATEMENT_CYCLE: (date(2030, 2, 21), date(2030, 3, 20)),
+        }
 
     def test_reward_section_row_is_parsed(self, tmp_path):
         html = create_sectioned_html(
@@ -505,3 +515,122 @@ def test_unknown_layout_with_dated_rows_logs_a_warning(tmp_path, caplog):
         assert parse_html(tmp_path, html) == []
 
     assert "民生信用卡2030年03月电子对账单.eml" in caplog.text
+
+
+class TestCMBCCoverage:
+    """One coverage per statement: CMBC bills every card on one account."""
+
+    ROWS = [
+        {
+            "trans_date": "02/24",
+            "post_date": "02/26",
+            "description": "payee-a",
+            "amount": "60.00",
+            "card_last4": "0001",
+        },
+        {
+            "trans_date": "03/12",
+            "post_date": "03/12",
+            "description": "payee-b",
+            "amount": "90.00",
+            "card_last4": "1234",
+        },
+    ]
+
+    def write(self, tmp_path: Path, name: str, html: str) -> Path:
+        file_path = tmp_path / name
+        file_path.write_text(create_cmbc_eml(html), encoding="utf-8")
+        return file_path
+
+    def statement(
+        self, tmp_path: Path, name: str = "a.eml", stmt_date: str = "2030/03/25"
+    ) -> Path:
+        html = create_cmbc_html_with_transactions(self.ROWS, statement_date=stmt_date)
+        return self.write(tmp_path, name, html)
+
+    @staticmethod
+    def select_files(*paths: Path):
+        provider = CMBCCreditProvider()
+        return select(
+            [
+                CoverageEntry(provider.provider_id, path, coverage)
+                for path in paths
+                for coverage in provider.coverage(path, provider.parse(path))
+            ]
+        )
+
+    def test_one_coverage_spans_the_cycle_ending_on_the_statement_date(self, tmp_path):
+        provider = CMBCCreditProvider()
+        path = self.statement(tmp_path)
+        transactions = provider.parse(path)
+
+        coverages = provider.coverage(path, transactions)
+
+        # The row dated before the cycle widens statement_period, not coverage.
+        assert [
+            (c.account, c.start, c.end, c.rows, c.source, c.itemized) for c in coverages
+        ] == [
+            ("", date(2030, 2, 26), date(2030, 3, 25), transactions, "statement", True)
+        ]
+
+    def test_no_coverage_without_a_printed_statement_date(self, tmp_path, caplog):
+        provider = CMBCCreditProvider()
+        html = create_cmbc_html_with_transactions(
+            self.ROWS, statement_date="2030/03/25"
+        ).replace("Statement Date", "")
+        path = self.write(tmp_path, "民生信用卡2030年03月电子对账单.eml", html)
+        with caplog.at_level(
+            "WARNING", logger="bean_sieve.providers.banks.credit.cmbc"
+        ):
+            transactions = provider.parse(path)
+
+        assert len(transactions) == 2
+        assert provider.coverage(path, transactions) == []
+        assert "民生信用卡2030年03月电子对账单.eml" in caplog.text
+
+    def test_resend_of_the_same_cycle_loses_to_the_earlier_file(self, tmp_path):
+        selection = self.select_files(
+            self.statement(tmp_path, "original.eml"),
+            self.statement(tmp_path, "resend.eml"),
+        )
+
+        assert [e.path.name for e in selection.adopted] == ["original.eml"]
+        assert [d.entry.path.name for d in selection.drops] == ["resend.eml"]
+        assert selection.mismatches == []
+
+    def test_consecutive_statements_do_not_overlap(self, tmp_path):
+        selection = self.select_files(
+            self.statement(tmp_path, "feb.eml", "2030/02/25"),
+            self.statement(tmp_path, "mar.eml", "2030/03/25"),
+        )
+
+        assert len(selection.adopted) == 2
+        assert selection.drops == []
+
+    def test_a_lone_resend_is_kept(self, tmp_path):
+        selection = self.select_files(self.statement(tmp_path, "resend.eml"))
+
+        assert [len(e.coverage.rows) for e in selection.adopted] == [2]
+        assert selection.drops == []
+
+    @pytest.mark.parametrize(
+        ("stmt_date", "start"),
+        [
+            ("2030/03/31", date(2030, 3, 1)),
+            ("2030/03/30", date(2030, 3, 1)),
+            ("2030/01/31", date(2030, 1, 1)),
+            ("2030/01/25", date(2029, 12, 26)),
+        ],
+    )
+    def test_cycle_starts_after_the_previous_months_statement_day(
+        self, tmp_path, stmt_date, start
+    ):
+        provider = CMBCCreditProvider()
+        path = self.statement(tmp_path, stmt_date=stmt_date)
+
+        (coverage,) = provider.coverage(path, provider.parse(path))
+
+        assert (coverage.start, coverage.end) == (
+            start,
+            date(*map(int, stmt_date.split("/"))),
+        )

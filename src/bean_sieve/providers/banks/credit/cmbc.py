@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import logging
 import re
 from datetime import date, timedelta
@@ -9,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from ....core.coverage import Coverage
+from ....core.metadata_keys import STATEMENT_CYCLE
 from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
@@ -73,7 +76,14 @@ class CMBCCreditProvider(BaseProvider):
         html = self.extract_html_from_eml(file_path)
         soup = self.parse_html(html)
 
-        stmt_date = self._extract_statement_date(html, file_path)
+        printed_date = self._printed_statement_date(html)
+        if printed_date is None:
+            logger.warning(
+                "No statement date printed in %s; guessing it and reporting no "
+                "coverage for statement selection",
+                file_path,
+            )
+        stmt_date = printed_date or self._fallback_statement_date(file_path)
         statement_period = self._compute_statement_period(stmt_date)
 
         transactions: list[Transaction] = []
@@ -92,7 +102,27 @@ class CMBCCreditProvider(BaseProvider):
                 transactions.append(txn)
 
         self.assign_statement_periods(transactions, statement_period)
+        # A cycle guessed from the file name could displace a neighbouring
+        # statement in coverage selection, so only a printed one is recorded.
+        if printed_date:
+            for txn in transactions:
+                txn.metadata[STATEMENT_CYCLE] = statement_period
         return transactions
+
+    def coverage(
+        self,
+        file_path: Path,  # noqa: ARG002
+        transactions: list[Transaction],
+    ) -> list[Coverage]:
+        """Cover the account for the cycle ending on the printed 账单日.
+
+        A re-sent mail matches the original in subject, sender and body, so both
+        are one source kind and the earlier file on the command line wins.
+        """
+        rows = [t for t in transactions if STATEMENT_CYCLE in t.metadata]
+        if not rows:
+            return []
+        return [Coverage("", *rows[0].metadata[STATEMENT_CYCLE], rows=rows)]
 
     @staticmethod
     def _template_rows(loop_band) -> list[tuple[Any, _Section]]:
@@ -113,14 +143,17 @@ class CMBCCreditProvider(BaseProvider):
                 return rows
         return []
 
-    def _extract_statement_date(self, html: str, file_path: Path) -> date:
-        """Extract the statement date (账单日) from HTML or filename."""
+    @staticmethod
+    def _printed_statement_date(html: str) -> date | None:
         match = re.search(
             r"Statement(?:\s|&nbsp;)*Date.*?(\d{4})/(\d{2})/(\d{2})", html, re.DOTALL
         )
         if match:
             return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        return None
 
+    @staticmethod
+    def _fallback_statement_date(file_path: Path) -> date:
         match = re.search(r"(\d{4})年(\d{1,2})月", file_path.name)
         if match:
             return date(int(match.group(1)), int(match.group(2)), 10)
@@ -129,12 +162,17 @@ class CMBCCreditProvider(BaseProvider):
 
     @staticmethod
     def _compute_statement_period(stmt_date: date) -> tuple[date, date]:
-        """Compute statement period: previous statement day + 1 to current statement day."""
-        if stmt_date.month == 1:
-            prev = date(stmt_date.year - 1, 12, stmt_date.day)
-        else:
-            prev = date(stmt_date.year, stmt_date.month - 1, stmt_date.day)
-        return (prev + timedelta(days=1), stmt_date)
+        """Compute statement period: previous statement day + 1 to current statement day.
+
+        A statement day past the end of the previous month falls on its last day.
+        """
+        year, month = (
+            (stmt_date.year - 1, 12)
+            if stmt_date.month == 1
+            else (stmt_date.year, stmt_date.month - 1)
+        )
+        day = min(stmt_date.day, calendar.monthrange(year, month)[1])
+        return (date(year, month, day) + timedelta(days=1), stmt_date)
 
     def _parse_row(
         self,
