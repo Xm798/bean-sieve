@@ -49,13 +49,12 @@ _MAIL_IMAGE_HEADER = (
     "交易地",
     "交易地金额",
 )
-# The mail's 美元账户 section is left to the reissued PDF.
-_MAIL_CURRENCIES = ("CNY",)
 _MAIL_MONTH_RE = re.compile(r"(\d{4})年(\d{1,2})月信用卡账单")
 # Older mails print the billing cycle instead of the statement month.
 _MAIL_CYCLE_RE = re.compile(r"\d{4}/\d{2}/\d{2}\s*-\s*(\d{4})/(\d{2})/(\d{2})")
 _YEAR_MONTH_RE = re.compile(r"(\d{4})年(\d{1,2})月")
-_AMOUNT_CELL_RE = re.compile(r"^[¥￥]")
+_CURRENCY_SIGNS = "¥￥$＄"
+_AMOUNT_CELL_RE = re.compile(f"^[{_CURRENCY_SIGNS}]")
 # Amounts are right-aligned, so a long one starts left of its header label.
 _PDF_COLUMN_SLACK = 12.0
 _PDF_ROW_TOLERANCE = 3.0
@@ -93,9 +92,9 @@ class _Statement:
     # The latest date a row can carry, which places MMDD dates in a year.
     closing: date
     source: str
-    itemized: bool
-    # The accounts (人民币账户, 美元账户) the file reports, as currencies.
-    currencies: tuple[str, ...]
+    # The accounts (人民币账户, 美元账户) the file reports, by currency, and
+    # whether each one is itemized.
+    accounts: dict[str, bool]
     rows: list[_Row] = field(default_factory=list)
 
 
@@ -179,8 +178,8 @@ class CMBCreditProvider(BaseProvider):
 
         Most mails print no billing cycle, only the statement month, so both
         formats cover that calendar month: a mail and a reissue of one month
-        always overlap, and consecutive months never do. Mails list only the
-        人民币账户, so a reissue still supplies the 美元账户 of a mailed month.
+        always overlap, and consecutive months never do. A reissue still
+        supplies an account its month's mail does not list.
         """
         statement = self._read(file_path)
         return [
@@ -188,10 +187,10 @@ class CMBCreditProvider(BaseProvider):
                 currency,
                 *statement.month_span,
                 rows=[txn for txn in transactions if txn.currency == currency],
-                itemized=statement.itemized,
+                itemized=itemized,
                 source=statement.source,
             )
-            for currency in statement.currencies
+            for currency, itemized in statement.accounts.items()
         ]
 
     def _read(self, file_path: Path) -> _Statement:
@@ -207,21 +206,32 @@ class CMBCreditProvider(BaseProvider):
             self.clean_text(soup.get_text()), self.decode_subject(msg), file_path
         )
         span = _month_span(year, month)
-        recognised, rows, unread = self._mail_rows(soup)
+        sections, rows, skipped = self._mail_rows(soup)
+        recognised = bool(sections)
+        if recognised and skipped:
+            logger.warning("Unrecognised CMB statement section in %s", file_path)
         if not recognised:
-            unread = any(self._is_dated_row(tr) for tr in soup.find_all("tr"))
-        # Dated rows that no section reads mean the bank changed its layout;
-        # an empty result alone would look like a quiet month, and an
-        # itemized one would displace the reissue of that month.
-        unread = unread and not rows
-        if unread:
-            logger.warning("Unrecognised CMB statement layout in %s", file_path)
+            sections = {
+                "CNY": any(self._is_dated_row(tr) for tr in soup.find_all("tr"))
+            }
+        accounts: dict[str, bool] = {}
+        for currency, unread in sections.items():
+            # Dated rows that no section reads mean the bank changed its
+            # layout; an empty account alone would look like a quiet month,
+            # and an itemized one would displace the reissue's account.
+            unread = unread and not any(row.currency == currency for row in rows)
+            if unread:
+                logger.warning(
+                    "Unrecognised CMB statement layout in %s (%s account)",
+                    file_path,
+                    currency,
+                )
+            accounts[currency] = recognised and not unread
         return _Statement(
             span,
             closing=closing or span[1],
             source="statement",
-            itemized=recognised and not unread,
-            currencies=_MAIL_CURRENCIES,
+            accounts=accounts,
             rows=rows,
         )
 
@@ -247,14 +257,16 @@ class CMBCreditProvider(BaseProvider):
         )
         return today.year, today.month, None
 
-    def _mail_rows(self, soup) -> tuple[bool, list[_Row], bool]:
+    def _mail_rows(self, soup) -> tuple[dict[str, bool], list[_Row], bool]:
         """Read the rows of each section, in mail order.
 
-        A section is the loopBand2 band holding its header. Returns whether
-        any section header was recognised, the rows, and whether a dated row
-        inside a recognised section was left unread.
+        A section is the loopBand2 band holding its header. Returns, by the
+        currency of each recognised section, whether a dated row inside it
+        was left unread; the rows; and whether a section with an
+        unrecognised header holds dated rows.
         """
-        recognised = unread = False
+        unread: dict[str, bool] = {}
+        skipped = False
         band = None
         # The field name (None for an unread cell) of each column, and the
         # currency, of the section being read.
@@ -263,19 +275,18 @@ class CMBCreditProvider(BaseProvider):
         for el in soup.find_all(["span", "tr"]):
             if el.name == "span":
                 if el.get("id") == "loopHeader2":
-                    labels = self._section_labels(el)
-                    recognised |= labels is not None
-                    currency = labels and _section_currency(labels)
-                    band = (
-                        el.find_parent("span", id="loopBand2") or el.parent
-                        if labels
-                        else None
-                    )
-                    section = (
-                        ([_MAIL_HEADERS.get(label) for label in labels], currency)
-                        if labels and currency in _MAIL_CURRENCIES
-                        else None
-                    )
+                    header = self._section_header(el)
+                    band = section = None
+                    if header is None:
+                        own_band = el.find_parent("span", id="loopBand2") or el.parent
+                        skipped |= any(
+                            self._is_dated_row(tr) for tr in own_band.find_all("tr")
+                        )
+                    else:
+                        labels, currency = header
+                        band = el.find_parent("span", id="loopBand2") or el.parent
+                        section = ([_MAIL_HEADERS.get(lb) for lb in labels], currency)
+                        unread.setdefault(currency, False)
                 continue
             if band is None:
                 continue
@@ -287,7 +298,7 @@ class CMBCreditProvider(BaseProvider):
             columns, currency = section
             cells = el.find_all("td", recursive=False)
             if len(cells) != len(columns):
-                unread |= self._is_dated_row(el)
+                unread[currency] |= self._is_dated_row(el)
                 continue
             fields = dict.fromkeys(_ROW_TEXT_FIELDS, "") | {
                 name: self.clean_text(cell.get_text())
@@ -295,16 +306,19 @@ class CMBCreditProvider(BaseProvider):
                 if name
             }
             rows.append(_Row(**fields, currency=currency, line=len(rows) + 1))
-        return recognised, rows, unread
+        return unread, rows, skipped
 
-    def _section_labels(self, header) -> tuple[str, ...] | None:
-        """Return the column labels of a section header, None if unrecognised."""
+    def _section_header(self, header) -> tuple[tuple[str, ...], str] | None:
+        """Return the column labels and currency of a section header.
+
+        None when the header is unrecognised.
+        """
         for tr in header.find_all("tr"):
             labels = tuple(self._cell_texts(tr))
-            if "记账日" in labels and _section_currency(labels):
-                return labels
+            if "记账日" in labels and (currency := _section_currency(labels)):
+                return labels, currency
         if header.find("img") and not self.clean_text(header.get_text()):
-            return _MAIL_IMAGE_HEADER
+            return _MAIL_IMAGE_HEADER, "CNY"
         return None
 
     def _is_dated_row(self, tr) -> bool:
@@ -353,16 +367,16 @@ class CMBCreditProvider(BaseProvider):
             month,
             closing=closing,
             source="reissue",
-            itemized=True,
-            currencies=tuple(
-                dict.fromkeys(
+            accounts=dict.fromkeys(
+                [
                     code
                     for ln in lines
                     for heading, code in _PDF_ACCOUNTS.items()
                     if ln.text.startswith(heading)
-                )
-            )
-            or ("CNY",),
+                ]
+                or ["CNY"],
+                True,
+            ),
             rows=self._pdf_rows(lines),
         )
 
@@ -462,7 +476,7 @@ class CMBCreditProvider(BaseProvider):
 
     def _parse_amount(self, text: str) -> Decimal | None:
         # Older mails put a space between the sign and the digits.
-        cleaned = re.sub(r"[¥￥,\s]", "", text)
+        cleaned = re.sub(rf"[{_CURRENCY_SIGNS},\s]", "", text)
         if not cleaned:
             return None
         try:

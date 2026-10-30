@@ -571,6 +571,10 @@ def cmb_credit(out_dir: Path) -> None:
         ("0313", "0314", "退款-store-d", "-123.10", "8765", "-123.10", "CN"),
         ("", "0318", "银联在线网络还款", "-1,502.10", "4321", "-1,502.10", ""),
     ]
+    usd_rows = [
+        ("0316", "0317", "app-store-g", "9.70", "8765", "9.70", "US"),
+        ("0320", "0321", "overseas-shop-f", "17.60", "8765", "2,610.00", "JP"),
+    ]
     labels = [
         "",
         "交易日",
@@ -581,20 +585,20 @@ def cmb_credit(out_dir: Path) -> None:
         "交易地金额",
         "交易地",
     ]
-    header = "".join(f"<td>{label}</td>" for label in labels)
-    body = "\n".join(
-        f"""        <tr><td><table><tr>
-            <td></td><td>{t}</td><td>{p}</td><td>{d}</td><td>¥ {a}</td><td>{c}</td>
+
+    def section(amount_label: str, symbol: str, section_rows) -> str:
+        header = "".join(
+            f"<td>{amount_label if label == '人民币金额' else label}</td>"
+            for label in labels
+        )
+        body = "\n".join(
+            f"""        <tr><td><table><tr>
+            <td></td><td>{t}</td><td>{p}</td><td>{d}</td><td>{symbol} {a}</td><td>{c}</td>
             <td>{o}</td><td>{n}</td>
         </tr></table></td></tr>"""
-        for t, p, d, a, c, o, n in rows
-    )
-    html = f"""<!DOCTYPE HTML>
-<html>
-<head><meta charset="UTF-8"><title>招商银行信用卡电子账单</title></head>
-<body>
-<div>您2030年03月信用卡账单已出</div>
-<span id="loopBand2">
+            for t, p, d, a, c, o, n in section_rows
+        )
+        return f"""<span id="loopBand2">
 <span id="loopHeader2"><span id="fixBand14">
     <table><tr>{header}</tr></table>
 </span></span>
@@ -603,7 +607,15 @@ def cmb_credit(out_dir: Path) -> None:
 {body}
     </table>
 </span>
-</span>
+</span>"""
+
+    html = f"""<!DOCTYPE HTML>
+<html>
+<head><meta charset="UTF-8"><title>招商银行信用卡电子账单</title></head>
+<body>
+<div>您2030年03月信用卡账单已出</div>
+{section("人民币金额", "¥", rows)}
+{section("美元金额", "$", usd_rows)}
 </body>
 </html>"""
     write_eml(

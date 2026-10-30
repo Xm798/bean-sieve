@@ -109,7 +109,7 @@ def create_cmb_html_with_transactions(
 </span>"""
 
     sections = section(_TEXT_HEADER, transactions, "¥")
-    if usd_transactions:
+    if usd_transactions is not None:
         usd_header = tuple("美元金额" if h == "人民币金额" else h for h in _TEXT_HEADER)
         sections += section(usd_header, usd_transactions, "$")
     return f"""<!DOCTYPE HTML>
@@ -287,7 +287,7 @@ class TestCMBDateParsing:
                 "post_date": "1215",
                 "description": "支付宝还款",
                 "card_last4": "2468",
-                "amount": "-5000.00",
+                "amount": "-4900.00",
             },
         ]
         html = create_cmb_html_with_transactions(transactions)
@@ -324,6 +324,24 @@ class TestCMBAmountParsing:
 
         assert len(txns) == 1
         assert txns[0].amount == Decimal("12345.67")
+
+    def test_fullwidth_dollar_sign(self, tmp_path):
+        usd = {
+            "trans_date": "1210",
+            "post_date": "1211",
+            "description": "payee-usd",
+            "card_last4": "0001",
+            "amount": "11.30",
+        }
+        html = create_cmb_html_with_transactions([], usd_transactions=[usd]).replace(
+            "$ 11.30", "＄11.30"
+        )
+        file_path = tmp_path / "招商银行信用卡电子账单.eml"
+        file_path.write_text(create_cmb_eml(html), encoding="utf-8")
+
+        (txn,) = CMBCreditProvider().parse(file_path)
+
+        assert (txn.amount, txn.currency) == (Decimal("11.30"), "USD")
 
     def test_foreign_transaction_takes_rmb_amount(self, tmp_path):
         """人民币金额 is the amount; 交易地金额 and 交易地 are kept as metadata."""
@@ -495,7 +513,7 @@ _TEMPLATE_ROWS = [
         "description": "payee-b",
         "card_last4": "8765",
         "amount": "31.60",
-        "original_amount": "36.90",
+        "original_amount": "38.20",
         "country": "HK",
     },
     {
@@ -503,7 +521,7 @@ _TEMPLATE_ROWS = [
         "post_date": "0315",
         "description": "退款-payee-c",
         "card_last4": "8765",
-        "amount": "-12.60",
+        "amount": "-13.40",
         "country": "CN",
     },
 ]
@@ -551,7 +569,7 @@ class TestCMBMailTemplates:
 
         assert len(text) == 4
         assert self._shape(image) == self._shape(text)
-        assert text[2].metadata["original_amount"] == Decimal("36.90")
+        assert text[2].metadata["original_amount"] == Decimal("38.20")
         assert text[2].metadata["country"] == "HK"
 
     def test_image_header_mail_is_itemized_for_the_cycle_month(self, tmp_path):
@@ -577,17 +595,34 @@ class TestCMBMailTemplates:
 
         assert txn.amount == Decimal("-652.40")
 
-    def test_usd_section_is_left_to_the_reissue(self, tmp_path):
+    def test_usd_section_is_a_usd_account(self, tmp_path):
         html = create_cmb_html_with_transactions(
             _TEMPLATE_ROWS[:1],
             "2030年03月",
-            usd_transactions=[{**_TEMPLATE_ROWS[2], "amount": "4.70"}],
+            usd_transactions=[
+                {**_TEMPLATE_ROWS[2], "amount": "4.70", "original_amount": "5.30"},
+                {**_TEMPLATE_ROWS[3], "amount": "-4.70"},
+            ],
         )
 
         txns, covs = self._parse(tmp_path, html)
 
-        assert [t.description for t in txns] == ["银联在线网络还款"]
-        assert [c.account for c in covs] == ["CNY"]
+        assert [(t.currency, t.amount, t.card_last4) for t in txns] == [
+            ("CNY", Decimal("-652.40"), "4321"),
+            ("USD", Decimal("4.70"), "8765"),
+            ("USD", Decimal("-4.70"), "8765"),
+        ]
+        assert txns[1].metadata == {
+            "posting_date": "2030-03-11",
+            "original_amount": Decimal("5.30"),
+            "country": "HK",
+        }
+        assert [t.source_line for t in txns] == [1, 2, 3]
+        assert [(c.account, c.source, c.itemized) for c in covs] == [
+            ("CNY", "statement", True),
+            ("USD", "statement", True),
+        ]
+        assert covs[1].rows == txns[1:]
 
     def test_header_without_rows_is_an_itemized_quiet_month(self, tmp_path):
         txns, (cov,) = self._parse(
@@ -643,7 +678,7 @@ class TestCMBMailTemplates:
         trailer = "<table><tr>{}</tr></table>".format(
             "".join(
                 f"<td>{v}</td>"
-                for v in ["", "0320", "0321", "payee-z", "¥ 3.10", "4321", "", ""]
+                for v in ["", "0320", "0321", "payee-z", "¥ 2.30", "4321", "", ""]
             )
         )
         html = create_cmb_html_with_transactions(
@@ -814,10 +849,10 @@ class TestCMBPdfReissue:
                             "63.10",
                         ),
                         ("消费", "", "", "", "", ""),
-                        ("03/10", "03/11", "payee-b", "71.90", "8765", "71.90(CN)"),
-                        ("03/12", "03/13", "payee-c", "17.20", "8765", "24.30(HK)"),
+                        ("03/10", "03/11", "payee-b", "73.40", "8765", "73.40(CN)"),
+                        ("03/12", "03/13", "payee-c", "18.70", "8765", "24.30(HK)"),
                         ("退款", "", "", "", "", ""),
-                        ("03/14", "03/15", "payee-b", "-71.90", "8765", "-71.90"),
+                        ("03/14", "03/15", "payee-b", "-73.40", "8765", "-73.40"),
                     ],
                 ),
                 (
@@ -832,9 +867,9 @@ class TestCMBPdfReissue:
         assert [(t.date, t.amount, t.currency, t.card_last4) for t in txns] == [
             (date(2030, 3, 5), Decimal("-613.00"), "CNY", "4321"),
             (date(2029, 11, 20), Decimal("63.10"), "CNY", "4321"),
-            (date(2030, 3, 10), Decimal("71.90"), "CNY", "8765"),
-            (date(2030, 3, 12), Decimal("17.20"), "CNY", "8765"),
-            (date(2030, 3, 14), Decimal("-71.90"), "CNY", "8765"),
+            (date(2030, 3, 10), Decimal("73.40"), "CNY", "8765"),
+            (date(2030, 3, 12), Decimal("18.70"), "CNY", "8765"),
+            (date(2030, 3, 14), Decimal("-73.40"), "CNY", "8765"),
             (date(2030, 3, 16), Decimal("9.30"), "USD", "8765"),
         ]
         assert [t.description for t in txns][:3] == [
@@ -854,8 +889,8 @@ class TestCMBPdfReissue:
         """Both formats of one statement yield the same transactions."""
         rows = [
             ("", "0305", "银联在线网络还款", "-613.00", "4321", "-613.00", ""),
-            ("0310", "0311", "payee-b", "71.90", "8765", "71.90", "CN"),
-            ("0312", "0313", "payee-c", "17.20", "8765", "24.30", "HK"),
+            ("0310", "0311", "payee-b", "73.40", "8765", "73.40", "CN"),
+            ("0312", "0313", "payee-c", "18.70", "8765", "24.30", "HK"),
             ("0325", "0226", "payee-e 012-012", "35.60", "4321", "35.60", ""),
         ]
         html = create_cmb_html_with_transactions(
@@ -925,7 +960,7 @@ class TestCMBPdfReissue:
     def test_detected_by_content(self, tmp_path):
         pdf = write_cmb_pdf(
             tmp_path / "statement.pdf",
-            [(_RMB, [("03/10", "03/11", "payee-b", "71.90", "8765", "71.90")])],
+            [(_RMB, [("03/10", "03/11", "payee-b", "73.40", "8765", "73.40")])],
         )
 
         assert CMBCreditProvider.can_handle(pdf)
@@ -1045,3 +1080,142 @@ class TestCMBCoverage:
             ("USD", reissue),
         ]
         assert [d.entry.coverage.account for d in selection.drops] == ["CNY"]
+
+    def _usd_reissue(self, tmp_path: Path) -> Path:
+        return write_cmb_pdf(
+            tmp_path / "reissue.pdf",
+            [
+                (_RMB, [("03/10", "03/11", "payee-b", "52.10", "8765", "52.10")]),
+                (
+                    "美元账户 USD A/C",
+                    [("03/16", "03/17", "payee-d", "26.10", "8765", "26.10(US)")],
+                ),
+            ],
+        )
+
+    def _eml_with_usd(self, tmp_path: Path, usd_transactions: list[dict]) -> Path:
+        cny = {
+            "trans_date": "0310",
+            "post_date": "0311",
+            "description": "payee-b",
+            "card_last4": "8765",
+            "amount": "52.10",
+        }
+        html = create_cmb_html_with_transactions(
+            [cny], "2030年03月", usd_transactions=usd_transactions
+        )
+        return self._eml(
+            tmp_path, html.replace("<td>$ 8.70</td>", "<td></td><td>$ 8.70</td>")
+        )
+
+    def test_unread_usd_row_leaves_the_usd_account_to_the_reissue(
+        self, tmp_path, caplog
+    ):
+        usd = {
+            "trans_date": "0316",
+            "post_date": "0317",
+            "description": "payee-d",
+            "card_last4": "8765",
+            "amount": "8.70",
+        }
+        eml = self._eml_with_usd(tmp_path, [usd])
+        reissue = self._usd_reissue(tmp_path)
+
+        covs, _ = self._coverage(eml)
+        _, kept = self._select([eml, reissue])
+
+        assert [(c.account, c.itemized) for c in covs] == [
+            ("CNY", True),
+            ("USD", False),
+        ]
+        assert "Unrecognised CMB statement layout" in caplog.text
+        assert "USD account" in caplog.text
+        assert sorted((t.currency, t.source_file) for t in kept) == [
+            ("CNY", eml),
+            ("USD", reissue),
+        ]
+
+    def test_unrecognised_section_header_warns(self, tmp_path, caplog):
+        usd = {
+            "trans_date": "0316",
+            "post_date": "0317",
+            "description": "payee-d",
+            "card_last4": "8765",
+            "amount": "8.70",
+        }
+        html = create_cmb_html_with_transactions(
+            _TEMPLATE_ROWS[:1], "2030年03月", usd_transactions=[usd]
+        ).replace("<td>美元金额</td>", "<td>外币金额</td>")
+
+        covs, txns = self._coverage(self._eml(tmp_path, html, "changed.eml"))
+
+        assert [t.currency for t in txns] == ["CNY"]
+        assert [(c.account, c.itemized) for c in covs] == [("CNY", True)]
+        assert "Unrecognised CMB statement section" in caplog.text
+        assert "changed.eml" in caplog.text
+
+    def test_empty_usd_section_is_an_itemized_quiet_month(self, tmp_path, caplog):
+        eml = self._eml_with_usd(tmp_path, [])
+        reissue = self._usd_reissue(tmp_path)
+
+        covs, _ = self._coverage(eml)
+        selection, kept = self._select([eml, reissue])
+
+        assert [(c.account, c.itemized, len(c.rows)) for c in covs] == [
+            ("CNY", True, 1),
+            ("USD", True, 0),
+        ]
+        assert "Unrecognised" not in caplog.text
+        assert [(t.currency, t.source_file) for t in kept] == [("CNY", eml)]
+        assert sorted(d.entry.coverage.account for d in selection.drops) == [
+            "CNY",
+            "USD",
+        ]
+
+    def test_eml_usd_section_wins_over_the_reissue(self, tmp_path):
+        eml = self._eml(
+            tmp_path,
+            create_cmb_html_with_transactions(
+                [
+                    {
+                        "trans_date": "0310",
+                        "post_date": "0311",
+                        "description": "payee-b",
+                        "card_last4": "8765",
+                        "amount": "52.10",
+                    }
+                ],
+                statement_month="2030年03月",
+                usd_transactions=[
+                    {
+                        "trans_date": "0316",
+                        "post_date": "0317",
+                        "description": "payee-d",
+                        "card_last4": "8765",
+                        "amount": "9.30",
+                        "country": "US",
+                    }
+                ],
+            ),
+        )
+        reissue = write_cmb_pdf(
+            tmp_path / "reissue.pdf",
+            [
+                (_RMB, [("03/10", "03/11", "payee-b", "52.10", "8765", "52.10")]),
+                (
+                    "美元账户 USD A/C",
+                    [("03/16", "03/17", "payee-d", "9.30", "8765", "9.30(US)")],
+                ),
+            ],
+        )
+
+        selection, kept = self._select([reissue, eml])
+
+        assert sorted((t.currency, t.source_file) for t in kept) == [
+            ("CNY", eml),
+            ("USD", eml),
+        ]
+        assert sorted(d.entry.coverage.account for d in selection.drops) == [
+            "CNY",
+            "USD",
+        ]

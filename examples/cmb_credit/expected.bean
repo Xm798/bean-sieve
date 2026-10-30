@@ -124,6 +124,14 @@
         card_last4: "8765"
     Income:FIXME  -123.10 CNY
 
+2030-03-16 ! "app-store-g"
+    card_last4: "8765"
+    source: "cmb_credit"
+    posting_date: "2030-03-17"
+    Liabilities:CreditCard:CMB  -9.70 USD
+        card_last4: "8765"
+    Expenses:FIXME  9.70 USD
+
 2030-03-18 * "银联在线网络还款"
     card_last4: "4321"
     source: "cmb_credit"
@@ -132,8 +140,18 @@
         card_last4: "4321"
     Assets:Bank:Checking  -1502.10 CNY
 
+2030-03-20 ! "overseas-shop-f"
+    card_last4: "8765"
+    source: "cmb_credit"
+    posting_date: "2030-03-21"
+    original_amount: 2610.00
+    country: "JP"
+    Liabilities:CreditCard:CMB  -17.60 USD
+        card_last4: "8765"
+    Expenses:FIXME  17.60 USD
+
 ; --- Summary ---
-; Matched: 1, Missing: 15, Extra: 1
+; Matched: 1, Missing: 17, Extra: 1
 
 ; ============================================================
 ; Extra entries in ledger (1)

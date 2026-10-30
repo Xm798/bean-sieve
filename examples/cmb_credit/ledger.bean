@@ -1,7 +1,7 @@
 option "operating_currency" "CNY"
 
 2030-01-01 open Assets:Bank:Checking CNY
-2030-01-01 open Liabilities:CreditCard:CMB CNY
+2030-01-01 open Liabilities:CreditCard:CMB CNY,USD
 2030-01-01 open Expenses:Food:Meal CNY
 2030-01-01 open Expenses:Shopping CNY
 
