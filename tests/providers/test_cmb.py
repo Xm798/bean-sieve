@@ -644,6 +644,33 @@ class TestCMBMailTemplates:
         assert "Unrecognised CMB statement layout" in caplog.text
         assert "changed.eml" in caplog.text
 
+    def test_layout_warning_prints_once(self, tmp_path, caplog):
+        html = create_cmb_html_with_transactions(_TEMPLATE_ROWS, "2030年03月").replace(
+            "<td>记账日</td>", "<td>入账日</td>"
+        )
+
+        self._parse(tmp_path, html, "changed.eml")
+
+        assert caplog.text.count("Unrecognised CMB statement layout") == 1
+
+    def test_coverage_reads_the_parse_output_only(self, tmp_path):
+        path = tmp_path / "statement.eml"
+        path.write_text(
+            create_cmb_eml(create_cmb_html_with_transactions([], "2030年03月")),
+            encoding="utf-8",
+        )
+        provider = CMBCreditProvider()
+        txns = provider.parse(path)
+        path.unlink()
+
+        (cov,) = provider.coverage(path, txns)
+
+        assert (cov.start, cov.end, cov.itemized) == (
+            date(2030, 3, 1),
+            date(2030, 3, 31),
+            True,
+        )
+
     def test_rows_that_fit_no_column_order_warn_and_are_not_itemized(
         self, tmp_path, caplog
     ):
@@ -704,7 +731,8 @@ class TestCMBMailMonth:
     ):
         path = tmp_path / name
         path.write_text(create_cmb_eml(html, subject), encoding="utf-8")
-        (cov,) = CMBCreditProvider().coverage(path, [])
+        provider = CMBCreditProvider()
+        (cov,) = provider.coverage(path, provider.parse(path))
         return cov.start, cov.end
 
     def test_cycle_end_gives_the_month(self, tmp_path):
@@ -738,13 +766,34 @@ class TestCMBMailMonth:
             date(2030, 5, 31),
         )
 
-    def test_no_month_anywhere_warns(self, tmp_path, caplog):
+    def test_no_month_anywhere_warns_once_and_covers_nothing(self, tmp_path, caplog):
         html = "<html><body><div>本期应还金额 ¥ 52.10</div></body></html>"
+        path = tmp_path / "statement.eml"
+        path.write_text(create_cmb_eml(html), encoding="utf-8")
+        provider = CMBCreditProvider()
 
-        start, _ = self._month(tmp_path, html, "statement.eml")
+        txns = provider.parse(path)
 
-        assert (start.year, start.month) == (date.today().year, date.today().month)
-        assert "No statement month in" in caplog.text
+        assert txns == []
+        assert provider.coverage(path, txns) == []
+        assert caplog.text.count("No statement month in") == 1
+        assert "skipping it and its 0 dated rows" in caplog.text
+
+    def test_no_month_warning_counts_the_dated_rows_skipped(self, tmp_path, caplog):
+        html = create_cmb_html_with_transactions(_TEMPLATE_ROWS, "2030年03月").replace(
+            "2030年03月", ""
+        )
+        path = tmp_path / "statement.eml"
+        path.write_text(create_cmb_eml(html), encoding="utf-8")
+
+        assert CMBCreditProvider().parse(path) == []
+        assert f"skipping it and its {len(_TEMPLATE_ROWS)} dated rows" in caplog.text
+
+    def test_coverage_of_an_unparsed_file_names_it(self, tmp_path):
+        path = tmp_path / "unparsed.eml"
+
+        with pytest.raises(RuntimeError, match="unparsed.eml"):
+            CMBCreditProvider().coverage(path, [])
 
 
 # x of each table column in the reissued PDF, as the bank's template places them.

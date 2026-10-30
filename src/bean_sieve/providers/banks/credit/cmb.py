@@ -160,9 +160,17 @@ class CMBCreditProvider(BaseProvider):
     content_keywords = ["招商银行信用卡"]
     coverage_priority = ("statement", "reissue")
 
+    def __init__(self) -> None:
+        super().__init__()
+        # Each file's statement as parse() read it, None for a skipped mail;
+        # reading a file again would repeat its warnings.
+        self._statements: dict[Path, _Statement | None] = {}
+
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse a CMB credit card statement, mailed or reissued."""
-        statement = self._read(file_path)
+        statement = self._statements[file_path] = self._read(file_path)
+        if statement is None:
+            return []
         transactions = [
             txn
             for row in statement.rows
@@ -180,8 +188,15 @@ class CMBCreditProvider(BaseProvider):
         formats cover that calendar month: a mail and a reissue of one month
         always overlap, and consecutive months never do. A reissue still
         supplies an account its month's mail does not list.
+
+        Requires parse() of file_path on this provider: reads the statement
+        it kept.
         """
-        statement = self._read(file_path)
+        if file_path not in self._statements:
+            raise RuntimeError(f"coverage() of {file_path} before parse()")
+        statement = self._statements[file_path]
+        if statement is None:
+            return []
         return [
             Coverage(
                 currency,
@@ -193,18 +208,30 @@ class CMBCreditProvider(BaseProvider):
             for currency, itemized in statement.accounts.items()
         ]
 
-    def _read(self, file_path: Path) -> _Statement:
+    def _read(self, file_path: Path) -> _Statement | None:
         if file_path.suffix.lower() == ".pdf":
             return self._read_pdf(file_path)
         return self._read_eml(file_path)
 
-    def _read_eml(self, file_path: Path) -> _Statement:
+    def _read_eml(self, file_path: Path) -> _Statement | None:
         with open(file_path, "rb") as f:
             msg = email.message_from_binary_file(f)
         soup = self.parse_html(self._extract_html_from_message(msg))
-        year, month, closing = self._mail_month(
+        found = self._mail_month(
             self.clean_text(soup.get_text()), self.decode_subject(msg), file_path
         )
+        if found is None:
+            # Guessing a month would make the run depend on the day it runs.
+            # Known mails without one are summaries; the count exposes a new
+            # template that drops the month from an itemized mail.
+            dated = sum(1 for tr in soup.find_all("tr") if self._is_dated_row(tr))
+            logger.warning(
+                "No statement month in %s, skipping it and its %d dated rows",
+                file_path,
+                dated,
+            )
+            return None
+        year, month, closing = found
         span = _month_span(year, month)
         sections, rows, skipped = self._mail_rows(soup)
         recognised = bool(sections)
@@ -238,7 +265,7 @@ class CMBCreditProvider(BaseProvider):
     @staticmethod
     def _mail_month(
         text: str, subject: str, file_path: Path
-    ) -> tuple[int, int, date | None]:
+    ) -> tuple[int, int, date | None] | None:
         """Return the statement month and, when printed, the closing date."""
         if match := _MAIL_MONTH_RE.search(text):
             return int(match.group(1)), int(match.group(2)), None
@@ -248,14 +275,7 @@ class CMBCreditProvider(BaseProvider):
         for source in (subject, file_path.name):
             if match := _YEAR_MONTH_RE.search(source):
                 return int(match.group(1)), int(match.group(2)), None
-        today = date.today()
-        logger.warning(
-            "No statement month in %s, assuming %d-%02d",
-            file_path,
-            today.year,
-            today.month,
-        )
-        return today.year, today.month, None
+        return None
 
     def _mail_rows(self, soup) -> tuple[dict[str, bool], list[_Row], bool]:
         """Read the rows of each section, in mail order.
