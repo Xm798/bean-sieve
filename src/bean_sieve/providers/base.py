@@ -134,15 +134,19 @@ class BaseProvider(ABC):
 
         Detection priority:
         1. Filename keywords (fast, no file read)
-        2. Content keywords (reads file header)
-        3. Fall back to extension check only if no keywords defined
+        2. Content keywords, or an overridden ``_match_content`` (reads the file)
+        3. Fall back to extension check only if no rule is defined
         """
         # Check extension first
         if file_path.suffix.lower() not in cls.supported_formats:
             return False
 
-        # If pattern/keywords are defined, require match
-        if cls.filename_pattern or cls.filename_keywords or cls.content_keywords:
+        if (
+            cls.filename_pattern
+            or cls.filename_keywords
+            or cls.content_keywords
+            or cls._match_content.__func__ is not BaseProvider._match_content.__func__
+        ):
             return cls._match_filename(file_path) or cls._match_content(file_path)
 
         # No keywords defined, extension match is enough

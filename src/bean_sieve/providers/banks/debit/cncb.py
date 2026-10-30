@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import re
+from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
 
@@ -11,6 +13,7 @@ import xlrd
 from ....core.types import Transaction
 from ... import register_provider
 from ..._tabular import (
+    CURRENCY_CODES,
     join_description,
     normalize_cell_str,
     parse_stamp,
@@ -20,9 +23,12 @@ from ..._tabular import (
 )
 from ...base import BaseProvider
 
+logger = logging.getLogger(__name__)
+
 _ACCOUNT_RE = re.compile(r"账号[:：]\s*[\d* ]*(\d{4})(?!\d)")
+# Names the title's currency word when no known currency name appears in it.
+_CURRENCY_WORD_RE = re.compile(r"账号[:：][\d* ]*(\S+)")
 _PERIOD_RE = re.compile(r"起始日期[:：]\s*(\d{8}).*?截止日期[:：]\s*(\d{8})")
-_CURRENCIES = {"人民币": "CNY"}
 
 _COLUMN_FIELDS = {
     "交易日期": "date",
@@ -52,6 +58,10 @@ _METADATA_FIELDS = (
 _HEAD_ROWS = 10
 
 
+def _moment(txn: Transaction) -> tuple[date, time]:
+    return txn.date, txn.time or time.min
+
+
 @register_provider
 class CNCBDebitProvider(BaseProvider):
     """
@@ -64,7 +74,7 @@ class CNCBDebitProvider(BaseProvider):
       支出金额 (text with thousands separators, "__" when empty), 账户余额,
       对方名称, 对方账号, 受理机构, 摘要, 交易流水号, 交易卡号 ("--" when
       empty), 状态
-    - Data rows, newest first, no footer
+    - Data rows, usually newest first, no footer
     """
 
     provider_id = "cncb_debit"
@@ -74,14 +84,6 @@ class CNCBDebitProvider(BaseProvider):
 
     # The export names no bank, so its column names identify it.
     CONTENT_MARKERS = ("收入金额", "支出金额", "受理机构", "交易流水号", "交易卡号")
-
-    @classmethod
-    def can_handle(cls, file_path: Path) -> bool:
-        # Filenames are free-form, which leaves the column layout as the only
-        # evidence.
-        return file_path.suffix.lower() in cls.supported_formats and cls._match_content(
-            file_path
-        )
 
     @classmethod
     def _match_content(cls, file_path: Path) -> bool:
@@ -99,17 +101,23 @@ class CNCBDebitProvider(BaseProvider):
 
         account = _ACCOUNT_RE.search(title)
         card_last4 = account.group(1) if account else None
-        currency = self._currency(title, file_path)
+        if (currency := self._currency(title, file_path)) is None:
+            return []
 
         transactions: list[Transaction] = []
-        # Rows run newest first; reading them bottom-up yields booking order,
-        # which keeps same-moment rows in the order their balances follow.
-        for row_idx in range(sheet.nrows - 1, header_row, -1):
+        for row_idx in range(header_row + 1, sheet.nrows):
             row = sheet.row_values(row_idx)
-            cells = row_cells(row, columns, _COLUMN_FIELDS.values(), _NUMERIC_FIELDS)
+            cells = row_cells(
+                row, columns, _COLUMN_FIELDS.values(), _NUMERIC_FIELDS, currency
+            )
             txn = self._parse_row(cells, row_idx + 1, card_last4, currency, file_path)
             if txn:
                 transactions.append(txn)
+        # The export runs newest first unless its first row is strictly older
+        # than its last; booking order keeps same-moment rows in the order
+        # their balances follow, so a newest-first export is read bottom-up.
+        if transactions and _moment(transactions[0]) >= _moment(transactions[-1]):
+            transactions.reverse()
 
         cycle = None
         if period := _PERIOD_RE.search(title):
@@ -119,6 +127,19 @@ class CNCBDebitProvider(BaseProvider):
                 cycle = (start.date(), end.date())
         self.assign_statement_periods(transactions, cycle)
         return transactions
+
+    @staticmethod
+    def _currency(title: str, file_path: Path) -> str | None:
+        for name, code in CURRENCY_CODES.items():
+            if name in title:
+                return code
+        word = _CURRENCY_WORD_RE.search(title)
+        logger.warning(
+            "Skipping %s: unrecognised account currency %r",
+            file_path.name,
+            word.group(1) if word else None,
+        )
+        return None
 
     @staticmethod
     def _find_columns(sheet, file_path: Path) -> tuple[int, dict[str, int]]:
@@ -132,13 +153,6 @@ class CNCBDebitProvider(BaseProvider):
             if columns.keys() >= _REQUIRED_FIELDS:
                 return row_idx, columns
         raise ValueError(f"No column header row found in {file_path}")
-
-    @staticmethod
-    def _currency(title: str, file_path: Path) -> str:
-        for name, code in _CURRENCIES.items():
-            if name in title:
-                return code
-        raise ValueError(f"Unrecognised account currency in {file_path}: {title}")
 
     def _parse_row(
         self,

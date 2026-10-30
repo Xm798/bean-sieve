@@ -127,16 +127,82 @@ class TestParse:
         assert str(txn.amount) == "4321.00"
         assert txn.metadata["balance"] == "8642.00"
 
-    def test_unknown_currency_raises(self, tmp_path, provider):
-        with pytest.raises(ValueError, match="currency"):
-            provider.parse(create_xls(tmp_path, title=TITLE.replace("人民币", "美元")))
+    def test_foreign_currency_account(self, tmp_path, provider):
+        path = create_xls(tmp_path, title=TITLE.replace("人民币", "美元"))
+        assert {t.currency for t in provider.parse(path)} == {"USD"}
+
+    def test_currency_name_found_without_separator(self, tmp_path, provider):
+        path = create_xls(tmp_path, title=TITLE.replace("1111 人民币", "1111人民币"))
+        assert {t.currency for t in provider.parse(path)} == {"CNY"}
+
+    def test_numeric_cells_of_whole_unit_currency(self, tmp_path, provider):
+        rows = [
+            ["20300103", "08:00:00", "", 4321.0, 2468.0, "payee-d", "", "",
+             "消费", "", "--", "完成"],
+        ]  # fmt: skip
+        path = create_xls(tmp_path, rows=rows, title=TITLE.replace("人民币", "日元"))
+        (txn,) = provider.parse(path)
+        assert (txn.currency, str(txn.amount)) == ("JPY", "4321")
+        assert txn.metadata["balance"] == "2468"
+
+    def test_unknown_currency_warns_and_skips(self, tmp_path, provider, caplog):
+        path = create_xls(tmp_path, title=TITLE.replace("人民币", "卢布"))
+        assert provider.parse(path) == []
+        assert "statement.xls" in caplog.text
+        assert "卢布" in caplog.text
+
+    def test_oldest_first_export_matches_newest_first(self, tmp_path, provider):
+        newest_first = provider.parse(create_xls(tmp_path))
+        oldest_first = provider.parse(
+            create_xls(tmp_path, rows=ROWS[::-1], filename="oldest.xls")
+        )
+
+        def fields(txns):
+            return [(t.date, t.time, t.amount, t.metadata) for t in txns]
+
+        assert fields(oldest_first) == fields(newest_first)
+        assert [t.source_line for t in oldest_first] == [3, 4, 5]
+
+    def test_same_moment_rows_read_bottom_up(self, tmp_path, provider):
+        rows = [
+            ["20300102", "10:00:00", "__", "2468.00", "8642.00", "", "", "", "b",
+             "", "--", "完成"],
+            ["20300102", "10:00:00", "__", "4321.00", "1357.00", "", "", "", "a",
+             "", "--", "完成"],
+        ]  # fmt: skip
+        txns = provider.parse(create_xls(tmp_path, rows=rows))
+        assert [t.description for t in txns] == ["a", "b"]
 
     def test_missing_header_raises(self, tmp_path, provider):
         with pytest.raises(ValueError, match="header"):
             provider.parse(create_xls(tmp_path, headers=["a", "b", "c"]))
 
 
+class TestReconcile:
+    def test_unknown_currency_file_leaves_other_files_parsed(self, tmp_path):
+        skipped = create_xls(
+            tmp_path, title=TITLE.replace("人民币", "卢布"), filename="rub.xls"
+        )
+        parsed = create_xls(tmp_path, filename="cny.xls")
+        ledger = tmp_path / "ledger.bean"
+        ledger.write_text("2030-01-01 open Assets:Bank:CNCB\n", encoding="utf-8")
+        config = tmp_path / "bean-sieve.yaml"
+        config.write_text(
+            'providers:\n  cncb_debit:\n    accounts:\n      "1111": Assets:Bank:CNCB\n',
+            encoding="utf-8",
+        )
+
+        result = full_reconcile([skipped, parsed], ledger, config_path=config)
+
+        assert {t.source_file for t in result.match_result.missing} == {parsed}
+        assert len(result.match_result.missing) == len(ROWS)
+
+
 class TestDetection:
+    def test_other_xls_is_not_claimed(self, tmp_path):
+        path = create_xls(tmp_path, headers=["交易日期", "收入金额", "支出金额"])
+        assert not CNCBDebitProvider.can_handle(path)
+
     def test_detected_by_content(self, tmp_path):
         path = create_xls(tmp_path, filename="export.xls")
         assert auto_detect_provider(path).provider_id == "cncb_debit"
