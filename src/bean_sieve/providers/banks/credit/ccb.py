@@ -16,9 +16,9 @@ from ..._pdf import pdf_lines
 from ...base import BaseProvider
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-# A card cell can carry a second suffix or a channel, as "1234/5678" or
-# "1234/扫码"; both formats keep the cell as printed.
-_CARD_RE = re.compile(r"^\d{4}(?:/\S+)?$")
+# A card cell can add a second suffix or a channel to the card's own, as
+# "1234/5678" or "1234/扫码"; the leading four digits name the card.
+_CARD_RE = re.compile(r"^(\d{4})(?:/\S+)?$")
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 _CYCLE = r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})"
 # The mail prints "Statement Cycle" between the label and the dates.
@@ -116,7 +116,9 @@ class CCBCreditProvider(BaseProvider):
         try:
             trans_date_str = cells[0]  # YYYY-MM-DD
             post_date_str = cells[1]  # YYYY-MM-DD
-            card_last4 = cells[2]  # e.g., "4680"
+            card_cell = cells[2]
+            card_match = _CARD_RE.match(card_cell)
+            card_last4 = card_match[1] if card_match else card_cell
             description = cells[3]
 
             trans_date = self._parse_date(trans_date_str)
@@ -131,6 +133,8 @@ class CCBCreditProvider(BaseProvider):
                 return None
             original_currency, original_amount = pairs[0]
             metadata: dict[str, Any] = {}
+            if card_cell != card_last4:
+                metadata["card_cell"] = card_cell
             if original_currency != currency and original_amount is not None:
                 metadata[ORIGINAL_AMOUNT] = original_amount
                 metadata[ORIGINAL_CURRENCY] = original_currency

@@ -8,6 +8,8 @@ from pathlib import Path
 import fitz
 import pytest
 
+from bean_sieve.api import _provider_account
+from bean_sieve.config.schema import Config
 from bean_sieve.core.coverage import CoverageEntry, select
 from bean_sieve.core.metadata_keys import (
     ORIGINAL_AMOUNT,
@@ -513,7 +515,7 @@ class TestCCBReissue:
         assert [(t.date, t.amount, t.card_last4) for t in txns] == [
             (date(2030, 3, 2), Decimal("51.00"), "4680"),
             (date(2030, 3, 5), Decimal("57.00"), "4680"),
-            (date(2030, 3, 8), Decimal("64.00"), "4680/扫码"),
+            (date(2030, 3, 8), Decimal("64.00"), "4680"),
             (date(2030, 3, 12), Decimal("-57.00"), "4680"),
             (date(2030, 3, 20), Decimal("-1130.00"), "4680"),
         ]
@@ -590,8 +592,7 @@ class TestCCBCoverage:
             assert [
                 (c.account, c.start, c.end, len(c.rows), c.source) for c in covs
             ] == [
-                ("4680", date(2030, 3, 1), date(2030, 3, 31), 4, source),
-                ("4680/扫码", date(2030, 3, 1), date(2030, 3, 31), 1, source),
+                ("4680", date(2030, 3, 1), date(2030, 3, 31), 5, source),
             ]
 
     @pytest.mark.parametrize("reverse", [False, True])
@@ -616,3 +617,52 @@ class TestCCBCoverage:
             path.name: sum(t.source_file == path for t in kept) for path in paths
         }
         assert by_file == {"s.eml": 5, "r.pdf": 0, "next.pdf": 1}
+
+
+class TestCCBCardCell:
+    """A card cell can add a second suffix or a channel to the card's suffix."""
+
+    CELL_ROWS: list[PdfRow] = [
+        ("2030-03-03", "2030-03-03", "1234", "payee-a", "CNY", "36.70", "CNY", "36.70"),
+        (
+            "2030-03-04",
+            "2030-03-04",
+            "1234/扫码",
+            "payee-b",
+            "CNY",
+            "47.00",
+            "CNY",
+            "47.00",
+        ),
+        (
+            "2030-03-05",
+            "2030-03-05",
+            "1234/5678",
+            "payee-c",
+            "CNY",
+            "58.30",
+            "CNY",
+            "58.30",
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        ("writer", "name"), [(write_ccb_pdf, "r.pdf"), (write_ccb_eml, "s.eml")]
+    )
+    def test_rows_take_the_suffix_and_keep_the_cell(self, tmp_path, writer, name):
+        path = writer(tmp_path / name, self.CELL_ROWS, "2030/03/01-2030/03/31")
+        provider = CCBCreditProvider()
+
+        txns = provider.parse(path)
+
+        assert [(t.card_last4, t.metadata.get("card_cell")) for t in txns] == [
+            ("1234", None),
+            ("1234", "1234/扫码"),
+            ("1234", "1234/5678"),
+        ]
+        [cov] = provider.coverage(path, txns)
+        assert (cov.account, len(cov.rows)) == ("1234", 3)
+        config = Config.from_dict(
+            {"providers": {"ccb_credit": {"accounts": {"1234": "Liabilities:CCB"}}}}
+        )
+        assert {_provider_account(t, config, {}) for t in txns} == {"Liabilities:CCB"}
