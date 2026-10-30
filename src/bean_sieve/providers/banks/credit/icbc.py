@@ -29,6 +29,8 @@ _CARD_RE = re.compile(r"^\d{4}$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TIME_RE = re.compile(r"^\d{2}:\d{2}:\d{2}$")
 _AMOUNT_RE = re.compile(r"^([\d,]+\.\d+)/([A-Z]{3})$")
+_LETTER_RE = re.compile(r"[A-Za-z]")
+_BALANCE_RE = re.compile(r"^-?[\d,]+\.\d+/[A-Z]{3}$")
 _BOOKED_RE = re.compile(r"^([\d,]+\.\d+)/([A-Z]{3})\((存入|支出)\)$")
 _CN_DATE = r"(\d{4})年(\d{1,2})月(\d{1,2})日"
 _CYCLE_RE = re.compile(rf"账单周期\s*{_CN_DATE}\s*[—–-]+\s*{_CN_DATE}")
@@ -93,53 +95,80 @@ class ICBCCreditProvider(BaseProvider):
     per_card_statement = True  # ICBC bills, and is repaid, per card
     coverage_priority = ("statement", "reissue", "export")
 
+    def __init__(self) -> None:
+        super().__init__()
+        # What parse() read from each file beyond its rows; coverage() needs
+        # it for cards whose rows are all 0.00 or that list no rows at all.
+        self._reports: dict[Path, _Report] = {}
+
     def parse(self, file_path: Path) -> list[Transaction]:
-        source = self._source(file_path)
-        if source == "statement":
-            html = self.extract_html_from_eml(file_path)
-            tokens = list(self.parse_html(html).stripped_strings)
-        else:
-            pages = list(pdf_layouts(file_path))
-            if source == "export":
-                return self._finish(*self._export_transactions(pages, file_path))
-            tokens = [
-                line.text
-                for page in pages
-                for line in _pdf_lines(page)
-                # Drops the reissue's watermark, the print time repeated in
-                # large type across the page.
-                if line.size < _WATERMARK_SIZE
-            ]
-        cycle = _statement_cycle(tokens)
-        if cycle is None:
-            logger.warning("No 账单周期 in %s; it covers no period", file_path)
-        return self._finish(self._statement_transactions(tokens, file_path), cycle)
-
-    def _finish(
-        self, transactions: list[Transaction], cycle: tuple[date, date] | None
-    ) -> list[Transaction]:
-        """Stamp the file's period on its rows: the cycle, or the export range.
-
-        Coverage reads it back as printed; statement_period also spans any
-        row booked outside it.
-        """
+        transactions, report = self._read(file_path)
+        if report.period is None:
+            label = "起止日期" if report.source == "export" else "账单周期"
+            logger.warning("No %s in %s; it covers no period", label, file_path)
+        self._reports[file_path] = report
         # A waived annual fee is listed at 0.00 and moves no money.
         transactions = [txn for txn in transactions if txn.amount]
-        self.stamp_cycle(transactions, cycle)
+        self.stamp_cycle(transactions, report.period)
         return transactions
 
     def coverage(
         self, file_path: Path, transactions: list[Transaction]
     ) -> list[Coverage]:
-        """Cover each card for the printed cycle, or the export's range.
+        """Cover each card the file reports for the printed cycle, or the export's range.
 
-        The mailed statement outranks its reissue, and the export only fills
-        days no statement speaks for.
+        Requires parse() to have read the file on this instance: a card
+        reports even when parse() returns none of its rows. The mailed
+        statement outranks its reissue, and the export only fills days no
+        statement speaks for.
         """
+        if file_path not in self._reports:
+            raise RuntimeError(f"coverage() of {file_path} before parse()")
+        report = self._reports[file_path]
+        if report.period is None:
+            return []
+        return [
+            Coverage(
+                card,
+                *report.period,
+                rows=[txn for txn in transactions if txn.card_last4 == card],
+                source=report.source,
+                clip=report.source == "export",
+            )
+            for card in report.cards
+        ]
+
+    def _read(self, file_path: Path) -> tuple[list[Transaction], _Report]:
         source = self._source(file_path)
-        return self.cycle_coverages(
-            transactions, source=source, clip=source == "export"
+        if source == "export":
+            pages = list(pdf_layouts(file_path))
+            transactions, period = self._export_transactions(pages, file_path)
+            summary_cards = []
+        else:
+            tokens = self._statement_tokens(file_path, source)
+            transactions = self._statement_transactions(tokens, file_path)
+            period = _statement_cycle(tokens)
+            summary_cards = _balance_cards(tokens)
+        cards = dict.fromkeys(
+            [
+                *summary_cards,
+                *(txn.card_last4 for txn in transactions if txn.card_last4),
+            ]
         )
+        return transactions, _Report(source, period, list(cards))
+
+    def _statement_tokens(self, file_path: Path, source: str) -> list[str]:
+        if source == "statement":
+            html = self.extract_html_from_eml(file_path)
+            return list(self.parse_html(html).stripped_strings)
+        return [
+            line.text
+            for page in pdf_layouts(file_path)
+            for line in _pdf_lines(page)
+            # Drops the reissue's watermark, the print time repeated in large
+            # type across the page.
+            if line.size < _WATERMARK_SIZE
+        ]
 
     @classmethod
     def _source(cls, file_path: Path) -> str:
@@ -178,7 +207,7 @@ class ICBCCreditProvider(BaseProvider):
                 i = end
                 continue
             txn_type = tokens[i + 3]
-            merchant = "".join(tokens[i + 4 : end - 1])
+            merchant = _join_wrapped(tokens[i + 4 : end - 1])
             amount = Decimal(booked.group(1).replace(",", ""))
             currency = _iso_currency(booked.group(2))
             metadata: dict[str, Any] = {"transaction_type": txn_type}
@@ -223,15 +252,13 @@ class ICBCCreditProvider(BaseProvider):
                 txn = self._export_transaction(cells, file_path, len(transactions) + 1)
                 if txn is not None:
                     transactions.append(txn)
-        if period is None:
-            logger.warning("No 起止日期 in %s; it covers no period", file_path)
         return transactions, period
 
     def _export_transaction(
         self, cells: dict[str, list[str]], file_path: Path, index: int
     ) -> Transaction | None:
         def cell(name: str) -> str:
-            return "".join(cells.get(name, []))
+            return _join_wrapped(cells.get(name, []))
 
         dates = cells.get("date", [])
         card = cell("card")
@@ -281,6 +308,13 @@ class ICBCCreditProvider(BaseProvider):
 
 
 @dataclass(frozen=True)
+class _Report:
+    source: str
+    period: tuple[date, date] | None
+    cards: list[str]
+
+
+@dataclass(frozen=True)
 class _Line:
     """A run of text on one baseline, as one table cell prints it."""
 
@@ -308,6 +342,36 @@ def _statement_cycle(tokens: list[str]) -> tuple[date, date] | None:
         return None
     y1, m1, d1, y2, m2, d2 = map(int, match.groups())
     return date(y1, m1, d1), date(y2, m2, d2)
+
+
+def _join_wrapped(lines: list[str]) -> str:
+    """Join the lines of a cell wrapped at its width.
+
+    Chinese text and numbers wrap between any two characters, so their
+    lines join directly; a break between two Latin letters is taken to fall
+    on a space, which the printed lines drop.
+    """
+    text = ""
+    for line in lines:
+        if text and _LETTER_RE.match(text[-1]) and _LETTER_RE.match(line[0]):
+            text += " "
+        text += line
+    return text
+
+
+def _balance_cards(tokens: list[str]) -> list[str]:
+    """Cards of the balance summary, each a suffix followed by its balances.
+
+    Only tokens before the first detail row are read: the summary precedes
+    the detail table, where a wrapped merchant cell can end in a bare
+    four-digit line followed by the row's amount.
+    """
+    head = next((i for i in range(len(tokens)) if _starts_row(tokens, i)), len(tokens))
+    return [
+        card
+        for card, after in zip(tokens[:head], tokens[1 : head + 1])
+        if _CARD_RE.match(card) and _BALANCE_RE.match(after)
+    ]
 
 
 def _starts_row(tokens: list[str], i: int) -> bool:

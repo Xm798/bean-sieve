@@ -88,10 +88,15 @@ ROWS: list[StatementRow] = [
     ),
 ]
 CYCLE_TEXT = "账单周期 2030年5月1日—2030年5月31日"
+# The balance summary prints each card's suffix followed by its balances.
+BALANCES = ["0.00/RMB"] * 4
 
 
 def write_reissue(
-    path: Path, rows: list[StatementRow], cycle: str = CYCLE_TEXT
+    path: Path,
+    rows: list[StatementRow],
+    cycle: str = CYCLE_TEXT,
+    summary_cards: tuple[str, ...] = (),
 ) -> Path:
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)
@@ -101,7 +106,11 @@ def write_reissue(
 
     put(60, 100, "2030-06-01 10:00:00 中国工商银行", 13)
     put(40, 200, cycle)
-    put(40, 230, "---主卡明细---")
+    put(40, 212, "---人民币(本位币)---")
+    for i, card in enumerate(summary_cards):
+        for x, text in zip([20, 120, 200, 280, 360], [card, *BALANCES], strict=True):
+            put(x, 220 + i * 6, text)
+    put(40, 240, "---主卡明细---")
     xs = [20, 55, 120, 185, 240, 360, 460]
     y = 250.0
     for card, trans, post, kind, merchant, amount, booked in rows:
@@ -119,7 +128,10 @@ def write_reissue(
 
 
 def write_statement_eml(
-    path: Path, rows: list[StatementRow], cycle: str = CYCLE_TEXT
+    path: Path,
+    rows: list[StatementRow],
+    cycle: str = CYCLE_TEXT,
+    summary_cards: tuple[str, ...] = (),
 ) -> Path:
     label, period = cycle.split(" ", 1)
     body = "\n".join(
@@ -127,8 +139,13 @@ def write_statement_eml(
         f"<td>{'<br>'.join(m)}</td><td>{a}</td><td>{b}</td></tr>"
         for card, t, p, k, m, a, b in rows
     )
+    summary = "".join(
+        f"<tr><td>{card}</td>{''.join(f'<td>{b}</td>' for b in BALANCES)}</tr>"
+        for card in summary_cards
+    )
     html = (
         f"<html><body><table><tr><td>{label}</td><td>{period}</td></tr></table>"
+        f"<table><tr><td>---人民币(本位币)---</td></tr>{summary}</table>"
         f"<table><tr><td>---主卡明细---</td></tr>{body}</table></body></html>"
     )
     subject = Header("中国工商银行客户对账单(ICBC Peony Card Bank Statement)", "utf-8")
@@ -294,6 +311,18 @@ EXPORT_PAGE_2: list[ExportRow] = [
 ]
 
 
+def _select(paths: list[Path], provider: ICBCCreditProvider) -> list:
+    """Rows of the files that statement selection keeps, in file order."""
+    ranks = {kind: i for i, kind in enumerate(provider.coverage_priority)}
+    parsed = {path: provider.parse(path) for path in paths}
+    entries = [
+        CoverageEntry("icbc_credit", path, cov, ranks[cov.source])
+        for path in paths
+        for cov in provider.coverage(path, parsed[path])
+    ]
+    return select(entries).keep([t for rows in parsed.values() for t in rows])
+
+
 @pytest.fixture
 def provider() -> ICBCCreditProvider:
     return ICBCCreditProvider()
@@ -367,6 +396,40 @@ class TestReissue:
     def test_no_rows(self, provider, tmp_path):
         assert provider.parse(write_reissue(tmp_path / "r.pdf", [])) == []
 
+    def test_wrapped_lines_keep_a_space_only_between_latin_letters(
+        self, provider, tmp_path
+    ):
+        def row(merchant: list[str]) -> StatementRow:
+            return (
+                "0001",
+                "2030-05-02",
+                "2030-05-02",
+                "消费",
+                merchant,
+                "70.00/RMB",
+                "70.00/RMB(支出)",
+            )
+
+        merchants = [
+            ["shop-e", "branch-f"],
+            ["商户甲乙", "丙丁"],
+            ["shop-g", "分店"],
+            ["商户（甲", "）乙"],
+            ["shop-h-", "name"],
+            ["shop-n-12", "34"],
+        ]
+        txns = provider.parse(
+            write_reissue(tmp_path / "r.pdf", [row(m) for m in merchants])
+        )
+        assert [t.description for t in txns] == [
+            "消费 shop-e branch-f",
+            "消费 商户甲乙丙丁",
+            "消费 shop-g分店",
+            "消费 商户（甲）乙",
+            "消费 shop-h-name",
+            "消费 shop-n-1234",
+        ]
+
 
 class TestStatementEml:
     def test_same_transactions_as_reissue(self, provider, tmp_path):
@@ -426,6 +489,26 @@ class TestExport:
 
 
 class TestExportEdges:
+    def test_wrapped_place_keeps_a_space_between_latin_letters(
+        self, provider, tmp_path
+    ):
+        row: ExportRow = (
+            "2030-06-02",
+            "12:30:00",
+            "借",
+            "人民币",
+            "70.00",
+            "人民币",
+            "70.00",
+            "-70.00",
+            "",
+            "",
+            "消费",
+            ["payee-k", "loc-m"],
+        )
+        [txn] = provider.parse(write_export(tmp_path / "e.pdf", [[row]]))
+        assert txn.description == "消费 payee-k loc-m"
+
     def test_without_range_warns_and_covers_nothing(self, provider, tmp_path, caplog):
         path = write_export(tmp_path / "e.pdf", [EXPORT_PAGE_1], period="")
         with caplog.at_level("WARNING"):
@@ -475,6 +558,102 @@ class TestCoverage:
             6,
         )
 
+    def test_card_with_only_zero_rows_is_covered(self, provider, tmp_path):
+        rows: list[StatementRow] = [
+            (
+                "0001",
+                "2030-05-02",
+                "2030-05-02",
+                "消费",
+                ["payee-a"],
+                "70.00/RMB",
+                "70.00/RMB(支出)",
+            ),
+            (
+                "1234",
+                "2030-05-12",
+                "2030-05-12",
+                "年费减免",
+                ["年费减免"],
+                "0.00/RMB",
+                "0.00/RMB(存入)",
+            ),
+        ]
+        path = write_reissue(tmp_path / "r.pdf", rows)
+        txns = provider.parse(path)
+        assert [t.card_last4 for t in txns] == ["0001"]
+        covs = {c.account: c for c in provider.coverage(path, txns)}
+        assert sorted(covs) == ["0001", "1234"]
+        assert covs["1234"].rows == []
+        assert covs["0001"].rows == txns
+        for cov in covs.values():
+            assert (cov.start, cov.end) == (date(2030, 5, 1), date(2030, 5, 31))
+            assert (cov.source, cov.itemized, cov.clip) == ("reissue", True, False)
+
+    @pytest.mark.parametrize("writer", [write_reissue, write_statement_eml])
+    def test_quiet_statement_covers_its_summary_cards(self, provider, tmp_path, writer):
+        name = "q.pdf" if writer is write_reissue else "q.eml"
+        path = writer(tmp_path / name, [], summary_cards=("1234",))
+        assert provider.parse(path) == []
+        [cov] = provider.coverage(path, [])
+        assert (cov.account, cov.start, cov.end, cov.rows, cov.itemized) == (
+            "1234",
+            date(2030, 5, 1),
+            date(2030, 5, 31),
+            [],
+            True,
+        )
+
+    def test_wrapped_merchant_ending_in_digits_names_no_card(self, provider, tmp_path):
+        row: StatementRow = (
+            "0001",
+            "2030-05-02",
+            "2030-05-02",
+            "消费",
+            ["shop-n", "5678"],
+            "70.00/RMB",
+            "70.00/RMB(支出)",
+        )
+        quiet = write_reissue(tmp_path / "a.pdf", [row], summary_cards=("0001",))
+        covs = provider.coverage(quiet, provider.parse(quiet))
+        assert [c.account for c in covs] == ["0001"]
+
+        other: StatementRow = (
+            "5678",
+            "2030-05-03",
+            "2030-05-03",
+            "消费",
+            ["payee-a"],
+            "70.00/RMB",
+            "70.00/RMB(支出)",
+        )
+        real = write_reissue(tmp_path / "b.pdf", [other])
+        kept = _select([quiet, real], provider)
+        assert [t.card_last4 for t in kept if t.source_file == real] == ["5678"]
+
+    def test_quiet_statement_clips_the_export_in_its_cycle(self, provider, tmp_path):
+        quiet = write_reissue(tmp_path / "q.pdf", [], summary_cards=("1111",))
+        export = write_export(tmp_path / "e.pdf", [EXPORT_PAGE_1, EXPORT_PAGE_2])
+        kept = _select([quiet, export], provider)
+        # Every export row in the May cycle is dropped; the June rows stay.
+        assert [t.date for t in kept] == [
+            date(2030, 6, 2),
+            date(2030, 6, 5),
+            date(2030, 6, 7),
+            date(2030, 6, 9),
+        ]
+
+    def test_coverage_before_parse_names_the_file(self, provider, tmp_path):
+        path = write_reissue(tmp_path / "r.pdf", ROWS)
+        with pytest.raises(RuntimeError, match="r.pdf"):
+            provider.coverage(path, [])
+
+    def test_without_cycle_covers_nothing(self, provider, tmp_path):
+        path = write_reissue(
+            tmp_path / "r.pdf", ROWS, cycle="", summary_cards=("1234",)
+        )
+        assert provider.coverage(path, provider.parse(path)) == []
+
     @pytest.mark.parametrize("reverse", [False, True])
     def test_statement_outranks_reissue_and_export_fills_the_rest(
         self, provider, tmp_path, reverse
@@ -486,14 +665,7 @@ class TestCoverage:
         ]
         if reverse:
             paths.reverse()
-        ranks = {kind: i for i, kind in enumerate(provider.coverage_priority)}
-        parsed = {path: provider.parse(path) for path in paths}
-        entries = [
-            CoverageEntry("icbc_credit", path, cov, ranks[cov.source])
-            for path in paths
-            for cov in provider.coverage(path, parsed[path])
-        ]
-        kept = select(entries).keep([t for rows in parsed.values() for t in rows])
+        kept = _select(paths, provider)
         by_file = {
             path.name: sum(t.source_file == path for t in kept) for path in paths
         }
