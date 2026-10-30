@@ -380,7 +380,7 @@ class FakeUnnamedPerCardBank(FakePerCardBank):
     """Per-card provider whose file names no card."""
 
     provider_id = "fake_unnamed_per_card_bank"
-    statement_names_account = False
+    unkeyed_rows_share_account = True
 
 
 def test_unkeyed_rows_of_an_unnamed_statement_cover_the_sole_account() -> None:

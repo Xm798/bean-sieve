@@ -63,7 +63,7 @@ class CNCBIDebitProvider(BaseProvider):
     provider_id = "cncbi_debit"
     provider_name = "中信银行（国际）"
     supported_formats = [".csv"]
-    statement_names_account = False
+    unkeyed_rows_share_account = True
     filename_keywords = ["CNCBI", "cncbi"]
     content_keywords = [
         "过账日,交易日,账项资料",

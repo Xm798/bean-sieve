@@ -60,6 +60,8 @@ rules:
     contra_account: Assets:Bank:Checking
 ```
 
+PDF 里少数行不印卡号，如循环利息、返现，它们属于整个账户而不是某张卡。`accounts` 里所有卡都指向同一个账户时，这些行记到该账户；指向不同账户时，Bean-Sieve 无从判断，它们输出为 `Assets:FIXME` 并给出警告。
+
 多张卡共用一个账户时，账户名看不出是哪张卡。`posting_metadata` 里写上 `card_last4`，输出时会把卡号后四位写在信用卡 posting 下面。
 
 要进一步检查账本里已有的条目，可以把账户列入 `diagnostics.meta_check_accounts`。Bean-Sieve 会在匹配到的条目缺少 `card_last4` 或与账单不一致时输出提示，匹配结果不受影响：
@@ -87,7 +89,7 @@ diagnostics:
 
 - 账单不写交易地金额的币种，所以境外交易只按入账金额（人民币或美元）记账，原币金额记在 `original_amount` 里，不生成 `@@` 价格。
 - 对账范围取账单月份的整个自然月（如 2030 年 3 月账单取 3 月 1 日至 31 日），再延伸到每张卡最早的记账日。账单日不在月末时，这个范围和实际账单周期并不完全一致，Extra 结果需要人工核对。
-- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。PDF 里少数行不印卡号，在按卡号配置的 `accounts` 下也会输出为 `Assets:FIXME`。
+- 账单中出现 `accounts` 没有列出的卡号时，这些交易的账户输出为 `Assets:FIXME`。PDF 里不印卡号的行只有在所有卡都指向同一个账户时才能记账，否则也输出为 `Assets:FIXME`。
 
 ## 输出样例
 

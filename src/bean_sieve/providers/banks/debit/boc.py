@@ -46,7 +46,7 @@ class BOCDebitProvider(BaseProvider):
     filename_keywords = ["中国银行"]
     content_keywords = ["业务摘要"]
     per_card_statement = True  # BOC exports one statement per card
-    statement_names_account = False
+    unkeyed_rows_share_account = True
 
     COLUMN_NAMES: dict[str, tuple[str, ...]] = {
         "tx_time": ("交易时间", "交易日期"),

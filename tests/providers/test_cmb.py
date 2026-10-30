@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from bean_sieve.api import full_reconcile
 from bean_sieve.providers import get_provider
 from bean_sieve.providers.banks.credit.cmb import CMBCreditProvider
 
@@ -1268,3 +1269,84 @@ class TestCMBCoverage:
             "CNY",
             "USD",
         ]
+
+
+class TestCMBRowsWithoutCard:
+    """Account-level rows (interest, rebates) that print no card suffix."""
+
+    def _reconcile(
+        self,
+        tmp_path: Path,
+        accounts: str,
+        extra_rows: tuple[tuple[str, ...], ...] = (),
+    ) -> str:
+        pdf = write_cmb_pdf(
+            tmp_path / "reissue.pdf",
+            [
+                (
+                    _RMB,
+                    [
+                        ("03/10", "03/11", "payee-a", "31.70", "0001", "31.70"),
+                        ("03/12", "03/12", "fee-b", "47.30", "", "47.30"),
+                        *extra_rows,
+                    ],
+                )
+            ],
+        )
+        config = tmp_path / "bean-sieve.yaml"
+        config.write_text(
+            f"providers:\n  cmb_credit:\n    accounts:\n{accounts}", encoding="utf-8"
+        )
+        ledger = tmp_path / "main.bean"
+        ledger.write_text(
+            "2020-01-01 open Liabilities:CreditCard:CMB CNY\n"
+            "2020-01-01 open Liabilities:CreditCard:CMB:Other CNY\n",
+            encoding="utf-8",
+        )
+        output = tmp_path / "pending.bean"
+        full_reconcile([pdf], ledger, config_path=config, output_path=output)
+        return output.read_text(encoding="utf-8")
+
+    def test_row_takes_the_account_every_card_maps_to(self, tmp_path):
+        output = self._reconcile(
+            tmp_path,
+            '      "0001": Liabilities:CreditCard:CMB\n'
+            '      "1234": Liabilities:CreditCard:CMB\n',
+        )
+
+        assert "Assets:FIXME" not in output
+        assert output.count("Liabilities:CreditCard:CMB  ") == 2
+
+    def test_row_takes_the_sole_configured_account(self, tmp_path):
+        output = self._reconcile(tmp_path, '      "0001": Liabilities:CreditCard:CMB\n')
+
+        assert "Assets:FIXME" not in output
+        assert "Liabilities:CreditCard:CMB  -47.30 CNY" in output
+
+    def test_cards_on_several_accounts_leave_the_row_unassigned_and_warn(
+        self, tmp_path, caplog
+    ):
+        output = self._reconcile(
+            tmp_path,
+            '      "0001": Liabilities:CreditCard:CMB\n'
+            '      "1234": Liabilities:CreditCard:CMB:Other\n',
+            (("03/14", "03/14", "fee-c", "64.30", "", "64.30"),),
+        )
+
+        assert output.count("Assets:FIXME") == 2
+        assert caplog.text.count("carry no card") == 1
+        assert "2 cmb_credit rows in" in caplog.text
+        assert "reissue.pdf" in caplog.text
+
+    def test_row_keeps_no_card_suffix(self, tmp_path):
+        output = self._reconcile(
+            tmp_path,
+            '      "0001": Liabilities:CreditCard:CMB\n'
+            '      "1234": Liabilities:CreditCard:CMB\n'
+            "    posting_metadata:\n"
+            "      - card_last4\n",
+        )
+
+        entry = output[output.index('"fee-b"') :].split("\n\n")[0]
+        assert "Liabilities:CreditCard:CMB  -47.30 CNY" in entry
+        assert "card_last4" not in entry

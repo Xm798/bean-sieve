@@ -460,7 +460,7 @@
       "properties": {
         "accounts": {
           "type": "object",
-          "description": "Pattern to account mapping. For payment platforms: pattern matches metadata['method']. For bank cards: pattern matches card_last4; a provider whose statement names no account takes a single entry, whose key becomes each row's card_last4 when it is four digits. These accounts also define the coverage scope for Extra calculation.",
+          "description": "Pattern to account mapping. For payment platforms: pattern matches metadata['method']. For bank cards: pattern matches card_last4; rows a provider's statement prints without a card (a file naming no account, or account-level rows such as interest) go to the one account every entry maps to, and a sole entry's four-digit key becomes their card_last4. These accounts also define the coverage scope for Extra calculation.",
           "additionalProperties": { "type": "string" }
         },
         "output_metadata": {

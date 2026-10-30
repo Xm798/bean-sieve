@@ -159,6 +159,9 @@ class CMBCreditProvider(BaseProvider):
     filename_keywords = ["招商银行信用卡", "招行信用卡"]
     content_keywords = ["招商银行信用卡"]
     coverage_priority = ("statement", "reissue")
+    # Interest, rebates and similar rows belong to the customer account and
+    # print no card.
+    unkeyed_rows_share_account = True
 
     def __init__(self) -> None:
         super().__init__()

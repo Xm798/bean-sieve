@@ -33,7 +33,7 @@ rules:
     contra_account: Income:Bank:Interest
 ```
 
-CSV 里没有账号，所以 `accounts` 只写一项，所有交易都记到这个账户，它也是 Extra 的检查范围。键可以随意取，示例用的是 `"default"`；写成 4 位数字时，它会作为每行的 `card_last4`。
+CSV 里没有账号，所以 `accounts` 只指向一个账户，所有交易都记到这个账户，它也是 Extra 的检查范围。键可以随意取，示例用的是 `"default"`；只有一项且写成 4 位数字时，它会作为每行的 `card_last4`。
 
 加 `balance: true` 会在输出末尾追加一条 `balance` 断言，金额和币种取最后一行的 `Balance` 和 `Balance currency`，日期是该行日期的次日。
 
@@ -51,7 +51,7 @@ CSV 没有交易对方列，收款方为空，规则只能按描述匹配，要�
 
 ## 已知限制
 
-- `accounts` 写了多项时，Bean-Sieve 分不出交易属于哪个账户，只打印一条警告，银行一侧的 posting 输出为 `Assets:FIXME`，也不生成余额断言。
+- `accounts` 指向多个不同账户时，Bean-Sieve 分不出交易属于哪个账户，每个文件打印一条警告，银行一侧的 posting 输出为 `Assets:FIXME`，也不生成余额断言。
 - 没有交易对方，收款方只能靠规则补上。
 - 对账范围是第一笔到最后一笔交易的日期，前后各放宽 `date_tolerance` 天。
 

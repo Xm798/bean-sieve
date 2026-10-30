@@ -5,7 +5,7 @@ This module provides the public API for CLI and GUI frontends.
 """
 
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import date, time, timedelta
 from decimal import Decimal, InvalidOperation
@@ -514,23 +514,27 @@ def _sole_accounts(
     pset: ProviderSet,
     config: Config,
 ) -> dict[str, str]:
-    """Map each provider whose statements name no account to its only account."""
+    """Map each provider whose unkeyed rows share an account to that account."""
     result: dict[str, str] = {}
     for provider, batch in pset.group(transactions):
-        if provider.statement_names_account:
+        if not provider.unkeyed_rows_share_account:
             continue
         if account := provider.sole_account(config):
             result[provider.provider_id] = account
             continue
-        configured = len(config.get_provider_config(provider.provider_id).accounts)
-        unkeyed = sum(1 for txn in batch if not txn.card_last4)
-        if unkeyed and configured > 1:
+        accounts = config.get_provider_config(provider.provider_id).accounts
+        distinct = len(set(accounts.values()))
+        if distinct < 2:
+            continue
+        unkeyed = Counter(txn.source_file for txn in batch if not txn.card_last4)
+        for path, count in unkeyed.items():
             logger.warning(
-                "%d %s rows name no account and %d accounts are configured; "
-                "configure a single account to assign them.",
-                unkeyed,
+                "%d %s rows in %s carry no card and %d accounts are "
+                "configured; map every key to one account to assign them.",
+                count,
                 provider.provider_id,
-                configured,
+                path,
+                distinct,
             )
     return result
 
@@ -541,20 +545,24 @@ def _carry_sole_card_key(
     sole_accounts: dict[str, str],
 ) -> list[Transaction]:
     """
-    Give unkeyed rows the sole account's key as card_last4 when it is a suffix.
+    Give unkeyed rows the sole key as card_last4 when it is a card suffix.
 
-    A four-digit key names the card, so rules, the card check in Sieve and the
-    output see the rows as if the statement printed it. Any other key, such as
-    "default", is only a label and stays out of them.
+    A single four-digit key names the card, so rules, the card check in Sieve
+    and the output see the rows as if the statement printed it. Any other key,
+    such as "default", is only a label, and with several keys the row belongs
+    to the account rather than to any one card, so neither reaches them.
     """
-    result: list[Transaction] = []
-    for txn in transactions:
-        if not txn.card_last4 and txn.provider in sole_accounts:
-            key = next(iter(config.get_provider_config(txn.provider).accounts))
-            if len(key) == 4 and key.isdigit():
-                txn = txn.model_copy(update={"card_last4": key})
-        result.append(txn)
-    return result
+    card_keys: dict[str, str] = {}
+    for provider_id in sole_accounts:
+        keys = list(config.get_provider_config(provider_id).accounts)
+        if len(keys) == 1 and len(keys[0]) == 4 and keys[0].isdigit():
+            card_keys[provider_id] = keys[0]
+    return [
+        txn.model_copy(update={"card_last4": card_keys[txn.provider]})
+        if not txn.card_last4 and txn.provider in card_keys
+        else txn
+        for txn in transactions
+    ]
 
 
 def _provider_account(

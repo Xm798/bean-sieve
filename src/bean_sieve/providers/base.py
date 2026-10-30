@@ -91,9 +91,11 @@ class BaseProvider(ABC):
     # this statement (True) or on it, covered by the file's periods (False).
     per_card_statement: bool = False
 
-    # False when the file carries no account or card number, so rows without a
-    # card_last4 belong to sole_account().
-    statement_names_account: bool = True
+    # True when a row without a card_last4 belongs to the account every
+    # configured key maps to (sole_account()): the file names no account or
+    # card, or the bank prints none on account-level rows. A payment platform
+    # keys its config on the wallet and leaves this False.
+    unkeyed_rows_share_account: bool = False
 
     # Source kinds of coverage() in descending precedence; an unlisted kind
     # ranks below every listed one.
@@ -335,17 +337,17 @@ class BaseProvider(ABC):
 
     def sole_account(self, config: Config) -> str | None:
         """
-        Return the account of every unkeyed row, for a statement naming none.
+        Return the account of every unkeyed row, when the config has one.
 
-        The config key selects nothing: with one account there is nothing to
-        choose, and with several there is nothing to choose by.
+        Several keys may map to it, as the cards of one household account do;
+        with several accounts there is nothing to choose by.
         """
-        if self.statement_names_account:
+        if not self.unkeyed_rows_share_account:
             return None
-        accounts = config.get_provider_config(self.provider_id).accounts
+        accounts = set(config.get_provider_config(self.provider_id).accounts.values())
         if len(accounts) != 1:
             return None
-        return next(iter(accounts.values()))
+        return accounts.pop()
 
     # === Coverage Scope ===
 

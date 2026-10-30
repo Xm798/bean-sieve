@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from bean_sieve.api import full_reconcile
+from bean_sieve.config import Config
+from bean_sieve.config.schema import ProviderConfig
 from bean_sieve.core.types import Transaction
 from bean_sieve.providers import PROVIDERS
 from bean_sieve.providers.base import BaseProvider
@@ -23,7 +25,7 @@ class UnnamedAccountProvider(BaseProvider):
     provider_name = "Fake Unnamed Account"
     supported_formats = [".csv"]
     filename_keywords = ["fake-unnamed"]
-    statement_names_account = False
+    unkeyed_rows_share_account = True
 
     def parse(self, file_path: Path) -> list[Transaction]:
         return [
@@ -43,7 +45,7 @@ class NamedAccountProvider(UnnamedAccountProvider):
     provider_id = "fake_named_account"
     provider_name = "Fake Named Account"
     filename_keywords = ["fake-named"]
-    statement_names_account = True
+    unkeyed_rows_share_account = False
 
 
 @pytest.fixture(autouse=True)
@@ -158,3 +160,52 @@ def test_card_suffix_key_becomes_the_rows_card(tmp_path: Path) -> None:
 
     assert 'card_last4: "1234"' in output
     assert "Expenses:Fake  10.00 HKD" in output
+
+
+def test_several_keys_on_one_account_take_every_row(tmp_path: Path) -> None:
+    output = run(
+        tmp_path,
+        "fake-unnamed.csv",
+        "  fake_unnamed_account:\n"
+        "    accounts:\n"
+        '      "1234": Assets:Fake:Main\n'
+        '      "0001": Assets:Fake:Main\n',
+    )
+
+    assert "Assets:Fake:Main  -10.00 HKD" in output
+    assert "Assets:FIXME" not in output
+    assert "card_last4" not in output
+
+
+def test_rows_left_unassigned_are_reported_with_their_file(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    run(
+        tmp_path,
+        "fake-unnamed.csv",
+        "  fake_unnamed_account:\n"
+        "    accounts:\n"
+        '      "a": Assets:Fake:Main\n'
+        '      "b": Assets:Fake:Other\n',
+    )
+
+    assert "fake-unnamed.csv" in caplog.text
+    assert "2 accounts are configured" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "provider_id", ["boc_debit", "cncbi_debit", "hsbchk_debit", "hsbchk_credit"]
+)
+def test_unnamed_statement_providers_accept_several_keys_on_one_account(
+    provider_id: str,
+) -> None:
+    provider = PROVIDERS[provider_id]()
+
+    def config(accounts: dict[str, str]) -> Config:
+        return Config(providers={provider_id: ProviderConfig(accounts=accounts)})
+
+    shared = {"1234": "Assets:Fake:Main", "0001": "Assets:Fake:Main"}
+    split = {"1234": "Assets:Fake:Main", "0001": "Assets:Fake:Other"}
+
+    assert provider.sole_account(config(shared)) == "Assets:Fake:Main"
+    assert provider.sole_account(config(split)) is None
