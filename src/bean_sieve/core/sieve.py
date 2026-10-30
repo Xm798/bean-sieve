@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from beancount import loader
+from beancount.core.amount import Amount
 from beancount.core.convert import get_weight
 from beancount.core.data import Directive, Posting, TxnPosting
 from beancount.core.data import Transaction as BeanTransaction
@@ -207,16 +208,24 @@ class Sieve:
             key=lambda i: _has_gross_fallback(transactions[i]),
         )
         found: list[tuple[TxnPosting | None, int]] = [(None, 0)] * len(transactions)
-        for i in order:
-            match, n_others = self._find_match(
-                transactions[i],
-                used_ledger_entries,
-                meta_check=meta_check,
-                ambiguous_check=ambiguous_check,
-            )
-            found[i] = (match, n_others)
-            if match:
-                used_ledger_entries.add(id(match))
+        # Matching a priced posting by its cost is a fallback for statements
+        # that cannot show the units currency. It runs once every row had its
+        # chance at a units match, so an exchange leg's cost never takes the
+        # posting a same-sized payment in the price currency was booked to.
+        for by_cost in (False, True):
+            for i in order:
+                if found[i][0] is not None:
+                    continue
+                match, n_others = self._find_match(
+                    transactions[i],
+                    used_ledger_entries,
+                    meta_check=meta_check,
+                    ambiguous_check=ambiguous_check,
+                    by_cost=by_cost,
+                )
+                found[i] = (match, n_others)
+                if match:
+                    used_ledger_entries.add(id(match))
 
         for txn, (match, n_others) in zip(transactions, found, strict=True):
             if match:
@@ -357,6 +366,7 @@ class Sieve:
         used: set[int],
         meta_check: bool = True,
         ambiguous_check: bool = True,
+        by_cost: bool = False,
     ) -> tuple[TxnPosting | None, int]:
         """Find a matching ledger entry for the given transaction.
 
@@ -384,7 +394,7 @@ class Sieve:
         tiers = (False, True) if _has_gross_fallback(txn) else (False,)
         for gross in tiers:
             chosen, n_others = self._pick(
-                txn, used, meta_check, ambiguous_check, gross=gross
+                txn, used, meta_check, ambiguous_check, gross=gross, by_cost=by_cost
             )
             if chosen is not None:
                 return chosen, n_others
@@ -397,12 +407,15 @@ class Sieve:
         meta_check: bool,
         ambiguous_check: bool,
         gross: bool,
+        by_cost: bool = False,
     ) -> tuple[TxnPosting | None, int]:
         candidates = (
             candidate
             for candidate in self._get_candidates(txn, gross=gross)
             if id(candidate) not in used
-            and self._is_match(txn, candidate, meta_check=meta_check, gross=gross)
+            and self._is_match(
+                txn, candidate, meta_check=meta_check, gross=gross, by_cost=by_cost
+            )
         )
         # Only scan all candidates to detect ambiguity for unconstrained
         # transactions; otherwise stop at the first match.
@@ -456,11 +469,13 @@ class Sieve:
         entry: TxnPosting,
         meta_check: bool = True,
         gross: bool = False,
+        by_cost: bool = False,
     ) -> bool:
         """Check if transaction matches ledger entry.
 
         With ``gross``, the amount must equal the posting plus its transaction's
-        rebates instead of the posting itself.
+        rebates instead of the posting itself. With ``by_cost``, a priced
+        posting also matches at its total price.
         """
         posting = entry.posting
         bean_txn = entry.txn
@@ -473,7 +488,6 @@ class Sieve:
         if posting.units and posting.units.number is not None:
             units_number = posting.units.number
             units_currency = posting.units.currency
-            price_number = posting.price.number if posting.price else None
             if gross:
                 rebate = self._rebate_sums.get(id(bean_txn), {}).get(units_currency)
                 amount_ok = bool(rebate) and self._amount_matches(
@@ -481,7 +495,10 @@ class Sieve:
                 )
             else:
                 amount_ok = self._amount_matches(
-                    txn, units_number, units_currency, price_number
+                    txn,
+                    units_number,
+                    units_currency,
+                    posting.price if by_cost else None,
                 ) or self._fallback_amount_matches(txn, units_number, units_currency)
             if not amount_ok:
                 return False
@@ -525,19 +542,21 @@ class Sieve:
         txn: Transaction,
         units_number: Decimal,
         units_currency: str,
-        price_number: Decimal | None,
+        price: Amount | None,
     ) -> bool:
-        """Compare the billed amount against the posting's units or its cost."""
+        """Compare the billed amount against the posting's units or its cost.
+
+        The cost counts only in the price's own currency: an exchange leg
+        `-630.00 CNY @@ 90.00 USD` is not a 90 USD payment.
+        """
         tolerance = self.config.amount_tolerance
-        amount_diff = abs(abs(txn.amount) - abs(units_number))
-
-        if price_number is not None:
-            cost_diff = abs(abs(txn.amount) - abs(units_number * price_number))
-            if units_currency != txn.currency:
-                return cost_diff <= tolerance
-            return amount_diff <= tolerance or cost_diff <= tolerance
-
-        return units_currency == txn.currency and amount_diff <= tolerance
+        if units_currency == txn.currency and (
+            abs(abs(txn.amount) - abs(units_number)) <= tolerance
+        ):
+            return True
+        if price is None or price.number is None or price.currency != txn.currency:
+            return False
+        return abs(abs(txn.amount) - abs(units_number * price.number)) <= tolerance
 
     def _fallback_amount_matches(
         self, txn: Transaction, units_number: Decimal, units_currency: str

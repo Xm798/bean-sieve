@@ -511,3 +511,84 @@ def test_outflow_with_fee_prefers_the_gross_posting(tmp_path):
 
     ((_, entry),) = result.matched
     assert entry.posting.units.number == Decimal("-50.00")
+
+
+def _usd_out(amount: str, account: str | None = None) -> Transaction:
+    return Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal(amount),
+        currency="USD",
+        description="send money",
+        account=account,
+        provider="welab_debit",
+    )
+
+
+def test_priced_posting_matches_in_its_price_currency(tmp_path):
+    """A foreign card posting is found by the amount billed in the price currency."""
+    ledger = _write_ledger(
+        tmp_path,
+        """
+1900-01-01 open Liabilities:Credit:Card
+1900-01-01 open Expenses:Shopping
+
+2030-01-02 * "overseas merchant"
+    Liabilities:Credit:Card  -20.00 USD @@ 140.00 CNY
+    Expenses:Shopping
+""".strip(),
+    )
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(ledger)
+
+    billed = Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("140.00"),
+        currency="CNY",
+        description="overseas merchant",
+        account="Liabilities:Credit:Card",
+        provider="cmb_credit",
+    )
+    result = sieve.match([billed])
+
+    assert len(result.matched) == 1
+
+
+def test_priced_posting_ignores_amounts_in_another_currency(tmp_path):
+    """An exchange leg priced in USD is not a USD outflow of the same size."""
+    ledger = _write_ledger(
+        tmp_path,
+        """
+1900-01-01 open Assets:Bank:Wallet
+1900-01-01 open Assets:Crypto:Exchange
+
+2030-01-02 * "exchange"
+    Assets:Bank:Wallet  -630.00 CNY @@ 90.00 USD
+    Assets:Bank:Wallet   90.00 USD
+
+2030-01-02 * "transfer"
+    Assets:Bank:Wallet     -90.00 USD
+    Assets:Crypto:Exchange  90.00 USD
+""".strip(),
+    )
+    sieve = Sieve(SieveConfig(date_tolerance=0))
+    sieve.load_ledger(ledger)
+
+    rows = [
+        _usd_out("-90.00", "Assets:Bank:Wallet"),
+        _usd_out("90.00", "Assets:Bank:Wallet"),
+        Transaction(
+            date=date(2030, 1, 2),
+            amount=Decimal("630.00"),
+            currency="CNY",
+            description="exchange",
+            account="Assets:Bank:Wallet",
+            provider="welab_debit",
+        ),
+    ]
+    result = sieve.match(rows)
+
+    assert result.missing == []
+    assert result.extra == []
+    by_row = {(t.currency, t.amount): e.txn.narration for t, e in result.matched}
+    assert by_row[("USD", Decimal("90.00"))] == "transfer"
+    assert by_row[("CNY", Decimal("630.00"))] == "exchange"
