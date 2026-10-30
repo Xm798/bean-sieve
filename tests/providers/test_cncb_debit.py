@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import xlwt
 
+from bean_sieve.api import full_reconcile
 from bean_sieve.providers import auto_detect_provider, get_provider
 from bean_sieve.providers.banks.debit.cncb import CNCBDebitProvider
 
@@ -159,3 +160,45 @@ class TestDetection:
 
     def test_registered(self):
         assert isinstance(get_provider("cncb_debit"), CNCBDebitProvider)
+
+
+def test_balance_takes_the_newest_of_same_moment_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The export lists the later of two same-moment rows on top.
+
+    The hook reverses the batch, so the balance has to follow the statement
+    order recorded at parse time rather than the list it receives.
+    """
+    monkeypatch.setattr(
+        CNCBDebitProvider, "pre_reconcile", lambda _self, txns, _ctx: txns[::-1]
+    )
+    rows = [
+        ["20300115", "10:00:00", "__", "20.00", "960.00", "payee-f", "", "",
+         "消费", "REF0012", "--", "完成"],
+        ["20300115", "10:00:00", "__", "20.00", "980.00", "payee-e", "", "",
+         "消费", "REF0011", "--", "完成"],
+    ]  # fmt: skip
+    statement = create_xls(tmp_path, rows=rows)
+    (tmp_path / "bean-sieve.yaml").write_text(
+        "providers:\n"
+        "  cncb_debit:\n"
+        "    balance: true\n"
+        "    accounts:\n"
+        '      "1111": Assets:Bank:CNCB:1111\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "main.bean").write_text(
+        "2029-01-01 open Assets:Bank:CNCB:1111\n", encoding="utf-8"
+    )
+    out = tmp_path / "pending.bean"
+    full_reconcile(
+        statement_paths=[statement],
+        ledger_path=tmp_path / "main.bean",
+        config_path=tmp_path / "bean-sieve.yaml",
+        output_path=out,
+    )
+
+    assert "2030-02-01 balance Assets:Bank:CNCB:1111  960.00 CNY" in out.read_text(
+        encoding="utf-8"
+    )

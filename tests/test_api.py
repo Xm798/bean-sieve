@@ -291,6 +291,21 @@ def test_balance_uses_the_balance_currency():
     )
 
 
+def test_balance_follows_statement_order_among_same_moment_rows():
+    """Rows booked at one moment keep the order their statement lists them in."""
+    from bean_sieve.api import _generate_balance_directives
+    from bean_sieve.config.schema import Config, ProviderConfig
+    from bean_sieve.core.metadata_keys import ROW_SEQ
+
+    cfg = Config(providers={"fake_debit": ProviderConfig(balance=True)})
+    later = _balance_row(trade_day=5, balance="80.00", metadata={ROW_SEQ: (0, 1)})
+    earlier = _balance_row(trade_day=5, balance="90.00", metadata={ROW_SEQ: (0, 0)})
+
+    assert _generate_balance_directives([later, earlier], cfg) == (
+        "\n2030-09-06 balance Assets:Bank:A  80.00 HKD\n"
+    )
+
+
 def test_full_reconcile_post_output_precedes_balance_block(tmp_path, monkeypatch):
     """Balance directives follow the post_output text, never precede it."""
     from datetime import date

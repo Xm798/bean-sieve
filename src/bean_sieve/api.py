@@ -36,6 +36,7 @@ from .core.metadata_keys import (
     OUTPUT_METADATA,
     POSTING_METADATA,
     REBATE_TOPUP_MATCH,
+    ROW_SEQ,
 )
 from .core.types import MatchSource
 from .providers import (
@@ -285,6 +286,7 @@ def full_reconcile(
     )
 
     transactions = [txn for path, _ in pset.files for txn in context.parsed[path]]
+    _stamp_row_order(pset, context.parsed)
 
     # Runs on the parse output itself, ahead of the model_copy steps below:
     # keep() tells rows apart by identity.
@@ -406,6 +408,19 @@ def full_reconcile(
                 f.write(content)
 
     return result
+
+
+def _stamp_row_order(pset: ProviderSet, parsed: dict[Path, list[Transaction]]) -> None:
+    """
+    Record each row's place in the run: file order, then the parse order.
+
+    parse() lists a file's rows in booking order, so this decides which of
+    the rows booked at one moment comes last in the balance column, however
+    the steps after parsing regroup the rows.
+    """
+    for file_index, (path, _) in enumerate(pset.files):
+        for row_index, txn in enumerate(parsed[path]):
+            txn.metadata[ROW_SEQ] = (file_index, row_index)
 
 
 def _select_coverage(
@@ -934,9 +949,15 @@ def _generate_balance_directives(
 
     lines: list[str] = []
     for (_provider_id, account, currency), txns in sorted(account_txns.items()):
-        # The balance column runs in booking order; the stable sort keeps file
-        # order among rows booked at the same moment.
-        txns.sort(key=lambda t: (t.booked_date, t.time or time.min))
+        # The balance column runs in booking order; rows booked at the same
+        # moment follow the order their statement lists them in.
+        txns.sort(
+            key=lambda t: (
+                t.booked_date,
+                t.time or time.min,
+                t.metadata.get(ROW_SEQ, ()),
+            )
+        )
         last_txn = txns[-1]
 
         # Get balance from metadata

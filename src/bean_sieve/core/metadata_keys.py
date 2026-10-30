@@ -19,6 +19,7 @@ FEE_ACCOUNT = "_fee_account"
 WITHDRAWAL_TARGET = "_withdrawal_target"
 REBATE_TOPUP_MATCH = "_rebate_topup_match"
 STATEMENT_CYCLE = "_statement_cycle"
+ROW_SEQ = "_row_seq"
 
 MATCHED_RULE = "matched_rule"
 MATCHED_PRESET_RULE = "matched_preset_rule"
