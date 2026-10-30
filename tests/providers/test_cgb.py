@@ -386,6 +386,11 @@ CARDS: dict[str, list[Row]] = {
 CYCLE = ("2030/03/01", "2030/03/31")
 
 
+def write_mail(path: Path, html: str) -> Path:
+    path.write_text(create_cgb_eml(html), encoding="utf-8")
+    return path
+
+
 def write_cgb_eml(path: Path, cards: dict[str, list[Row]], cycle=CYCLE) -> Path:
     tables = "\n".join(
         f"<table>卡号：6200********{card}"
@@ -397,8 +402,7 @@ def write_cgb_eml(path: Path, cards: dict[str, list[Row]], cycle=CYCLE) -> Path:
 <table><tr><td>账单周期:{cycle[0]}-{cycle[1]}</td></tr></table>
 {tables}
 </body></html>"""
-    path.write_text(create_cgb_eml(html), encoding="utf-8")
-    return path
+    return write_mail(path, html)
 
 
 def write_cgb_pdf(
@@ -550,3 +554,187 @@ class TestCGBCoverage:
             path.name: sum(t.source_file == path for t in kept) for path in paths
         }
         assert by_file == {"s.eml": 5, "r.pdf": 0, "next.pdf": 1}
+
+
+# Mails of 2024 and earlier print the cycle as "本期账单周期：D至D" and leave the
+# 入账货币 column out of the rows: a card's billing currency is only in the
+# account table, and the card's interest follows its rows on an undated line.
+OLDER_TEMPLATE = f"""<html><body>
+<table><tr><td>感谢您使用{_ISSUER}信用卡，以下是您2030年03月的信用卡账单：</td></tr>
+<tr><td>本期账单周期：2030/02/14至2030/03/13  账单日：2030/03/13</td></tr></table>
+<table>
+<tr><td>卡号末四位</td> <td>本期账单金额</td> <td>最低还款额</td> <td>最后还款日</td>
+<td>入账货币</td> <td>存款</td> <td>卡片消费额度</td></tr>
+<tr><td>0001</td> <td>无需还款</td> <td>无需还款</td> <td>2030/04/02</td> <td>人民币</td>
+<td>0.20</td> <td>9,100.00</td></tr>
+<tr><td>1234</td> <td>13.70</td> <td>1.70</td> <td>2030/04/02</td> <td>美元</td>
+<td>0.20</td> <td>910.00</td></tr>
+</table>
+<table>
+<tr><td>交易日期</td> <td>入账日期</td> <td>交易描述</td> <td>交易金额</td> <td>交易货币</td>
+<td>入账金额</td></tr>
+<tr><td>交易明细</td> <td>卡号：6200********1234</td></tr>
+<tr><td>2030/03/05</td> <td>2030/03/05</td> <td>(消费)shop-a</td> <td>11.30</td>
+<td>美元</td> <td>11.30</td></tr>
+<tr><td>2030/03/04</td> <td>2030/03/05</td> <td>(还款)payment-b</td> <td>-83.70</td>
+<td>人民币</td> <td>-11.90</td></tr>
+<tr><td>消费利息</td> <td>2.40</td> <td>美元</td> <td>2.40</td></tr>
+<tr><td>卡号：6200********0001</td></tr>
+<tr><td>2030/03/11</td> <td>2030/03/11</td> <td>(消费)payee-c</td> <td>37.40</td>
+<td>人民币</td> <td>37.40</td></tr>
+<tr><td>2030/02/24</td> <td>2030/02/25</td> <td>(还款)payment-d</td> <td>-26.10</td>
+<td>人民币</td> <td>-26.10</td></tr>
+</table>
+<table><tr><td>个人总授信：</td> <td>9,100.00</td></tr></table>
+</body></html>"""
+
+
+class TestCGBOlderTemplate:
+    def test_rows_take_the_card_billing_currency(self, tmp_path):
+        txns = CGBCreditProvider().parse(write_mail(tmp_path / "s.eml", OLDER_TEMPLATE))
+
+        assert [
+            (t.date, t.description, t.amount, t.currency, t.card_last4) for t in txns
+        ] == [
+            (date(2030, 3, 5), "(消费)shop-a", Decimal("11.30"), "USD", "1234"),
+            (date(2030, 3, 4), "(还款)payment-b", Decimal("-11.90"), "USD", "1234"),
+            (date(2030, 3, 13), "消费利息", Decimal("2.40"), "USD", "1234"),
+            (date(2030, 3, 11), "(消费)payee-c", Decimal("37.40"), "CNY", "0001"),
+            (date(2030, 2, 24), "(还款)payment-d", Decimal("-26.10"), "CNY", "0001"),
+        ]
+        assert txns[1].metadata[ORIGINAL_AMOUNT] == Decimal("-83.70")
+        assert txns[1].metadata[ORIGINAL_CURRENCY] == "CNY"
+        assert ORIGINAL_AMOUNT not in txns[0].metadata
+
+    def test_cycle(self, tmp_path):
+        provider = CGBCreditProvider()
+        path = write_mail(tmp_path / "s.eml", OLDER_TEMPLATE)
+        covs = provider.coverage(path, provider.parse(path))
+
+        assert [(c.account, c.start, c.end, len(c.rows)) for c in covs] == [
+            ("1234", date(2030, 2, 14), date(2030, 3, 13), 3),
+            ("0001", date(2030, 2, 14), date(2030, 3, 13), 2),
+        ]
+
+    def test_interest_of_a_card_without_dated_rows(self, tmp_path):
+        html = """<html><body>
+<table><tr><td>本期账单周期：2030/02/14至2030/03/13</td></tr></table>
+<table><tr><td>1234</td> <td>2.40</td> <td>2.40</td> <td>2030/04/02</td>
+<td>美元</td></tr></table>
+<table><tr><td>交易明细</td> <td>卡号：6200********1234</td></tr>
+<tr><td>消费利息</td> <td>2.40</td> <td>美元</td> <td>2.40</td></tr></table>
+</body></html>"""
+        txns = CGBCreditProvider().parse(write_mail(tmp_path / "s.eml", html))
+
+        assert [(t.date, t.description, t.amount, t.currency) for t in txns] == [
+            (date(2030, 3, 13), "消费利息", Decimal("2.40"), "USD")
+        ]
+
+
+class TestCGBUnreadableFields:
+    def test_mail_without_cycle_warns_and_covers_nothing(self, tmp_path, caplog):
+        html = """<html><body><table>卡号：6200********1234
+<tr><td>2030/01/02 2030/01/03 (消费)payee-a 41.30 人民币 41.30 人民币</td></tr>
+</table></body></html>"""
+        path = write_mail(tmp_path / "no-cycle.eml", html)
+        provider = CGBCreditProvider()
+
+        txns = provider.parse(path)
+
+        assert len(txns) == 1
+        assert STATEMENT_CYCLE not in txns[0].metadata
+        assert provider.coverage(path, txns) == []
+        assert "no-cycle.eml" in caplog.text
+
+    def test_unknown_original_currency_warns(self, tmp_path, caplog):
+        html = """<html><body><table>账单周期:2030/01/01-2030/01/31</table>
+<table>卡号：6200********1234
+<tr><td>2030/01/02 2030/01/03 (消费)payee-a 83.70 卢布 6.10 人民币</td></tr>
+</table></body></html>"""
+        path = write_mail(tmp_path / "s.eml", html)
+
+        txns = CGBCreditProvider().parse(path)
+
+        assert [(t.amount, t.currency, t.original_amount) for t in txns] == [
+            (Decimal("6.10"), "CNY", None)
+        ]
+        assert "卢布" in caplog.text and "s.eml" in caplog.text
+
+    def test_row_without_a_known_billing_currency_is_skipped(self, tmp_path, caplog):
+        html = """<html><body><table>账单周期:2030/01/01-2030/01/31</table>
+<table>卡号：6200********1234
+<tr><td>2030/01/02 2030/01/03 (消费)payee-a 83.70 卢布 83.70 卢布</td></tr>
+<tr><td>2030/01/04 2030/01/04 (消费)payee-b 41.30 人民币 41.30 人民币</td></tr>
+</table></body></html>"""
+        path = write_mail(tmp_path / "s.eml", html)
+
+        txns = CGBCreditProvider().parse(path)
+
+        assert [t.description for t in txns] == ["(消费)payee-b"]
+        assert "card 1234" in caplog.text and "s.eml" in caplog.text
+
+    def test_unknown_posting_currency_warns_and_takes_the_card_currency(
+        self, tmp_path, caplog
+    ):
+        html = """<html><body><table>账单周期:2030/01/01-2030/01/31</table>
+<table><tr><td>1234</td> <td>6.10</td> <td>6.10</td> <td>2030/02/20</td>
+<td>人民币</td></tr></table>
+<table><tr><td>交易金额 交易货币 入账金额 入账货币</td></tr>
+<tr><td>卡号：6200********1234</td></tr>
+<tr><td>2030/01/02 2030/01/03 (消费)payee-a 83.70 卢布 6.10 卢布</td></tr>
+</table></body></html>"""
+        path = write_mail(tmp_path / "s.eml", html)
+
+        txns = CGBCreditProvider().parse(path)
+
+        assert [(t.amount, t.currency) for t in txns] == [(Decimal("6.10"), "CNY")]
+        assert "入账货币 卢布" in caplog.text and "s.eml" in caplog.text
+
+    def test_dual_currency_card_bills_each_row_in_its_currency(self, tmp_path, caplog):
+        html = """<html><body>
+<table><tr><td>本期账单周期：2030/02/14至2030/03/13</td></tr></table>
+<table>
+<tr><td>1234</td> <td>37.40</td> <td>3.70</td> <td>2030/04/02</td> <td>人民币</td></tr>
+<tr><td>1234</td> <td>11.30</td> <td>1.70</td> <td>2030/04/02</td> <td>美元</td></tr>
+</table>
+<table><tr><td>卡号：6200********1234</td></tr>
+<tr><td>2030/03/05 2030/03/05 (消费)shop-a 11.30 美元 11.30</td></tr>
+<tr><td>2030/03/06 2030/03/06 (消费)shop-b 37.40 人民币 37.40</td></tr>
+<tr><td>2030/03/07 2030/03/07 (消费)shop-c 83.70 港币 83.70</td></tr>
+</table></body></html>"""
+        path = write_mail(tmp_path / "s.eml", html)
+
+        txns = CGBCreditProvider().parse(path)
+
+        assert [(t.description, t.currency) for t in txns] == [
+            ("(消费)shop-a", "USD"),
+            ("(消费)shop-b", "CNY"),
+        ]
+        assert "card 1234" in caplog.text and "s.eml" in caplog.text
+
+    def test_row_with_an_impossible_date_is_skipped(self, tmp_path, caplog):
+        html = """<html><body><table>账单周期:2030/01/01-2030/01/31</table>
+<table>卡号：6200********1234
+<tr><td>2030/01/32 2030/01/03 (消费)payee-a 41.30 人民币 41.30 人民币</td></tr>
+<tr><td>2030/01/04 2030/01/04 (消费)payee-b 41.30 人民币 41.30 人民币</td></tr>
+</table></body></html>"""
+        path = write_mail(tmp_path / "s.eml", html)
+
+        txns = CGBCreditProvider().parse(path)
+
+        assert [t.description for t in txns] == ["(消费)payee-b"]
+        assert "2030/01/32" in caplog.text and "s.eml" in caplog.text
+
+
+class TestCGBRowCells:
+    def test_summary_holding_number_word_number(self, tmp_path):
+        html = """<html><body><table>账单周期:2030/01/01-2030/01/31</table>
+<table>卡号：6200********1234
+<tr><td>2030/01/02 2030/01/03 (消费)store 3 层 51.70 人民币 51.70 人民币</td></tr>
+</table></body></html>"""
+
+        txns = CGBCreditProvider().parse(write_mail(tmp_path / "s.eml", html))
+
+        assert [(t.description, t.amount) for t in txns] == [
+            ("(消费)store 3 层", Decimal("51.70"))
+        ]

@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from ....core.coverage import Coverage
 from ....core.metadata_keys import ORIGINAL_AMOUNT, ORIGINAL_CURRENCY, STATEMENT_CYCLE
 from ....core.types import Transaction
 from ... import register_provider
 from ...base import BaseProvider
+
+logger = logging.getLogger(__name__)
 
 # Issuer name written as escapes
 _ISSUER_SHORT = "\u5e7f\u53d1"
@@ -35,8 +38,48 @@ _CURRENCY_CODES = {
     "泰铢": "THB",
 }
 
+_DATE = r"\d{4}/\d{2}/\d{2}"
+_AMOUNT = r"[-\d,.]+"
+_CJK = r"[\u4e00-\u9fff]+"
+_KNOWN_CURRENCY = "|".join(sorted(_CURRENCY_CODES, key=len, reverse=True))
+
+_CYCLE = re.compile(rf"账单周期[:：]?\s*({_DATE})\s*[-至]\s*({_DATE})")
+# 卡号末四位 本期账单金额 最低还款额 最后还款日 入账货币 ...; a card that owes
+# nothing prints words in place of the two amounts.
+_CARD_CURRENCY = re.compile(rf"(?<![\d.,/*])(\d{{4}})\s+\S+\s+\S+\s+{_DATE}\s+({_CJK})")
+_ROW_START = re.compile(rf"(?={_DATE}\s+{_DATE}\s+\()")
+_POSTING_CURRENCY_COLUMN = re.compile(r"入账金额\s+入账货币")
+
+
+def _row_pattern(currency: str) -> re.Pattern[str]:
+    # 交易日期 入账日期 (类型)摘要 交易金额 交易货币 入账金额 [入账货币]
+    return re.compile(
+        rf"({_DATE})\s+({_DATE})\s+\(([^)]+)\)(.+?)\s+({_AMOUNT})\s+({currency})"
+        rf"\s+({_AMOUNT})(?:\s+({_CJK}))?"
+    )
+
+
+# Known currency names are tried first, so a summary holding "number word
+# number" stays in the summary; the second pattern still reads a row in an
+# unknown currency so it can be reported.
+_ROW_PATTERNS = (_row_pattern(_KNOWN_CURRENCY), _row_pattern(_CJK))
+_INTEREST = re.compile(rf"({_CJK}利息)\s+({_AMOUNT})\s+({_CJK})\s+({_AMOUNT})")
+
 # Spans of one PDF line have tops within this many points of each other.
 _PDF_LINE_TOLERANCE = 2.0
+
+
+class _Row(NamedTuple):
+    """One row's cells; posting_currency is None when the row omits 入账货币."""
+
+    date: date
+    post_date: date
+    description: str
+    amount: str
+    currency_name: str
+    posting_amount: str
+    posting_currency: str | None
+    metadata: dict[str, Any]
 
 
 @register_provider
@@ -51,9 +94,13 @@ class CGBCreditProvider(BaseProvider):
 
     Layout:
     - Statement period: 账单周期:YYYY/MM/DD-YYYY/MM/DD (the PDF prints
-      "账单周期 YYYY/MM/DD - YYYY/MM/DD")
+      "账单周期 YYYY/MM/DD - YYYY/MM/DD", mails of 2024 and earlier
+      "本期账单周期：YYYY/MM/DD至YYYY/MM/DD")
+    - Account table: one row per card, its billing currency (入账货币) fifth
     - Card sections: 卡号：6200********1234 followed by transaction table
-    - Transaction row: 交易日期 入账日期 (类型)摘要 金额 货币 入账金额 入账货币
+    - Transaction row: 交易日期 入账日期 (类型)摘要 金额 货币 入账金额 入账货币;
+      mails of 2024 and earlier leave 入账货币 out and print the card's interest
+      on an undated line after its rows: 消费利息 金额 货币 入账金额
     - A foreign-currency card bills in its own currency (e.g. 美元) and lists
       spending in a third currency (e.g. 港币) with the original amount
 
@@ -85,33 +132,38 @@ class CGBCreditProvider(BaseProvider):
             text = self.parse_html(html).get_text()
 
         statement_period = self._extract_statement_period(text)
+        head, *sections = re.split(r"(卡号：\d{4}\*{8}\d{4})", text)
+        # Without that column, a word after 入账金额 is whatever follows the row.
+        posting_column = bool(_POSTING_CURRENCY_COLUMN.search(text))
+        # A dual-currency card has one account-table row per currency.
+        card_currencies: dict[str, list[str]] = {}
+        for card, name in _CARD_CURRENCY.findall(head):
+            codes = card_currencies.setdefault(card, [])
+            if name in _CURRENCY_CODES and _CURRENCY_CODES[name] not in codes:
+                codes.append(_CURRENCY_CODES[name])
         transactions: list[Transaction] = []
-
-        # Split by card sections
-        sections = re.split(r"(卡号：\d{4}\*{8}\d{4})", text)
-
-        current_card: str | None = None
-        row_counter = 0
-
-        for section in sections:
-            # Check if this section is a card header
-            card_match = re.match(r"卡号：\d{4}\*{8}(\d{4})", section)
-            if card_match:
-                current_card = card_match.group(1)
-                continue
-
-            if not current_card:
-                continue
-
-            # Parse transactions in this card section
-            card_transactions = self._parse_card_section(
-                section, current_card, file_path, row_counter
+        for header, section in zip(sections[::2], sections[1::2], strict=True):
+            card = header[-4:]
+            transactions.extend(
+                self._parse_card_section(
+                    section,
+                    card,
+                    card_currencies.get(card, []),
+                    posting_column,
+                    statement_period,
+                    file_path,
+                )
             )
-            transactions.extend(card_transactions)
-            row_counter += len(card_transactions)
+        for line, txn in enumerate(transactions, 1):
+            txn.source_line = line
 
         self.assign_statement_periods(transactions, statement_period)
-        if statement_period:
+        if statement_period is None:
+            logger.warning(
+                "%s: no statement cycle found; the file covers no period",
+                file_path.name,
+            )
+        else:
             for txn in transactions:
                 txn.metadata[STATEMENT_CYCLE] = statement_period
         return transactions
@@ -135,109 +187,158 @@ class CGBCreditProvider(BaseProvider):
         ]
 
     def _extract_statement_period(self, text: str) -> tuple[date, date] | None:
-        """Extract statement period (e.g., '账单周期:2025/12/26-2026/01/25')."""
-        match = re.search(
-            r"账单周期[:：]?\s*(\d{4})/(\d{2})/(\d{2})\s*-\s*(\d{4})/(\d{2})/(\d{2})",
-            text,
-        )
-        if match:
-            start = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
-            end = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
-            return (start, end)
-        return None
+        match = _CYCLE.search(text)
+        if match is None:
+            return None
+        try:
+            return (self._parse_date(match[1]), self._parse_date(match[2]))
+        except ValueError:
+            return None
 
     def _parse_card_section(
         self,
         section: str,
         card_last4: str,
+        card_currencies: list[str],
+        posting_column: bool,
+        statement_period: tuple[date, date] | None,
         file_path: Path,
-        start_row: int,
     ) -> list[Transaction]:
-        """Parse all transactions in a card section."""
+        """Parse one card's dated rows and its undated interest lines.
+
+        Each row is matched within its own chunk, so a row whose cells fail to
+        match cannot run on into the next row.
+        """
+        rows: list[_Row] = []
+        for chunk in _ROW_START.split(section):
+            match = next(filter(None, (p.match(chunk) for p in _ROW_PATTERNS)), None)
+            row_end = 0
+            if match:
+                trans_date, post_date, trans_type, summary = match.group(1, 2, 3, 4)
+                amount, currency_name, posting_amount, posting_currency = match.group(
+                    5, 6, 7, 8
+                )
+                if posting_currency not in _CURRENCY_CODES and not posting_column:
+                    posting_currency = None
+                row_end = match.end() if posting_currency else match.end(7)
+                description = f"({trans_type}){summary.strip()}"
+                try:
+                    rows.append(
+                        _Row(
+                            date=self._parse_date(trans_date),
+                            post_date=self._parse_date(post_date),
+                            description=description,
+                            amount=amount,
+                            currency_name=currency_name,
+                            posting_amount=posting_amount,
+                            posting_currency=posting_currency,
+                            metadata={
+                                "original_date": trans_date,
+                                "trans_type": trans_type,
+                            },
+                        )
+                    )
+                except ValueError:
+                    logger.warning(
+                        "%s: skipped %s of card %s; %s or %s is not a date",
+                        file_path.name,
+                        description,
+                        card_last4,
+                        trans_date,
+                        post_date,
+                    )
+            for interest in _INTEREST.finditer(chunk, row_end):
+                if statement_period is None:
+                    logger.warning(
+                        "%s: skipped %s of card %s; no statement cycle dates it",
+                        file_path.name,
+                        interest.group(1),
+                        card_last4,
+                    )
+                    continue
+                name, amount, currency_name, posting_amount = interest.group(1, 2, 3, 4)
+                cycle_end = statement_period[1]
+                rows.append(
+                    _Row(
+                        date=cycle_end,
+                        post_date=cycle_end,
+                        description=name,
+                        amount=amount,
+                        currency_name=currency_name,
+                        posting_amount=posting_amount,
+                        posting_currency=None,
+                        metadata={},
+                    )
+                )
+
         transactions: list[Transaction] = []
-
-        # Pattern: 交易日期 入账日期 (类型)摘要 交易金额 交易货币 入账金额 入账货币
-        pattern = (
-            r"(\d{4}/\d{2}/\d{2})\s+"  # Transaction date
-            r"(\d{4}/\d{2}/\d{2})\s+"  # Posting date
-            r"\(([^)]+)\)"  # Transaction type (消费/还款/赠送)
-            r"(.+?)\s+"  # Description
-            r"([-\d,.]+)\s+"  # Transaction amount
-            r"([\u4e00-\u9fff]+)\s+"  # Transaction currency
-            r"([-\d,.]+)\s+"  # Posting amount
-            r"([\u4e00-\u9fff]+)"  # Posting currency
-        )
-
-        for i, match in enumerate(re.finditer(pattern, section)):
-            txn = self._parse_transaction(
-                match, card_last4, file_path, start_row + i + 1
-            )
-            if txn:
+        skipped = 0
+        for row in rows:
+            currency = _CURRENCY_CODES.get(row.posting_currency or "")
+            if row.posting_currency and currency is None:
+                logger.warning(
+                    "%s: unknown 入账货币 %s in %s of card %s; billed in the card's"
+                    " currency from the account table",
+                    file_path.name,
+                    row.posting_currency,
+                    row.description,
+                    card_last4,
+                )
+            if currency is None and len(card_currencies) == 1:
+                currency = card_currencies[0]
+            elif currency is None:
+                # A dual-currency card bills each row in its 交易货币's account.
+                original = _CURRENCY_CODES.get(row.currency_name)
+                currency = original if original in card_currencies else None
+            if currency is None:
+                skipped += 1
+            elif txn := self._build_transaction(file_path, card_last4, currency, row):
                 transactions.append(txn)
-
+        if skipped:
+            logger.warning(
+                "%s: skipped %d rows of card %s; no billing currency fits them"
+                " (account table lists: %s)",
+                file_path.name,
+                skipped,
+                card_last4,
+                ", ".join(card_currencies) or "none",
+            )
         return transactions
 
-    def _parse_transaction(
-        self,
-        match: re.Match,
-        card_last4: str,
-        file_path: Path,
-        row_idx: int,
+    def _build_transaction(
+        self, file_path: Path, card_last4: str, currency: str, row: _Row
     ) -> Transaction | None:
-        """Parse a single transaction from regex match."""
-        try:
-            trans_date_str = match.group(1)  # YYYY/MM/DD
-            post_date_str = match.group(2)  # YYYY/MM/DD
-            trans_type = match.group(3)  # 消费/还款/赠送
-            description = match.group(4).strip()
-            trans_amount_str = match.group(5)
-            trans_currency_str = match.group(6)
-            posting_amount_str = match.group(7)  # Use posting amount (入账金额)
-            posting_currency_str = match.group(8)
-
-            # Parse dates
-            trans_date = self._parse_date(trans_date_str)
-            post_date = self._parse_date(post_date_str)
-
-            # Parse amount
-            amount = self._parse_amount(posting_amount_str)
-            if amount is None:
-                return None
-
-            currency = self._map_currency(posting_currency_str)
-            original_currency = self._map_currency(trans_currency_str)
-
-            # Build description with type prefix
-            full_description = f"({trans_type}){description}"
-
-            metadata: dict = {
-                "original_date": trans_date_str,
-                "trans_type": trans_type,
-            }
-            if original_currency != currency:
-                original_amount = self._parse_amount(trans_amount_str)
-                if original_amount is not None:
-                    metadata[ORIGINAL_AMOUNT] = original_amount
-                    metadata[ORIGINAL_CURRENCY] = original_currency
-
-            return Transaction(
-                date=trans_date,
-                post_date=post_date,
-                amount=amount,
-                currency=currency,
-                description=full_description,
-                card_last4=card_last4,
-                provider=self.provider_id,
-                source_file=file_path,
-                source_line=row_idx,
-                metadata=metadata,
-            )
-        except (IndexError, ValueError):
+        amount = self._parse_amount(row.posting_amount)
+        if amount is None:
             return None
 
-    @staticmethod
-    def _map_currency(name: str) -> str:
-        return _CURRENCY_CODES.get(name, name)
+        metadata = dict(row.metadata)
+        original_currency = _CURRENCY_CODES.get(row.currency_name)
+        if original_currency is None:
+            logger.warning(
+                "%s: unknown currency %s in %s of card %s; original amount dropped",
+                file_path.name,
+                row.currency_name,
+                row.description,
+                card_last4,
+            )
+        elif original_currency != currency:
+            original = self._parse_amount(row.amount)
+            if original is not None:
+                metadata[ORIGINAL_AMOUNT] = original
+                metadata[ORIGINAL_CURRENCY] = original_currency
+
+        return Transaction(
+            date=row.date,
+            post_date=row.post_date,
+            amount=amount,
+            currency=currency,
+            description=row.description,
+            card_last4=card_last4,
+            provider=self.provider_id,
+            source_file=file_path,
+            metadata=metadata,
+        )
 
     def _parse_date(self, date_str: str) -> date:
         """Parse date from YYYY/MM/DD format."""
