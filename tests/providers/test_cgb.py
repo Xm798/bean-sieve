@@ -738,3 +738,97 @@ class TestCGBRowCells:
         assert [(t.description, t.amount) for t in txns] == [
             ("(消费)store 3 层", Decimal("51.70"))
         ]
+
+    def test_summary_holding_number_currency_number(self, tmp_path):
+        row = (
+            "2030/01/02",
+            "2030/01/03",
+            "(消费)shop-x 5 美元 6",
+            "43.20",
+            "人民币",
+            "43.20",
+            "人民币",
+        )
+        provider = CGBCreditProvider()
+        for path in (
+            write_cgb_eml(tmp_path / "s.eml", {"1234": [row]}),
+            write_cgb_pdf(tmp_path / "r.pdf", {"1234": [row]}),
+        ):
+            txns = provider.parse(path)
+
+            assert [(t.description, t.amount, t.currency) for t in txns] == [
+                ("(消费)shop-x 5 美元 6", Decimal("43.20"), "CNY")
+            ], path.name
+            assert ORIGINAL_AMOUNT not in txns[0].metadata
+
+    def test_summary_currency_in_cells_before_an_interest_line(self, tmp_path):
+        html = """<html><body>
+<table><tr><td>本期账单周期：2030/02/14至2030/03/13</td></tr></table>
+<table><tr><td>1234</td> <td>63.10</td> <td>3.70</td> <td>2030/04/02</td>
+<td>人民币</td></tr></table>
+<table><tr><td>交易明细</td> <td>卡号：6200********1234</td></tr>
+<tr><td>2030/03/05</td> <td>2030/03/05</td> <td>(消费)shop-x 5 美元 6</td>
+<td>60.80</td>
+<td>人民币</td> <td>60.80</td></tr> <tr><td>消费利息</td> <td>2.30</td> <td>人民币</td>
+<td>2.30</td></tr>
+</table>
+<table><tr><td>本期应还总额：</td> <td>63.10</td></tr></table>
+</body></html>"""
+        txns = CGBCreditProvider().parse(write_mail(tmp_path / "s.eml", html))
+
+        assert [(t.description, t.amount, t.currency) for t in txns] == [
+            ("(消费)shop-x 5 美元 6", Decimal("60.80"), "CNY"),
+            ("消费利息", Decimal("2.30"), "CNY"),
+        ]
+
+    def test_amounts_in_the_text_after_the_last_row_stay_out_of_it(self, tmp_path):
+        html = """<html><body><table>账单周期:2030/01/01-2030/01/31</table>
+<table>卡号：6200********1234
+<tr><td>2030/01/02 2030/01/03 (消费)payee-a 43.20 人民币 43.20 人民币</td></tr>
+</table>
+<p>温馨提示：</p>
+<p>1234 人民币 43.20 + 0.00 - 0.00 = 43.20</p>
+</body></html>"""
+        txns = CGBCreditProvider().parse(write_mail(tmp_path / "s.eml", html))
+
+        assert [(t.description, t.amount) for t in txns] == [
+            ("(消费)payee-a", Decimal("43.20"))
+        ]
+
+    def test_dated_row_without_amounts_warns(self, tmp_path, caplog):
+        html = """<html><body><table>账单周期:2030/01/01-2030/01/31</table>
+<table>卡号：6200********1234
+<tr><td>2030/01/02 2030/01/03 (消费)payee-a</td></tr>
+<tr><td>2030/01/04 2030/01/04 (消费)payee-b 41.30 人民币 41.30 人民币</td></tr>
+</table></body></html>"""
+        txns = CGBCreditProvider().parse(write_mail(tmp_path / "s.eml", html))
+
+        assert [t.description for t in txns] == ["(消费)payee-b"]
+        assert "2030/01/02" in caplog.text and "s.eml" in caplog.text
+
+    def test_summary_currency_before_an_unknown_currency_warns(self, tmp_path, caplog):
+        html = """<html><body><table>账单周期:2030/01/01-2030/01/31</table>
+<table><tr><td>1234</td> <td>7.30</td> <td>7.30</td> <td>2030/02/20</td>
+<td>人民币</td></tr></table>
+<table><tr><td>交易金额 交易货币 入账金额 入账货币</td></tr>
+<tr><td>卡号：6200********1234</td></tr>
+<tr><td>2030/01/02 2030/01/03 (消费)shop-x 5 美元 6 83.70 卢布 7.30 人民币</td></tr>
+</table></body></html>"""
+        txns = CGBCreditProvider().parse(write_mail(tmp_path / "s.eml", html))
+
+        assert [(t.description, t.amount, t.currency) for t in txns] == [
+            ("(消费)shop-x 5 美元 6", Decimal("7.30"), "CNY")
+        ]
+        assert "卢布" in caplog.text and "s.eml" in caplog.text
+
+    def test_amounts_on_the_line_after_the_last_row_stay_out_of_it(self, tmp_path):
+        html = """<html><body><table>账单周期:2030/01/01-2030/01/31</table>
+<table>卡号：6200********1234
+<tr><td>2030/01/02 2030/01/03 (消费)payee-a 43.20 人民币 43.20 人民币
+1234 人民币 47.00 + 0.00 - 0.00 = 47.00</td></tr>
+</table></body></html>"""
+        txns = CGBCreditProvider().parse(write_mail(tmp_path / "s.eml", html))
+
+        assert [(t.description, t.amount) for t in txns] == [
+            ("(消费)payee-a", Decimal("43.20"))
+        ]

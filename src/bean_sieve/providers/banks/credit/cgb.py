@@ -38,19 +38,57 @@ _ROW_START = re.compile(rf"(?={_DATE}\s+{_DATE}\s+\()")
 _POSTING_CURRENCY_COLUMN = re.compile(r"入账金额\s+入账货币")
 
 
-def _row_pattern(currency: str) -> re.Pattern[str]:
-    # 交易日期 入账日期 (类型)摘要 交易金额 交易货币 入账金额 [入账货币]
+_ROW_HEAD = re.compile(rf"({_DATE})\s+({_DATE})\s+\(([^)]+)\)")
+
+
+def _amounts_pattern(currency: str) -> re.Pattern[str]:
+    # 交易金额 交易货币 入账金额 [入账货币]
     return re.compile(
-        rf"({_DATE})\s+({_DATE})\s+\(([^)]+)\)(.+?)\s+({_AMOUNT})\s+({currency})"
-        rf"\s+({_AMOUNT})(?:\s+({_CJK}))?"
+        rf"(?<!\S)({_AMOUNT})\s+({currency})\s+({_AMOUNT})(?:\s+({_CJK}))?"
     )
 
 
-# Known currency names are tried first, so a summary holding "number word
-# number" stays in the summary; the second pattern still reads a row in an
-# unknown currency so it can be reported.
-_ROW_PATTERNS = (_row_pattern(_KNOWN_CURRENCY), _row_pattern(_CJK))
+# The first pattern keeps a summary's "number word number" in the summary;
+# the second reads a row in an unknown currency so it can be reported.
+_AMOUNTS_PATTERNS = (_amounts_pattern(_KNOWN_CURRENCY), _amounts_pattern(_CJK))
 _INTEREST = re.compile(rf"({_CJK}利息)\s+({_AMOUNT})\s+({_CJK})\s+({_AMOUNT})")
+_INTEREST_LABEL = re.compile(rf"{_CJK}利息\s*$")
+
+
+def _row_amounts(chunk: str, start: int) -> re.Match[str] | None:
+    """Find a row's amount cells: the later of each pattern's last match."""
+    candidates = [m for p in _AMOUNTS_PATTERNS if (m := _last_on_row(p, chunk, start))]
+    # A known currency wins a tie; an unknown one later on the row is the
+    # row's own and is reported downstream.
+    return max(candidates, key=lambda m: m.end(3), default=None)
+
+
+def _last_on_row(
+    pattern: re.Pattern[str], chunk: str, start: int
+) -> re.Match[str] | None:
+    """Return the last match of pattern reached along the row.
+
+    A summary may hold "number currency number" itself, so a later match
+    takes over while the text between them stays on the row: text, then at
+    most one line break, since some mails print each cell on a line of its
+    own. The notes after a card's last row hold such triples too and carry
+    no fixed label to stop at, so a gap running onto a later line of text
+    ends the row, as does an interest line printed on the row's own line.
+    """
+    found: re.Match[str] | None = None
+    end = start
+    for match in pattern.finditer(chunk, start):
+        text, line_break, rest = chunk[end : match.start()].partition("\n")
+        if rest.strip() or "\n" in rest:
+            break
+        if found and _INTEREST_LABEL.search(text):
+            break
+        # A match carrying its 入账货币 holds every cell of the row, so a
+        # match on a later line belongs to whatever follows the row.
+        if found and found[4] and line_break:
+            break
+        found, end = match, match.end(3)
+    return found
 
 
 class _Row(NamedTuple):
@@ -181,42 +219,54 @@ class CGBCreditProvider(BaseProvider):
         """
         rows: list[_Row] = []
         for chunk in _ROW_START.split(section):
-            match = next(filter(None, (p.match(chunk) for p in _ROW_PATTERNS)), None)
             row_end = 0
-            if match:
-                trans_date, post_date, trans_type, summary = match.group(1, 2, 3, 4)
-                amount, currency_name, posting_amount, posting_currency = match.group(
-                    5, 6, 7, 8
-                )
-                if currency_code(posting_currency) is None and not posting_column:
-                    posting_currency = None
-                row_end = match.end() if posting_currency else match.end(7)
-                description = f"({trans_type}){summary.strip()}"
-                try:
-                    rows.append(
-                        _Row(
-                            date=self._parse_date(trans_date),
-                            post_date=self._parse_date(post_date),
-                            description=description,
-                            amount=amount,
-                            currency_name=currency_name,
-                            posting_amount=posting_amount,
-                            posting_currency=posting_currency,
-                            metadata={
-                                "original_date": trans_date,
-                                "trans_type": trans_type,
-                            },
-                        )
-                    )
-                except ValueError:
+            head = _ROW_HEAD.match(chunk)
+            if head:
+                amounts = _row_amounts(chunk, head.end())
+                if amounts is None:
                     logger.warning(
-                        "%s: skipped %s of card %s; %s or %s is not a date",
+                        "%s: skipped the (%s) row of %s on card %s; its amount"
+                        " and currency cells are unreadable",
                         file_path.name,
-                        description,
+                        head.group(3),
+                        head.group(1),
                         card_last4,
-                        trans_date,
-                        post_date,
                     )
+                else:
+                    trans_date, post_date, trans_type = head.group(1, 2, 3)
+                    summary = chunk[head.end() : amounts.start()]
+                    amount, currency_name, posting_amount, posting_currency = (
+                        amounts.group(1, 2, 3, 4)
+                    )
+                    if currency_code(posting_currency) is None and not posting_column:
+                        posting_currency = None
+                    row_end = amounts.end() if posting_currency else amounts.end(3)
+                    description = f"({trans_type}){summary.strip()}"
+                    try:
+                        rows.append(
+                            _Row(
+                                date=self._parse_date(trans_date),
+                                post_date=self._parse_date(post_date),
+                                description=description,
+                                amount=amount,
+                                currency_name=currency_name,
+                                posting_amount=posting_amount,
+                                posting_currency=posting_currency,
+                                metadata={
+                                    "original_date": trans_date,
+                                    "trans_type": trans_type,
+                                },
+                            )
+                        )
+                    except ValueError:
+                        logger.warning(
+                            "%s: skipped %s of card %s; %s or %s is not a date",
+                            file_path.name,
+                            description,
+                            card_last4,
+                            trans_date,
+                            post_date,
+                        )
             for interest in _INTEREST.finditer(chunk, row_end):
                 if statement_period is None:
                     logger.warning(
