@@ -396,7 +396,7 @@ def test_uses_transaction_range_when_period_is_unusable(
     )
 
 
-def test_header_period_widens_around_a_row_outside_it(tmp_path: Path) -> None:
+def test_header_period_reaches_a_row_booked_outside_it(tmp_path: Path) -> None:
     path = create_psbc_eml(
         tmp_path / "synthetic-period-widening.eml",
         period="2030/10/01-2030/10/31",
@@ -417,7 +417,7 @@ def test_header_period_widens_around_a_row_outside_it(tmp_path: Path) -> None:
 
     assert len(transactions) == 1
     assert transactions[0].statement_period == (
-        date(2030, 9, 12),
+        date(2030, 9, 13),
         date(2030, 10, 31),
     )
 

@@ -78,6 +78,11 @@ class Transaction(BaseModel):
     # Extended metadata (for Beancount metadata)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def booked_date(self) -> date:
+        """The statement's posting date, or the trade date when it prints none."""
+        return self.post_date or self.date
+
     @computed_field
     @property
     def match_key(self) -> tuple:

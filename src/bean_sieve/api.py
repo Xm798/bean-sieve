@@ -291,31 +291,19 @@ def full_reconcile(
     if coverage is not None:
         transactions = coverage.keep(transactions)
 
-    # Infer date range from transactions if not explicitly provided
-    # This ensures Extra calculation only considers ledger entries within statement scope
-    # Expand by date_tolerance to ensure matching works for edge dates
+    # Extra reaches as far as the statements' periods; the ledger also loads
+    # back to rows traded before their period, which still need to match.
+    extra_window = date_range
     if not date_range and transactions:
-        tolerance = config.defaults.date_tolerance
-
-        # Prefer statement_period from transactions (extracted from statement headers)
-        # This ensures Extra calculation covers the full statement period, even if
-        # transactions don't span the entire period (e.g., no transactions in January
-        # of a full-year statement)
-        statement_periods = [
-            t.statement_period for t in transactions if t.statement_period
-        ]
-        if statement_periods:
-            # Cards carry periods of their own, so this hull is only a coarse
-            # bound for loading the ledger; get_covered_ranges narrows Extra
-            # back down per account.
-            min_date = min(p[0] for p in statement_periods) - timedelta(days=tolerance)
-            max_date = max(p[1] for p in statement_periods) + timedelta(days=tolerance)
-        else:
-            # Fall back to inferring from transaction dates
-            min_date = min(t.date for t in transactions) - timedelta(days=tolerance)
-            max_date = max(t.date for t in transactions) + timedelta(days=tolerance)
-
-        date_range = (min_date, max_date)
+        tolerance = timedelta(days=config.defaults.date_tolerance)
+        periods = [t.statement_period for t in transactions if t.statement_period]
+        spans = [t.statement_period or (t.date, t.date) for t in transactions]
+        extra_window = (
+            min(start for start, _ in spans) - tolerance,
+            max(end for _, end in spans) + tolerance,
+        )
+        days = [t.date for t in transactions] + [day for p in periods for day in p]
+        date_range = (min(days) - tolerance, max(days) + tolerance)
 
     # Filter by date range if specified
     if date_range:
@@ -353,6 +341,10 @@ def full_reconcile(
     covered_groups = _collect_covered_groups(transactions, pset, config)
     covered_accounts = sorted(set().union(*covered_groups))
     covered_ranges = _collect_covered_ranges(transactions, pset, config)
+    if extra_window is not None:
+        covered_ranges = _bound_range_less_accounts(
+            covered_accounts, covered_ranges, extra_window
+        )
 
     # Load ledger
     sieve = load_ledger(
@@ -849,6 +841,18 @@ def _collect_covered_ranges(
     return dict(all_ranges) if has_ranges else None
 
 
+def _bound_range_less_accounts(
+    covered_accounts: list[str],
+    covered_ranges: dict[str, list[tuple[date, date]]] | None,
+    window: tuple[date, date],
+) -> dict[str, list[tuple[date, date]]] | None:
+    """Bound Extra on every covered account without a range by the window."""
+    ranges = dict(covered_ranges or {})
+    for account in covered_accounts:
+        ranges.setdefault(account, [window])
+    return ranges or None
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -883,7 +887,7 @@ def _generate_balance_directives(
     for (_provider_id, account, currency), txns in sorted(account_txns.items()):
         # The balance column runs in booking order; the stable sort keeps file
         # order among rows booked at the same moment.
-        txns.sort(key=lambda t: (t.post_date or t.date, t.time or time.min))
+        txns.sort(key=lambda t: (t.booked_date, t.time or time.min))
         last_txn = txns[-1]
 
         # Get balance from metadata
@@ -905,7 +909,7 @@ def _generate_balance_directives(
         if last_txn.statement_period:
             balance_date = last_txn.statement_period[1] + timedelta(days=1)
         else:
-            balance_date = (last_txn.post_date or last_txn.date) + timedelta(days=1)
+            balance_date = last_txn.booked_date + timedelta(days=1)
 
         lines.append(
             BeancountWriter.format_balance(

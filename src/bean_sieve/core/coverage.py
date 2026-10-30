@@ -101,16 +101,12 @@ class CoverageSelection:
         return [t for t in transactions if id(t) not in dropped]
 
 
-def _booked(row: Transaction) -> date:
-    return row.post_date or row.date
-
-
 def _overlaps(a: Coverage, b: Coverage) -> bool:
     return a.start <= b.end and b.start <= a.end
 
 
 def _within(row: Transaction, start: date, end: date) -> bool:
-    return start <= _booked(row) <= end
+    return start <= row.booked_date <= end
 
 
 def _tally(entry: CoverageEntry, start: date, end: date) -> tuple[int, Decimal]:

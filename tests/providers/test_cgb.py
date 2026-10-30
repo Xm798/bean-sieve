@@ -301,8 +301,8 @@ class TestCGBCrossYearDates:
 class TestCGBStatementPeriod:
     """Tests for per-card statement period assignment."""
 
-    def test_cycle_widens_only_for_the_card_dated_outside_it(self, tmp_path):
-        """Test that an out-of-cycle row widens its own card's period."""
+    def test_cycle_bounds_a_card_dated_outside_it(self, tmp_path):
+        """Test that an out-of-cycle row leaves its card's period at the cycle."""
         html = """<!DOCTYPE html>
 <html>
 <body>
@@ -325,7 +325,7 @@ class TestCGBStatementPeriod:
         transactions = CGBCreditProvider().parse(file_path)
 
         periods = {txn.card_last4: txn.statement_period for txn in transactions}
-        assert periods["1234"] == (date(2030, 2, 27), date(2030, 3, 31))
+        assert periods["1234"] == (date(2030, 3, 1), date(2030, 3, 31))
         assert periods["5678"] == (date(2030, 3, 1), date(2030, 3, 31))
 
 

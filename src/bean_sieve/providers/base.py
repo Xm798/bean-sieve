@@ -242,32 +242,35 @@ class BaseProvider(ABC):
         cycle: tuple[date, date] | None = None,
     ) -> None:
         """
-        Derive each card's coverage period from its own transactions.
+        Stamp each card's rows with the period its statement speaks for.
 
-        Cards billed on one statement rarely share the same first and last
-        transaction date. A file-wide span stretches every card's coverage to
-        the outermost dates of the whole file, so ledger entries sitting in
-        another card's tail get reported as Extra.
+        With a printed cycle the period is the cycle joined with the card's
+        booked dates: an installment or a delayed settlement is traded before
+        the cycle that books it, and the ledger around its trade date belongs
+        to the statement covering that date. The booked dates still extend a
+        cycle a provider approximates, such as a calendar month.
+
+        Without a cycle the period is the card's trade-date span. Each card
+        gets its own, since a file-wide span would cover another card's tail.
 
         Args:
             transactions: Transactions to annotate, modified in place
-            cycle: Billing cycle read from the statement. Cards share it as the
-                statement states it, widened for a card whose delayed
-                settlements fall outside it. Omit it when the statement prints
-                no cycle, leaving each card its own transaction-date span.
+            cycle: Billing cycle read from the statement, or None when the
+                statement prints none
         """
         by_card: dict[str | None, list[Transaction]] = defaultdict(list)
         for txn in transactions:
             by_card[txn.card_last4].append(txn)
 
         for card_txns in by_card.values():
-            first = min(txn.date for txn in card_txns)
-            last = max(txn.date for txn in card_txns)
             if cycle:
-                first = min(first, cycle[0])
-                last = max(last, cycle[1])
+                days = [txn.booked_date for txn in card_txns]
+                days.extend(cycle)
+            else:
+                days = [txn.date for txn in card_txns]
+            period = (min(days), max(days))
             for txn in card_txns:
-                txn.statement_period = (first, last)
+                txn.statement_period = period
 
     def sole_account(self, config: Config) -> str | None:
         """

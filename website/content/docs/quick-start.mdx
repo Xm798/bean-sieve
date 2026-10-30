@@ -50,6 +50,8 @@ bean-sieve reconcile data/statement/*.csv -l books/ -o pending.bean
 
 `reconcile` 解析账单、比对账本，只把账本里缺失的交易写进 `pending.bean`。
 
+账本里有、账单里没有的条目会列为 Extra。信用卡账单的检查范围是印出的账单周期，账单不印周期时取每张卡第一笔到最后一笔交易的日期。分期行的交易日是最初消费的日子，可能比账单周期早几个月，这类行照样和账本匹配，但检查范围不会因此往前延伸。
+
 <Callout title="先看结果再写文件">
   `bean-sieve check data/statement/*.csv -l books/` 只显示对账结果，不生成文件。
 </Callout>

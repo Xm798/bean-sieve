@@ -464,6 +464,7 @@ class CMBCreditProvider(BaseProvider):
 
         return Transaction(
             date=trans_date or post_date,
+            post_date=post_date,
             amount=amount,
             currency=row.currency,
             description=row.description,

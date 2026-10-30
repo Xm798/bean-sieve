@@ -211,8 +211,9 @@ class HXBCreditProvider(BaseProvider):
         date1 = lines[i]
         i += 1
 
-        # Skip posting date if present
+        post_str = None
         if i < len(lines) and re.match(r"^\d{2}/\d{2}$", lines[i]):
+            post_str = lines[i]
             i += 1
 
         # Capture description
@@ -245,6 +246,11 @@ class HXBCreditProvider(BaseProvider):
         trans_date = self._parse_date_with_period(
             date1, statement_period, fallback_year
         )
+        post_date = (
+            self._parse_date_with_period(post_str, statement_period, fallback_year)
+            if post_str
+            else None
+        )
 
         # Determine currency (CNY by default, USD if $ symbol)
         currency = "CNY"
@@ -253,6 +259,7 @@ class HXBCreditProvider(BaseProvider):
 
         txn = Transaction(
             date=trans_date,
+            post_date=post_date,
             amount=amount,
             currency=currency,
             description=description,

@@ -203,6 +203,7 @@ class CMBCCreditProvider(BaseProvider):
 
             return Transaction(
                 date=trans_date,
+                post_date=post_date,
                 amount=amount,
                 currency="CNY",
                 description=description,

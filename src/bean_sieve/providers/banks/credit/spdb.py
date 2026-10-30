@@ -152,7 +152,7 @@ class SPDBCreditProvider(BaseProvider):
             if isinstance(cycle, tuple):
                 start, end = cycle
             else:
-                booked = [txn.post_date or txn.date for txn in rows]
+                booked = [txn.booked_date for txn in rows]
                 start, end = min(booked), max(booked)
             coverages.append(Coverage(card, start, end, rows=rows, source=source))
         return coverages

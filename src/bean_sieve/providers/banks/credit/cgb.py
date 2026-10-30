@@ -173,7 +173,7 @@ class CGBCreditProvider(BaseProvider):
     ) -> list[Coverage]:
         """Cover each card for the printed cycle; the mail outranks its reissue.
 
-        statement_period is widened by rows dated outside the cycle, so
+        statement_period also spans any row booked outside the cycle, so
         coverage reads the cycle as printed.
         """
         source = "reissue" if file_path.suffix.lower() == ".pdf" else "statement"

@@ -202,6 +202,33 @@ class TestHXBCreditProvider:
         assert len(transactions) == 1
         assert transactions[0].date == date(2029, 11, 20)
 
+    def test_row_traded_before_the_cycle_keeps_the_period_at_the_cycle(self, tmp_path):
+        """An installment booked in the cycle carries its purchase date."""
+        html = """<html><body>
+<div>账单日 每月26日</div>
+<table><tr><td>交易日</td></tr></table>
+<table>
+<tr><td>09/05</td></tr>
+<tr><td>01/03</td></tr>
+<tr><td>installment-a</td></tr>
+<tr><td>5678</td></tr>
+<tr><td>￥30.00</td></tr>
+</table>
+<div>美元账务信息</div>
+</body></html>"""
+        file_path = tmp_path / "华夏信用卡-电子账单2030年01月.eml"
+        file_path.write_text(create_hxb_eml(html), encoding="utf-8")
+
+        transactions = HXBCreditProvider().parse(file_path)
+
+        assert len(transactions) == 1
+        assert transactions[0].date == date(2029, 9, 5)
+        assert transactions[0].post_date == date(2030, 1, 3)
+        assert transactions[0].statement_period == (
+            date(2029, 12, 27),
+            date(2030, 1, 26),
+        )
+
     def test_card_last4_extraction(self, hxb_eml_file):
         """Test that card_last4 is properly extracted."""
         provider = HXBCreditProvider()

@@ -145,7 +145,7 @@ class BOCOMCreditProvider(BaseProvider):
     ) -> list[Coverage]:
         """Cover each card for the printed cycle.
 
-        statement_period is the cycle widened by delayed settlements, which
+        statement_period also spans any row booked outside the cycle, which
         would make consecutive statements overlap, so parse() keeps the cycle
         as printed. A reissue is sent in the same format as the original, so
         both are one source kind and the earlier file on the command line wins.

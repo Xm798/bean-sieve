@@ -362,7 +362,7 @@ class TestReissue:
         txns = provider.parse(write_reissue(tmp_path / "r.pdf", [delayed, *ROWS]))
         cycle = (date(2030, 5, 1), date(2030, 5, 31))
         assert all(t.metadata[STATEMENT_CYCLE] == cycle for t in txns)
-        assert all(t.statement_period == (date(2030, 4, 29), cycle[1]) for t in txns)
+        assert all(t.statement_period == cycle for t in txns)
 
     def test_no_rows(self, provider, tmp_path):
         assert provider.parse(write_reissue(tmp_path / "r.pdf", [])) == []

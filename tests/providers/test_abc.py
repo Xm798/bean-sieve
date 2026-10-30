@@ -792,8 +792,8 @@ class TestABCRebateAdjustment:
 class TestABCStatementPeriod:
     """Tests for per-card statement period assignment."""
 
-    def test_cycle_widens_around_a_row_dated_outside_it(self, tmp_path):
-        """Test that an out-of-cycle row widens the card's period."""
+    def test_cycle_bounds_a_row_dated_outside_it(self, tmp_path):
+        """Test that an out-of-cycle row leaves the card's period at the cycle."""
         html = f"""<html>
 <body>
 <table>
@@ -828,7 +828,7 @@ class TestABCStatementPeriod:
 
         assert len(transactions) == 2
         for txn in transactions:
-            assert txn.statement_period == (date(2030, 2, 27), date(2030, 3, 31))
+            assert txn.statement_period == (date(2030, 3, 1), date(2030, 3, 31))
 
 
 # (trans date, post date, card cell, description, amount, booked amount)

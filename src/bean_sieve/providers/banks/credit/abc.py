@@ -159,7 +159,7 @@ class ABCCreditProvider(BaseProvider):
     ) -> list[Coverage]:
         """Cover each card for the printed cycle; the mail outranks its reissue.
 
-        statement_period is widened by rows dated outside the cycle, so
+        statement_period also spans any row booked outside the cycle, so
         coverage reads the cycle as printed.
         """
         source = "reissue" if file_path.suffix.lower() == ".pdf" else "statement"
@@ -299,6 +299,9 @@ class ABCCreditProvider(BaseProvider):
             trans_date = self._parse_date(trans_date_str)
             if not trans_date:
                 return None
+            post_date = (
+                self._parse_date(cells[1]) if _ROW_DATE_RE.match(cells[1]) else None
+            )
 
             # Card field may carry a 主/附 suffix (e.g. "5678附"); keep the 4 digits.
             # Account-level rows (e.g. 约定还款) leave it empty — those belong to
@@ -328,6 +331,7 @@ class ABCCreditProvider(BaseProvider):
 
             return Transaction(
                 date=trans_date,
+                post_date=post_date,
                 amount=amount,
                 currency=currency,
                 description=description,

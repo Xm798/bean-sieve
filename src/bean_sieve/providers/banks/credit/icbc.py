@@ -139,8 +139,8 @@ class ICBCCreditProvider(BaseProvider):
     ) -> list[Transaction]:
         """Stamp the file's period on its rows: the cycle, or the export range.
 
-        Coverage reads it back as printed; statement_period is widened by
-        delayed postings.
+        Coverage reads it back as printed; statement_period also spans any
+        row booked outside it.
         """
         # A waived annual fee is listed at 0.00 and moves no money.
         transactions = [txn for txn in transactions if txn.amount]
@@ -155,9 +155,9 @@ class ICBCCreditProvider(BaseProvider):
     ) -> list[Coverage]:
         """Cover each card for the printed cycle, or the export's range.
 
-        statement_period is widened by delayed postings, so coverage reads the
-        cycle as printed. The mailed statement outranks its reissue, and the
-        export only fills days no statement speaks for.
+        statement_period also spans any row booked outside the cycle, so
+        coverage reads the cycle as printed. The mailed statement outranks its
+        reissue, and the export only fills days no statement speaks for.
         """
         source = self._source(file_path)
         by_card: dict[str, list[Transaction]] = {}

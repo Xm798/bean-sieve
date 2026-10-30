@@ -69,7 +69,6 @@ class BOCCreditProvider(BaseProvider):
 
         doc.close()
 
-        # Delayed-settlement entries can fall outside the computed cycle
         self.assign_statement_periods(transactions, statement_period)
 
         return transactions

@@ -301,8 +301,8 @@ class TestCMBCEmptyStatement:
 class TestCMBCStatementPeriod:
     """Tests for per-card statement period assignment."""
 
-    def test_cycle_widens_only_for_the_card_dated_outside_it(self, tmp_path):
-        """Test that an out-of-cycle row widens its own card's period."""
+    def test_cycle_bounds_a_card_dated_outside_it(self, tmp_path):
+        """Test that an out-of-cycle row leaves its card's period at the cycle."""
         transactions = [
             {
                 "trans_date": "02/27",
@@ -328,7 +328,7 @@ class TestCMBCStatementPeriod:
         txns = CMBCCreditProvider().parse(file_path)
 
         periods = {txn.card_last4: txn.statement_period for txn in txns}
-        assert periods["3579"] == (date(2030, 2, 27), date(2030, 3, 28))
+        assert periods["3579"] == (date(2030, 3, 1), date(2030, 3, 28))
         assert periods["6626"] == (date(2030, 3, 1), date(2030, 3, 28))
 
 
@@ -566,7 +566,7 @@ class TestCMBCCoverage:
 
         coverages = provider.coverage(path, transactions)
 
-        # The row dated before the cycle widens statement_period, not coverage.
+        # A row dated before the cycle leaves the coverage at the cycle.
         assert [
             (c.account, c.start, c.end, c.rows, c.source, c.itemized) for c in coverages
         ] == [

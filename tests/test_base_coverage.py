@@ -285,9 +285,12 @@ def test_per_card_statement_claims_nothing_without_a_period() -> None:
     assert provider.get_covered_accounts(transactions, config) == []
 
 
-def make_bare_txn(day: date, card_last4: str) -> Transaction:
+def make_bare_txn(
+    day: date, card_last4: str, post_date: date | None = None
+) -> Transaction:
     return Transaction(
         date=day,
+        post_date=post_date,
         amount=Decimal("10.00"),
         currency="CNY",
         description="row",
@@ -296,13 +299,29 @@ def make_bare_txn(day: date, card_last4: str) -> Transaction:
     )
 
 
-def test_cycle_widens_only_the_card_holding_the_outside_row() -> None:
-    outside = make_bare_txn(date(2030, 2, 3), "1111")
+def test_rows_booked_in_the_cycle_leave_the_period_at_the_cycle() -> None:
+    # An installment carries its original purchase date, a delayed settlement
+    # its trade date; the cycle books both.
+    installment = make_bare_txn(date(2029, 11, 5), "1111", date(2030, 1, 3))
+    delayed = make_bare_txn(date(2029, 12, 30), "1111", date(2030, 1, 2))
+    inside = make_bare_txn(date(2030, 1, 10), "2222")
+
+    BaseProvider.assign_statement_periods([installment, delayed, inside], PERIOD_JAN)
+
+    assert installment.statement_period == PERIOD_JAN
+    assert delayed.statement_period == PERIOD_JAN
+    assert inside.statement_period == PERIOD_JAN
+
+
+def test_a_row_booked_outside_the_cycle_widens_only_its_card() -> None:
+    # A provider whose cycle is an approximation (a calendar month) books rows
+    # outside it; the statement still speaks for those days.
+    outside = make_bare_txn(date(2029, 12, 27), "1111", date(2029, 12, 28))
     inside = make_bare_txn(date(2030, 1, 10), "2222")
 
     BaseProvider.assign_statement_periods([outside, inside], PERIOD_JAN)
 
-    assert outside.statement_period == (PERIOD_JAN[0], date(2030, 2, 3))
+    assert outside.statement_period == (date(2029, 12, 28), PERIOD_JAN[1])
     assert inside.statement_period == PERIOD_JAN
 
 
