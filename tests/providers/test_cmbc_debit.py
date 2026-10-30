@@ -474,6 +474,63 @@ def test_empty_statement_displaces_a_copy_of_its_period(tmp_path: Path):
     assert [d.entry.path for d in result.coverage.drops] == [listed]
     assert result.match_result.matched == []
     assert result.match_result.missing == []
+    assert [e.txn.date for e in result.match_result.extra] == [
+        date(2030, 1, 10),
+        date(2030, 1, 25),
+    ]
+
+
+def test_ledger_entries_in_a_quiet_period_are_extra(tmp_path: Path):
+    quiet = _build_statement(tmp_path / "quiet.pdf", [[]])
+    result = run_full_reconcile(tmp_path, [quiet], CONFIG, LEDGER)
+
+    assert result.matched == []
+    assert result.missing == []
+    assert [e.txn.date for e in result.extra] == [date(2030, 1, 10), date(2030, 1, 25)]
+
+
+def test_keep_overlap_takes_ranges_from_rows_alone(tmp_path: Path):
+    quiet = _build_statement(tmp_path / "quiet.pdf", [[]])
+    (tmp_path / "bean-sieve.yaml").write_text(CONFIG, encoding="utf-8")
+    (tmp_path / "main.bean").write_text(LEDGER, encoding="utf-8")
+    result = full_reconcile(
+        statement_paths=[quiet],
+        ledger_path=tmp_path / "main.bean",
+        config_path=tmp_path / "bean-sieve.yaml",
+        keep_overlap=True,
+    )
+
+    assert result.match_result.extra == []
+
+
+def test_quiet_period_outside_the_date_range_covers_nothing(tmp_path: Path):
+    quiet = _build_statement(tmp_path / "quiet.pdf", [[]])
+    (tmp_path / "bean-sieve.yaml").write_text(CONFIG, encoding="utf-8")
+    (tmp_path / "main.bean").write_text(LEDGER, encoding="utf-8")
+    result = full_reconcile(
+        statement_paths=[quiet],
+        ledger_path=tmp_path / "main.bean",
+        config_path=tmp_path / "bean-sieve.yaml",
+        date_range=(date(2030, 2, 1), date(2030, 2, 28)),
+    )
+
+    assert result.match_result.extra == []
+
+
+def test_quiet_period_beside_a_later_statement_is_extra(tmp_path: Path):
+    """The ledger window reaches the quiet period no row falls in."""
+    quiet = _build_statement(tmp_path / "quiet.pdf", [[]])
+    row = [*EXPENSE[:2], "2030/02/10 12:05:00", *EXPENSE[3:]]
+    later = _build_statement(
+        tmp_path / "later.pdf", [[row]], period="2030/02/01-2030/02/28"
+    )
+    result = run_full_reconcile(tmp_path, [quiet, later], CONFIG, LEDGER)
+
+    assert [e.txn.date for e in result.extra] == [
+        date(2030, 1, 10),
+        date(2030, 1, 25),
+        date(2030, 2, 3),
+    ]
 
 
 @pytest.mark.parametrize("partial_first", [True, False])

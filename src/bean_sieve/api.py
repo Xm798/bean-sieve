@@ -28,7 +28,7 @@ from .core.accounts import (
     resolve_by_keyword_regex,
     resolve_by_method,
 )
-from .core.coverage import CoverageEntry, CoverageSelection, select
+from .core.coverage import Coverage, CoverageEntry, CoverageSelection, select
 from .core.metadata_keys import (
     FEE_ACCOUNT,
     IGNORED,
@@ -45,6 +45,7 @@ from .providers import (
     list_providers,
     resolve_providers,
 )
+from .providers.base import BaseProvider
 
 
 def parse_statement(
@@ -291,13 +292,25 @@ def full_reconcile(
     if coverage is not None:
         transactions = coverage.keep(transactions)
 
+    # An explicit date_range drops the rows outside it, so a statement lying
+    # wholly outside speaks for none of the run.
+    adopted = [
+        e
+        for e in (coverage.adopted if coverage is not None else [])
+        if not date_range
+        or (e.coverage.start <= date_range[1] and date_range[0] <= e.coverage.end)
+    ]
+    # A statement without rows still speaks for its period.
+    covered = [(e.coverage.start, e.coverage.end) for e in adopted]
+
     # Extra reaches as far as the statements' periods; the ledger also loads
     # back to rows traded before their period, which still need to match.
     extra_window = date_range
-    if not date_range and transactions:
+    if not date_range and (transactions or covered):
         tolerance = timedelta(days=config.defaults.date_tolerance)
         periods = [t.statement_period for t in transactions if t.statement_period]
-        spans = [t.statement_period or (t.date, t.date) for t in transactions]
+        periods += covered
+        spans = [t.statement_period or (t.date, t.date) for t in transactions] + covered
         extra_window = (
             min(start for start, _ in spans) - tolerance,
             max(end for _, end in spans) + tolerance,
@@ -338,9 +351,10 @@ def full_reconcile(
     )
 
     # Collect covered accounts and ranges from providers
-    covered_groups = _collect_covered_groups(transactions, pset, config)
+    scopes = _coverage_scopes(transactions, pset, adopted)
+    covered_groups = _collect_covered_groups(scopes, config)
     covered_accounts = sorted(set().union(*covered_groups))
-    covered_ranges = _collect_covered_ranges(transactions, pset, config)
+    covered_ranges = _collect_covered_ranges(scopes, config)
     if extra_window is not None:
         covered_ranges = _bound_range_less_accounts(
             covered_accounts, covered_ranges, extra_window
@@ -802,9 +816,37 @@ def _get_dedup_priority(
     return 50
 
 
-def _collect_covered_groups(
+_Scope = tuple[BaseProvider, list[Transaction], list[Coverage]]
+
+
+def _coverage_scopes(
     transactions: list[Transaction],
     pset: ProviderSet,
+    adopted: list[CoverageEntry],
+) -> list[_Scope]:
+    """
+    Pair each provider with its rows and the coverages adopted for its files.
+
+    A provider whose adopted statements list no rows still takes part: its
+    coverages alone say which accounts and periods it speaks for.
+    """
+    coverages: dict[str, list[Coverage]] = defaultdict(list)
+    for entry in adopted:
+        coverages[entry.provider_id].append(entry.coverage)
+    groups = pset.group(transactions)
+    seen = {provider.provider_id for provider, _ in groups}
+    return [
+        (provider, batch, coverages.get(provider.provider_id, []))
+        for provider, batch in groups
+    ] + [
+        (provider, [], coverages[provider.provider_id])
+        for provider in pset.providers
+        if provider.provider_id in coverages and provider.provider_id not in seen
+    ]
+
+
+def _collect_covered_groups(
+    scopes: list[_Scope],
     config: Config,
 ) -> list[set[str]]:
     """
@@ -816,8 +858,8 @@ def _collect_covered_groups(
     each of which must show its own leg, so every account stands alone.
     """
     groups: list[set[str]] = []
-    for provider, batch in pset.group(transactions):
-        accounts = provider.get_covered_accounts(batch, config)
+    for provider, batch, coverages in scopes:
+        accounts = provider.get_covered_accounts(batch, config, coverages)
         if provider.per_card_statement:
             groups.extend({account} for account in accounts)
         elif accounts:
@@ -826,8 +868,7 @@ def _collect_covered_groups(
 
 
 def _collect_covered_ranges(
-    transactions: list[Transaction],
-    pset: ProviderSet,
+    scopes: list[_Scope],
     config: Config,
 ) -> dict[str, list[tuple[date, date]]] | None:
     """
@@ -839,8 +880,8 @@ def _collect_covered_ranges(
     all_ranges: dict[str, list[tuple[date, date]]] = defaultdict(list)
     has_ranges = False
 
-    for provider, batch in pset.group(transactions):
-        ranges = provider.get_covered_ranges(batch, config)
+    for provider, batch, coverages in scopes:
+        ranges = provider.get_covered_ranges(batch, config, coverages)
         if ranges is not None:
             has_ranges = True
             for account, periods in ranges.items():

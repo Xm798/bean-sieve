@@ -14,6 +14,7 @@ from pathlib import Path
 
 from bean_sieve.config import Config
 from bean_sieve.config.schema import ProviderConfig
+from bean_sieve.core.coverage import Coverage
 from bean_sieve.core.metadata_keys import STATEMENT_CYCLE
 from bean_sieve.core.types import Transaction
 from bean_sieve.providers.base import BaseProvider
@@ -285,6 +286,33 @@ def test_per_card_statement_claims_nothing_without_a_period() -> None:
 
     assert provider.get_covered_ranges(transactions, config) is None
     assert provider.get_covered_accounts(transactions, config) == []
+
+
+def test_quiet_coverage_covers_its_card_for_its_period() -> None:
+    # A statement without rows still speaks for its card over the period.
+    provider = FakePerCardBank()
+    config = make_config(
+        {"1111": ACCOUNT_A, "2222": ACCOUNT_B}, FakePerCardBank.provider_id
+    )
+    coverages = [Coverage("1111", *PERIOD_FEB), Coverage("9999", *PERIOD_MAR)]
+
+    assert provider.get_covered_ranges([], config, coverages) == {
+        ACCOUNT_A: [PERIOD_FEB],
+    }
+    assert provider.get_covered_accounts([], config, coverages) == [ACCOUNT_A]
+
+
+def test_coverage_names_its_account_like_a_row() -> None:
+    # The quiet card's statement names it, so it takes only its own period.
+    provider = FakeAccountBank()
+    config = make_config({"1111": ACCOUNT_A, "2222": ACCOUNT_B})
+    transactions = [make_txn(date(2030, 1, 5), "1111", PERIOD_JAN)]
+    coverages = [Coverage("2222", *PERIOD_FEB)]
+
+    assert provider.get_covered_ranges(transactions, config, coverages) == {
+        ACCOUNT_A: [PERIOD_JAN],
+        ACCOUNT_B: [PERIOD_FEB],
+    }
 
 
 def make_bare_txn(

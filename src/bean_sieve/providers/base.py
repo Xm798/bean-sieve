@@ -9,6 +9,7 @@ import quopri
 import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import date
 from email.header import decode_header
 from email.message import Message
@@ -355,6 +356,7 @@ class BaseProvider(ABC):
         self,
         transactions: list[Transaction],
         config: Config,
+        coverages: Sequence[Coverage] = (),
     ) -> list[str]:
         """
         Return list of accounts covered by this provider's statement.
@@ -372,13 +374,14 @@ class BaseProvider(ABC):
         Args:
             transactions: Parsed transactions from this provider
             config: Bean-Sieve configuration
+            coverages: Adopted coverages of this provider's files
 
         Returns:
             List of account names (e.g., ["Assets:Bank:PAB:1029"])
         """
         # Sieve leaves a covered account without a range unfiltered by date, so
         # the two answers have to agree on which accounts are covered.
-        covered_ranges = self.get_covered_ranges(transactions, config)
+        covered_ranges = self.get_covered_ranges(transactions, config, coverages)
         if covered_ranges is not None:
             return list(covered_ranges)
         if self.per_card_statement:
@@ -389,6 +392,7 @@ class BaseProvider(ABC):
         self,
         transactions: list[Transaction],
         config: Config,
+        coverages: Sequence[Coverage] = (),
     ) -> dict[str, list[tuple[date, date]]] | None:
         """
         Return covered date ranges per account for Extra calculation.
@@ -404,9 +408,14 @@ class BaseProvider(ABC):
         by the union of the file's periods, its ledger entries there really
         being Extra. A per-card file claims neither.
 
+        A coverage stands for its period the way a row of its account key
+        stands for the row's, so a statement without rows still covers its
+        account.
+
         Args:
             transactions: Parsed transactions from this provider
             config: Bean-Sieve configuration
+            coverages: Adopted coverages of this provider's files
 
         Returns:
             Dict mapping account name to list of (start, end) date ranges,
@@ -427,17 +436,16 @@ class BaseProvider(ABC):
             if period not in ranges:
                 ranges.append(period)
 
-        for txn in transactions:
-            period = txn.statement_period
+        spans = [(t.card_last4, t.statement_period) for t in transactions]
+        spans.extend((c.account, (c.start, c.end)) for c in coverages)
+        for key, period in spans:
             if not period:
                 continue
 
             # Payment platforms key their config on the wallet while card_last4
             # holds a bank card suffix, so a row whose card is not a key says
             # nothing about which account it belongs to.
-            account = (
-                card_to_account.get(txn.card_last4) if txn.card_last4 else sole_account
-            )
+            account = card_to_account.get(key) if key else sole_account
             if account is not None:
                 attributed.add(account)
                 cover(account, period)
