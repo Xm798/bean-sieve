@@ -460,3 +460,57 @@ def test_fee_account_on_the_transaction_overrides_the_default():
 def test_fee_account_defaults_to_the_expense_placeholder():
     output = BeancountWriter().format_transaction(_fee_txn("100.00"))
     assert "    Expenses:FIXME  0.10 CNY" in output.split("\n")
+
+
+def _exchange_txn(amount: str, fee: str | None = None, **kwargs) -> Transaction:
+    return Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal(amount),
+        currency="HKD",
+        description="desc-a",
+        account="Assets:Bank:Test",
+        price_amount=Decimal("12.00"),
+        price_currency="USD",
+        fee=Decimal(fee) if fee else None,
+        **kwargs,
+    )
+
+
+def test_exchange_without_fee_prices_the_sold_leg():
+    output = BeancountWriter(output_metadata=[]).format_transaction(
+        _exchange_txn("100.00")
+    )
+    assert output.split("\n")[1:] == [
+        "    Assets:Bank:Test  -100.00 HKD @@ 12.00 USD",
+        "    Assets:Bank:Test  12.00 USD",
+    ]
+
+
+def test_exchange_fee_comes_out_of_the_sold_amount():
+    """The account sells the gross amount; only the net amount buys the target."""
+    output = BeancountWriter(default_fee="Expenses:Fee").format_transaction(
+        _exchange_txn("100.00", "1.35")
+    )
+    assert output.split("\n")[-3:] == [
+        "    Assets:Bank:Test  -100.00 HKD",
+        "    Expenses:Fee  1.35 HKD",
+        "    Assets:Bank:Test  12.00 USD @@ 98.65 HKD",
+    ]
+
+
+def test_exchange_fee_on_an_inflow_grosses_up_the_sold_leg():
+    """The account receives the net amount; the sold leg covered it plus the fee."""
+    output = BeancountWriter(default_fee="Expenses:Fee").format_transaction(
+        _exchange_txn("-98.65", "1.35")
+    )
+    assert output.split("\n")[-3:] == [
+        "    Assets:Bank:Test  98.65 HKD",
+        "    Expenses:Fee  1.35 HKD",
+        "    Assets:Bank:Test  -12.00 USD @@ 100.00 HKD",
+    ]
+
+
+def test_exchange_fee_account_on_the_transaction_overrides_the_default():
+    txn = _exchange_txn("100.00", "1.35", metadata={"_fee_account": "Expenses:Fee:Fx"})
+    output = BeancountWriter(default_fee="Expenses:Fee").format_transaction(txn)
+    assert "    Expenses:Fee:Fx  1.35 HKD" in output.split("\n")

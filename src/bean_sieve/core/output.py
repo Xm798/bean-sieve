@@ -181,9 +181,11 @@ class BeancountWriter:
         account = txn.account or "Assets:FIXME"
         amount = -txn.amount  # Statement shows outflow as positive
 
-        # Multi-currency exchange: primary posting with @@ price, contra auto-balanced.
-        # Requires txn.fee to be unset: neither posting here carries a fee.
-        if txn.price_amount is not None and txn.price_currency:
+        # Currency exchange within one account: the sold amount buys
+        # price_amount of price_currency. With a fee only the net amount buys
+        # it, so the general path below prices the bought leg instead.
+        exchange = txn.price_amount is not None and bool(txn.price_currency)
+        if exchange and not txn.fee:
             postings.append(
                 f"{account}  {amount} {txn.currency}"
                 f" @@ {txn.price_amount} {txn.price_currency}"
@@ -232,22 +234,26 @@ class BeancountWriter:
             contra_amount -= txn.fee
 
         # Contra account (expense/income)
-        contra = txn.contra_account
-        if not contra:
-            contra = self.default_expense if txn.is_expense else self.default_income
-        original_amount = txn.original_amount
-        original_currency = txn.original_currency
+        if exchange:
+            contra = account
+            foreign_amount, foreign_currency = txn.price_amount, txn.price_currency
+        else:
+            contra = txn.contra_account or (
+                self.default_expense if txn.is_expense else self.default_income
+            )
+            foreign_amount = txn.original_amount
+            foreign_currency = txn.original_currency
         if (
-            original_amount is not None
-            and original_currency
-            and original_currency != txn.currency
+            foreign_amount is not None
+            and foreign_currency
+            and foreign_currency != txn.currency
             and contra_amount
         ):
-            # The card is billed in txn.currency, so the conversion sits on the
-            # contra side and the card posting keeps the billed amount.
-            units = original_amount.copy_sign(contra_amount)
+            # The primary account moves txn.currency, so the conversion sits on
+            # the contra side and the primary posting keeps its own amount.
+            units = foreign_amount.copy_sign(contra_amount)
             postings.append(
-                f"{contra}  {units} {original_currency}"
+                f"{contra}  {units} {foreign_currency}"
                 f" @@ {abs(contra_amount)} {txn.currency}"
             )
         else:

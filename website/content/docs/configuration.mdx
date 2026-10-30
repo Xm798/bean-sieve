@@ -72,3 +72,12 @@ rules:
 规则里的 `description`、`payee` 是匹配条件（正则）；`target_payee` 是写进输出的收款方。
 
 有些账单会把手续费单独列出，比如微信零钱提现的服务费。这类交易会多出一条手续费 posting，记到 `providers.<id>.fee_account`；provider 没配时用 `defaults.fee_account`，默认是 `Expenses:FIXME`。
+
+换汇交易带手续费时，卖出的币种按全额出账，手续费按卖出币种记，扣掉手续费后的金额才换成目标币种，`@@` 价格标在买入的那条 posting 上。比如 100.00 HKD 扣 1.35 HKD 手续费后换得 12.00 USD：
+
+```beancount
+2030-01-02 ! "Currency Exchange (HKD→USD)"
+    Assets:Bank:Test  -100.00 HKD
+    Expenses:FIXME  1.35 HKD
+    Assets:Bank:Test  12.00 USD @@ 98.65 HKD
+```
