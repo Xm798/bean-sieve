@@ -53,20 +53,20 @@
     card_last4: "4321"
     source: "abc_credit"
     matched_rule: "午餐"
-    Liabilities:CreditCard:ABC:4321  -56.00 CNY
-    Expenses:Food:Meal  56.00 CNY
+    Liabilities:CreditCard:ABC:4321  -57.00 CNY
+    Expenses:Food:Meal  57.00 CNY
 
 2030-03-09 ! "消费 store-c"
     card_last4: "4321"
     source: "abc_credit"
-    Liabilities:CreditCard:ABC:4321  -120.00 CNY
-    Expenses:FIXME  120.00 CNY
+    Liabilities:CreditCard:ABC:4321  -123.00 CNY
+    Expenses:FIXME  123.00 CNY
 
 2030-03-12 ! "退货 store-c"
     card_last4: "4321"
     source: "abc_credit"
-    Liabilities:CreditCard:ABC:4321  120.00 CNY
-    Income:FIXME  -120.00 CNY
+    Liabilities:CreditCard:ABC:4321  123.00 CNY
+    Income:FIXME  -123.00 CNY
 
 2030-03-15 * "约定还款"
     card_last4: "4321"
@@ -79,14 +79,14 @@
     card_last4: "4321"
     source: "abc_credit"
     matched_rule: "手续费"
-    Liabilities:CreditCard:ABC:4321  -6.00 CNY
-    Expenses:Finance:Fee  6.00 CNY
+    Liabilities:CreditCard:ABC:4321  -52.00 CNY
+    Expenses:Finance:Fee  52.00 CNY
 
 2030-03-22 ! "网上消费 store-k"
     card_last4: "4321"
     source: "abc_credit"
-    Liabilities:CreditCard:ABC:4321  -13.00 USD
-    Expenses:FIXME  13.00 USD
+    Liabilities:CreditCard:ABC:4321  -51.00 USD
+    Expenses:FIXME  51.00 USD
 
 ; --- Summary ---
 ; Matched: 1, Missing: 13, Extra: 1
@@ -98,13 +98,13 @@
 
 ; Source: ledger.bean:14
 2030-03-25 * "store-z" "recorded in the ledger, absent from the statement"
-  Liabilities:CreditCard:ABC:4321  -66.00 CNY
+  Liabilities:CreditCard:ABC:4321  -73.00 CNY
   Expenses:Shopping
 
 
 ; --- 刷卡金抵扣 ---
 2030-03-31 * "农业银行" "刷卡金抵扣 (尾号4321)"
-  Liabilities:CreditCard:ABC:4321  5.00 CNY
+  Liabilities:CreditCard:ABC:4321  4.70 CNY
   Income:Rebate:ABC
 ; ============================================================
 ; 农业银行信用卡 账单核对
@@ -131,16 +131,16 @@
 ; 账单周期: 2030/03/01-2030/03/31
 ;
 ;   币种: CNY
-;   解析消费:             220.00 CNY
-;   账单消费:             220.00 CNY
-;   账单应还:              95.00 CNY
-;   刷卡金抵扣:             5.00 CNY
+;   解析消费:             280.00 CNY
+;   账单消费:             280.00 CNY
+;   账单应还:             152.30 CNY
+;   刷卡金抵扣:             4.70 CNY
 ;
-;   状态: ✅ 平账 (刷卡金 5.00)
+;   状态: ✅ 平账 (刷卡金 4.70)
 ;
 ;   币种: USD
-;   解析消费:              13.00 USD
-;   账单消费:              13.00 USD
+;   解析消费:              51.00 USD
+;   账单消费:              51.00 USD
 ;
 ;   状态: ✅ 平账
 ; ============================================================

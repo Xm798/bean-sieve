@@ -1,5 +1,6 @@
 """HTML e-mail credit card statements."""
 
+from decimal import Decimal
 from pathlib import Path
 
 from _common import generator, write_eml
@@ -23,16 +24,33 @@ def _abc_bilingual(zh: str, en: str) -> str:
     return f"<td><table><tr><td>{zh}</td></tr><tr><td>{en}</td></tr></table></td>"
 
 
+def _abc_spending(amounts: list[Decimal]) -> Decimal:
+    """Sum of the bank-signed spending (negative) rows, as a positive total."""
+    return -sum((a for a in amounts if a < 0), Decimal(0))
+
+
+def _abc_credits(amounts: list[Decimal]) -> Decimal:
+    return sum((a for a in amounts if a > 0), Decimal(0))
+
+
 def _abc_credit_older_template(out_dir: Path) -> None:
     """The layout mailed before the current one: GBK, nested layout tables,
     YYYYMMDD dates, 交易摘要 and 交易地点 in separate cells, 刷卡金 as rows."""
     # (trans_date, post_date, 交易摘要 and 交易地点 or one merged cell, amount)
     rows = [
-        ("20300105", "20300105", ["网上消费", "支付宝，store-h"], "-121.00"),
-        ("20300109", "20300110", ["消费", "store-i"], "-74.00"),
-        ("20300114", "20300114", ["刷卡金转入", "活动返还-j"], "7.30"),
-        ("20300120", "20300120", ["约定还款"], "870.00"),
+        ("20300105", "20300105", ["网上消费", "支付宝，store-h"], Decimal("-121.00")),
+        ("20300109", "20300110", ["消费", "store-i"], Decimal("-74.00")),
+        ("20300114", "20300114", ["刷卡金转入", "活动返还-j"], Decimal("7.30")),
+        ("20300120", "20300120", ["约定还款"], Decimal("870.00")),
     ]
+    credit_limit = Decimal("23000.00")
+    # The previous cycle's debt, which this cycle's 约定还款 settles in full.
+    previous = -rows[-1][3]
+    amounts = [a for *_, a in rows]
+    new_charge = _abc_spending(amounts)
+    payments = _abc_credits(amounts)
+    balance = previous - new_charge + payments
+    min_payment = balance / 10
     header = "".join(
         _abc_bilingual(zh, en)
         for zh, en in (
@@ -50,7 +68,7 @@ def _abc_credit_older_template(out_dir: Path) -> None:
             "<table><tr><td></td>"
             + "".join(
                 f"<td>{c}</td>"
-                for c in (t, p, "", *desc, f"{abs(float(a)):.2f}/CNY", f"{a}/CNY")
+                for c in (t, p, "", *desc, f"{abs(a):.2f}/CNY", f"{a:.2f}/CNY")
             )
             + "</tr></table>",
             3,
@@ -72,7 +90,13 @@ def _abc_credit_older_template(out_dir: Path) -> None:
     )
     formula_values = "".join(
         f"<td>{v}</td>"
-        for v in ("人民币(CNY)", "-870.00", "195.00", "877.30", "-187.70")
+        for v in (
+            "人民币(CNY)",
+            f"{previous:.2f}",
+            f"{new_charge:.2f}",
+            f"{payments:.2f}",
+            f"{balance:.2f}",
+        )
     )
     summary = (
         "<table><tr><td></td><td>卡号</td><td>620000*****4321</td>"
@@ -82,8 +106,8 @@ def _abc_credit_older_template(out_dir: Path) -> None:
         "<td>最低还款额(欠款为-)</td><td>信用额度</td></tr>"
         "<tr><td>Curr</td><td>New Balance</td><td>Min.Payment</td>"
         "<td>Credit Limit</td></tr>"
-        "<tr><td>人民币(CNY)</td><td>-187.70</td><td>-18.77</td>"
-        "<td>23000.00</td></tr></table>"
+        f"<tr><td>人民币(CNY)</td><td>{balance:.2f}</td><td>{min_payment:.2f}</td>"
+        f"<td>{credit_limit:.2f}</td></tr></table>"
     )
     html = f"""<html>
 <head><meta http-equiv='Content-Type' content='text/html;charset=gbk'></head>
@@ -109,34 +133,59 @@ def _abc_credit_older_template(out_dir: Path) -> None:
 def abc_credit(out_dir: Path) -> None:
     _abc_credit_older_template(out_dir)
     # A month only the reissue covers.
+    february = [
+        ("300204", "300204", "4321", "网上消费 支付宝，store-f", Decimal("-62.00")),
+        ("300211", "300212", "4321", "消费 store-g", Decimal("-82.00")),
+        ("300218", "300218", "", "约定还款", Decimal("893.00")),
+    ]
     abc_credit_reissue(
         out_dir / "农业银行信用卡对账单2030年02月（补）.pdf",
         "2030年02月",
         "4321",
         "2030/02/01-2030/02/28",
-        "-144.00",
-        [
-            ("300204", "300204", "4321", "网上消费 支付宝，store-f", "-62.00"),
-            ("300211", "300212", "4321", "消费 store-g", "-82.00"),
-            ("300218", "300218", "", "约定还款", "893.00"),
-        ],
+        f"{-_abc_spending([a for *_, a in february]):.2f}",
+        [(*cells, f"{a:.2f}") for *cells, a in february],
     )
+    # The previous cycle's debt, which this cycle's 约定还款 settles in full.
+    previous = Decimal("1500.00")
+    rebate = Decimal("4.70")
     # (trans_date, post_date, card, description, bank-signed amount, currency)
     rows = [
-        ("300303", "300303", "4321", "网上消费 支付宝，store-a", "-38.00", "CNY"),
+        (
+            "300303",
+            "300303",
+            "4321",
+            "网上消费 支付宝，store-a",
+            Decimal("-48.00"),
+            "CNY",
+        ),
         (
             "300306",
             "300307",
             "4321",
             "网上消费 财付通，restaurant-b午餐",
-            "-56.00",
+            Decimal("-57.00"),
             "CNY",
         ),
-        ("300309", "300310", "4321", "消费 store-c", "-120.00", "CNY"),
-        ("300312", "300313", "4321", "退货 store-c", "120.00", "CNY"),
-        ("300315", "300315", "", "约定还款", "1,500.00", "CNY"),
-        ("300320", "300320", "4321", "分期手续费", "-6.00", "CNY"),
-        ("300322", "300323", "4321", "网上消费 store-k", "-13.00", "USD"),
+        ("300309", "300310", "4321", "消费 store-c", Decimal("-123.00"), "CNY"),
+        ("300312", "300313", "4321", "退货 store-c", Decimal("123.00"), "CNY"),
+        ("300315", "300315", "", "约定还款", previous, "CNY"),
+        ("300320", "300320", "4321", "分期手续费", Decimal("-52.00"), "CNY"),
+        ("300322", "300323", "4321", "网上消费 store-k", Decimal("-51.00"), "USD"),
+    ]
+
+    def formula_row(name: str, currency: str, carried: Decimal, adjustment: Decimal):
+        amounts = [a for *_, a, cur in rows if cur == currency]
+        new_charge = _abc_spending(amounts)
+        payments = _abc_credits(amounts)
+        balance = carried + new_charge - payments - adjustment
+        zero = Decimal(0)
+        figures = (balance, zero, carried, zero, new_charge, payments, adjustment)
+        return [name, *(f"{v:.2f}" for v in figures)]
+
+    formula_values = [
+        formula_row("人民币(CNY)", "CNY", previous, rebate),
+        formula_row("美元(USD)", "USD", Decimal(0), Decimal(0)),
     ]
     formula_labels = [
         ("币种", "Curr"),
@@ -153,19 +202,6 @@ def abc_credit(out_dir: Path) -> None:
         ("本期还款、退货金额", "Payments"),
         "-",
         ("本期调整金额", "Adjustment"),
-    ]
-    formula_values = [
-        [
-            "人民币(CNY)",
-            "95.00",
-            "0.00",
-            "1500.00",
-            "0.00",
-            "220.00",
-            "1620.00",
-            "5.00",
-        ],
-        ["美元(USD)", "13.00", "0.00", "0.00", "0.00", "13.00", "0.00", "0.00"],
     ]
     labels = "\n".join(
         f"<td><span>{c}</span></td>"
@@ -185,8 +221,8 @@ def abc_credit(out_dir: Path) -> None:
         <td>{p}</td>
         <td>{c}</td>
         <td>{d}</td>
-        <td>{a}/{currency}</td>
-        <td>{a}/{currency}</td>
+        <td>{a:,.2f}/{currency}</td>
+        <td>{a:,.2f}/{currency}</td>
     </tr>"""
         for t, p, c, d, a, currency in rows
     )
@@ -197,7 +233,7 @@ def abc_credit(out_dir: Path) -> None:
     <tr><td><span>620000******4321</span></td></tr>
     <tr><td><span>2030/03/01-2030/03/31</span></td></tr>
     <tr><td><span>本期应还款额</span></td></tr>
-    <tr><td>-95.00</td></tr>
+    <tr><td>-{formula_values[0][1]}</td></tr>
 </table>
 <div>
 <table>
@@ -219,7 +255,7 @@ def abc_credit(out_dir: Path) -> None:
 {body}
 </table>
 <table>
-<tr><td><span>本期使用刷卡金</span></td><td><span>5.00</span></td></tr>
+<tr><td><span>本期使用刷卡金</span></td><td><span>{rebate:.2f}</span></td></tr>
 </table>
 </body>
 </html>"""

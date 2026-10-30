@@ -38,6 +38,34 @@ Content-Transfer-Encoding: base64
 """
 
 
+# (trans date, post date, card cell, description, amount, booked amount)
+Row = tuple[str, str, str, str, str, str]
+
+
+def booked(row: Row) -> tuple[Decimal, str]:
+    amount, currency = row[5].split("/")
+    return Decimal(amount.replace(",", "")), currency
+
+
+def spending(rows: list[Row], currency: str = "CNY") -> Decimal:
+    """Total of a currency's bank-signed (negative) spending rows, as a positive."""
+    return -sum(
+        (a for a, cur in map(booked, rows) if cur == currency and a < 0), Decimal(0)
+    )
+
+
+def credits(rows: list[Row], currency: str = "CNY") -> Decimal:
+    return sum(
+        (a for a, cur in map(booked, rows) if cur == currency and a > 0), Decimal(0)
+    )
+
+
+def detail_rows(rows: list[Row]) -> str:
+    return "\n".join(
+        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows
+    )
+
+
 NEW_HEADER = (
     "<tr><td>交易日期 T Date</td><td>入账日期 P Date</td>"
     "<td>卡号 后四位 Card No.</td><td>交易描述 Description</td>"
@@ -46,58 +74,36 @@ NEW_HEADER = (
 )
 
 
+BASIC_ROWS: list[Row] = [
+    ("301103", "301103", "1234", "payee-a", "-48.00/CNY", "-48.00/CNY"),
+    ("301108", "301108", "1234", "payee-b", "-913.00/CNY", "-913.00/CNY"),
+    ("301115", "301115", "1234", "payee-c", "-1,284.00/CNY", "-1,284.00/CNY"),
+    ("301120", "301120", "1234", "退款-电商平台", "105.00/CNY", "105.00/CNY"),
+]
+BASIC_SPENDING = spending(BASIC_ROWS)
+
+
 @pytest.fixture
 def abc_html_content():
-    """Sample ABC statement HTML content."""
+    """A statement whose 本期应还款额 and 本期账单金额 both equal its spending."""
     return f"""<html>
 <head><title>金穗信用卡电子对账单</title></head>
 <body>
 <table>
     <tr><td><span>620000******1234</span></td></tr>
-    <tr><td><span>2025/10/24-2025/11/23</span></td></tr>
+    <tr><td><span>2030/10/24-2030/11/23</span></td></tr>
     <tr><td><span>本期应还款额</span></td></tr>
-    <tr><td>-2324.00</td></tr>
+    <tr><td>-{BASIC_SPENDING:.2f}</td></tr>
 </table>
 <table>
     <tr><td><span>本期账单金额</span></td></tr>
 </table>
 <table>
-    <tr><td>2324.00</td></tr>
+    <tr><td>{BASIC_SPENDING:.2f}</td></tr>
 </table>
 <table>
     {NEW_HEADER}
-<tr>
-        <td>251103</td>
-        <td>251103</td>
-        <td>1234</td>
-        <td>McDonald's Beijing</td>
-        <td>-45.00/CNY</td>
-        <td>-45.00/CNY</td>
-    </tr>
-    <tr>
-        <td>251108</td>
-        <td>251108</td>
-        <td>1234</td>
-        <td>Apple Store Online</td>
-        <td>-999.00/CNY</td>
-        <td>-999.00/CNY</td>
-    </tr>
-    <tr>
-        <td>251115</td>
-        <td>251115</td>
-        <td>1234</td>
-        <td>Hilton Hotel Shanghai</td>
-        <td>-1,280.00/CNY</td>
-        <td>-1,280.00/CNY</td>
-    </tr>
-    <tr>
-        <td>251120</td>
-        <td>251120</td>
-        <td>1234</td>
-        <td>退款-电商平台</td>
-        <td>100.00/CNY</td>
-        <td>100.00/CNY</td>
-    </tr>
+{detail_rows(BASIC_ROWS)}
 </table>
 </body>
 </html>"""
@@ -106,7 +112,7 @@ def abc_html_content():
 @pytest.fixture
 def abc_eml_file(tmp_path, abc_html_content):
     """Create a temporary ABC EML file."""
-    file_path = tmp_path / "农业银行金穗信用卡2025年11月电子账单.eml"
+    file_path = tmp_path / "农业银行金穗信用卡2030年11月电子账单.eml"
     eml_content = create_abc_eml(abc_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
     return file_path
@@ -126,7 +132,7 @@ class TestABCCreditProvider:
     def test_can_handle(self):
         """Test file format detection."""
         assert ABCCreditProvider.can_handle(
-            Path("农业银行金穗信用卡2025年11月电子账单.eml")
+            Path("农业银行金穗信用卡2030年11月电子账单.eml")
         )
         assert ABCCreditProvider.can_handle(Path("金穗信用卡账单.eml"))
         assert not ABCCreditProvider.can_handle(Path("abc_statement.csv"))
@@ -148,29 +154,29 @@ class TestABCCreditProvider:
 
         # Check expense transactions (should be positive after negation)
         txn1 = transactions[0]
-        assert txn1.date == date(2025, 11, 3)
-        assert txn1.amount == Decimal("45.00")
+        assert txn1.date == date(2030, 11, 3)
+        assert txn1.amount == Decimal("48.00")
         assert txn1.currency == "CNY"
         assert txn1.card_last4 == "1234"
-        assert "McDonald's" in txn1.description
+        assert "payee-a" in txn1.description
         assert txn1.provider == "abc_credit"
         assert txn1.is_expense
 
         txn2 = transactions[1]
-        assert txn2.date == date(2025, 11, 8)
-        assert txn2.amount == Decimal("999.00")
-        assert "Apple" in txn2.description
+        assert txn2.date == date(2030, 11, 8)
+        assert txn2.amount == Decimal("913.00")
+        assert "payee-b" in txn2.description
 
         # Check amount with thousands separator
         txn3 = transactions[2]
-        assert txn3.date == date(2025, 11, 15)
-        assert txn3.amount == Decimal("1280.00")
-        assert "Hilton" in txn3.description
+        assert txn3.date == date(2030, 11, 15)
+        assert txn3.amount == Decimal("1284.00")
+        assert "payee-c" in txn3.description
 
         # Check refund transaction (should be negative after negation)
         txn4 = transactions[3]
-        assert txn4.date == date(2025, 11, 20)
-        assert txn4.amount == Decimal("-100.00")
+        assert txn4.date == date(2030, 11, 20)
+        assert txn4.amount == Decimal("-105.00")
         assert "退款" in txn4.description
         assert txn4.is_income
 
@@ -181,7 +187,7 @@ class TestABCCreditProvider:
 
         assert len(transactions) > 0
         txn = transactions[0]
-        assert txn.statement_period == (date(2025, 10, 24), date(2025, 11, 23))
+        assert txn.statement_period == (date(2030, 10, 24), date(2030, 11, 23))
 
     def test_card_last4_extraction(self, abc_eml_file):
         """Test that card_last4 is properly extracted."""
@@ -211,16 +217,16 @@ class TestABCCreditProvider:
         <td>300102</td>
         <td>5678附</td>
         <td>网上消费 财付通，payee-a</td>
-        <td>-0.01/CNY</td>
-        <td>-0.01/CNY</td>
+        <td>-0.83/CNY</td>
+        <td>-0.83/CNY</td>
     </tr>
     <tr>
         <td>300103</td>
         <td>300103</td>
         <td>1234主</td>
         <td>网上消费 支付宝，payee-b</td>
-        <td>-20.00/CNY</td>
-        <td>-20.00/CNY</td>
+        <td>-57.00/CNY</td>
+        <td>-57.00/CNY</td>
     </tr>
 </table>
 </body></html>"""
@@ -232,9 +238,9 @@ class TestABCCreditProvider:
 
         assert len(transactions) == 2
         assert transactions[0].card_last4 == "5678"
-        assert transactions[0].amount == Decimal("0.01")
+        assert transactions[0].amount == Decimal("0.83")
         assert transactions[1].card_last4 == "1234"
-        assert transactions[1].amount == Decimal("20.00")
+        assert transactions[1].amount == Decimal("57.00")
 
     def test_repayment_row_without_card_number(self, tmp_path):
         """约定还款 rows leave the 卡号后四位 cell empty (account-level repayment).
@@ -254,24 +260,24 @@ class TestABCCreditProvider:
         <td>300110</td>
         <td>1234</td>
         <td>desc-a</td>
-        <td>33.33/CNY</td>
-        <td>33.33/CNY</td>
+        <td>65.00/CNY</td>
+        <td>65.00/CNY</td>
     </tr>
     <tr>
         <td>300113</td>
         <td>300113</td>
         <td></td>
         <td>约定还款</td>
-        <td>22.22/CNY</td>
-        <td>22.22/CNY</td>
+        <td>76.00/CNY</td>
+        <td>76.00/CNY</td>
     </tr>
     <tr>
         <td>300115</td>
         <td>300115</td>
         <td>1234</td>
         <td>desc-b</td>
-        <td>-11.11/CNY</td>
-        <td>-11.11/CNY</td>
+        <td>-84.00/CNY</td>
+        <td>-84.00/CNY</td>
     </tr>
 </table>
 </body></html>"""
@@ -284,7 +290,7 @@ class TestABCCreditProvider:
         assert len(transactions) == 3
         repayment = transactions[1]
         assert repayment.date == date(2030, 1, 13)
-        assert repayment.amount == Decimal("-22.22")
+        assert repayment.amount == Decimal("-76.00")
         assert repayment.card_last4 == "1234"
         assert repayment.description == "约定还款"
         assert repayment.is_income
@@ -301,8 +307,8 @@ class TestABCCreditProvider:
         <td>300113</td>
         <td></td>
         <td>约定还款</td>
-        <td>22.22/CNY</td>
-        <td>22.22/CNY</td>
+        <td>76.00/CNY</td>
+        <td>76.00/CNY</td>
     </tr>
 </table>
 </body></html>"""
@@ -314,7 +320,7 @@ class TestABCCreditProvider:
 
         assert len(transactions) == 1
         assert transactions[0].card_last4 is None
-        assert transactions[0].amount == Decimal("-22.22")
+        assert transactions[0].amount == Decimal("-76.00")
 
     def test_malformed_card_cell_is_warned(self, tmp_path, caplog):
         """A row with an unrecognisable card field is dropped, but never silently."""
@@ -328,8 +334,8 @@ class TestABCCreditProvider:
         <td>300113</td>
         <td>not-a-card</td>
         <td>desc-a</td>
-        <td>-44.44/CNY</td>
-        <td>-44.44/CNY</td>
+        <td>-87.00/CNY</td>
+        <td>-87.00/CNY</td>
     </tr>
 </table>
 </body></html>"""
@@ -348,7 +354,7 @@ class TestABCCreditProvider:
         html = """<html>
 <body>
 <table>
-    <tr><td><span>2025/10/24-2025/11/23</span></td></tr>
+    <tr><td><span>2030/10/24-2030/11/23</span></td></tr>
 </table>
 <table>
     <tr><td>本期无交易记录</td></tr>
@@ -370,16 +376,16 @@ class TestABCDateParsing:
         """Test parsing YYMMDD date format."""
         html = f"""<html>
 <body>
-<table><tr><td><span>2025/12/01-2025/12/31</span></td></tr></table>
+<table><tr><td><span>2030/12/01-2030/12/31</span></td></tr></table>
 <table>
     {NEW_HEADER}
 <tr>
-        <td>251225</td>
-        <td>251225</td>
+        <td>301225</td>
+        <td>301225</td>
         <td>5678</td>
-        <td>Google Cloud</td>
-        <td>-100.00/CNY</td>
-        <td>-100.00/CNY</td>
+        <td>payee-d</td>
+        <td>-91.00/CNY</td>
+        <td>-91.00/CNY</td>
     </tr>
 </table>
 </body></html>"""
@@ -390,23 +396,23 @@ class TestABCDateParsing:
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 1
-        assert transactions[0].date == date(2025, 12, 25)
+        assert transactions[0].date == date(2030, 12, 25)
 
     def test_cross_century_date(self, tmp_path):
         """Test that dates with YY > 50 are treated as 1900s (edge case)."""
         # This is a theoretical edge case - current dates use 20xx
         html = f"""<html>
 <body>
-<table><tr><td><span>2025/01/01-2025/01/31</span></td></tr></table>
+<table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
 <table>
     {NEW_HEADER}
 <tr>
-        <td>250115</td>
-        <td>250115</td>
-        <td>9999</td>
-        <td>Test Transaction</td>
-        <td>-50.00/CNY</td>
-        <td>-50.00/CNY</td>
+        <td>300115</td>
+        <td>300115</td>
+        <td>8642</td>
+        <td>payee-x</td>
+        <td>-93.00/CNY</td>
+        <td>-93.00/CNY</td>
     </tr>
 </table>
 </body></html>"""
@@ -417,7 +423,7 @@ class TestABCDateParsing:
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 1
-        assert transactions[0].date == date(2025, 1, 15)
+        assert transactions[0].date == date(2030, 1, 15)
 
 
 class TestABCAmountParsing:
@@ -427,16 +433,16 @@ class TestABCAmountParsing:
         """Test parsing amounts with comma separators."""
         html = f"""<html>
 <body>
-<table><tr><td><span>2025/11/01-2025/11/30</span></td></tr></table>
+<table><tr><td><span>2030/11/01-2030/11/30</span></td></tr></table>
 <table>
     {NEW_HEADER}
 <tr>
-        <td>251115</td>
-        <td>251115</td>
+        <td>301115</td>
+        <td>301115</td>
         <td>1234</td>
-        <td>Marriott International</td>
-        <td>-12,345.67/CNY</td>
-        <td>-12,345.67/CNY</td>
+        <td>payee-e</td>
+        <td>-13,579.00/CNY</td>
+        <td>-13,579.00/CNY</td>
     </tr>
 </table>
 </body></html>"""
@@ -447,22 +453,22 @@ class TestABCAmountParsing:
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 1
-        assert transactions[0].amount == Decimal("12345.67")
+        assert transactions[0].amount == Decimal("13579.00")
 
     def test_usd_amount(self, tmp_path):
         """Test parsing USD amounts."""
         html = f"""<html>
 <body>
-<table><tr><td><span>2025/11/01-2025/11/30</span></td></tr></table>
+<table><tr><td><span>2030/11/01-2030/11/30</span></td></tr></table>
 <table>
     {NEW_HEADER}
 <tr>
-        <td>251120</td>
-        <td>251120</td>
+        <td>301120</td>
+        <td>301120</td>
         <td>1234</td>
-        <td>Amazon.com</td>
-        <td>-99.99/USD</td>
-        <td>-99.99/USD</td>
+        <td>payee-f</td>
+        <td>-95.00/USD</td>
+        <td>-95.00/USD</td>
     </tr>
 </table>
 </body></html>"""
@@ -474,22 +480,22 @@ class TestABCAmountParsing:
 
         assert len(transactions) == 1
         assert transactions[0].currency == "USD"
-        assert transactions[0].amount == Decimal("99.99")
+        assert transactions[0].amount == Decimal("95.00")
 
     def test_positive_amount_refund(self, tmp_path):
         """Test parsing positive amounts (refunds)."""
         html = f"""<html>
 <body>
-<table><tr><td><span>2025/11/01-2025/11/30</span></td></tr></table>
+<table><tr><td><span>2030/11/01-2030/11/30</span></td></tr></table>
 <table>
     {NEW_HEADER}
 <tr>
-        <td>251125</td>
-        <td>251125</td>
+        <td>301125</td>
+        <td>301125</td>
         <td>1234</td>
-        <td>退款-Apple Store</td>
-        <td>299.00/CNY</td>
-        <td>299.00/CNY</td>
+        <td>退款-payee-b</td>
+        <td>97.00/CNY</td>
+        <td>97.00/CNY</td>
     </tr>
 </table>
 </body></html>"""
@@ -500,10 +506,16 @@ class TestABCAmountParsing:
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 1
-        assert transactions[0].amount == Decimal("-299.00")
+        assert transactions[0].amount == Decimal("-97.00")
         assert transactions[0].is_income
 
 
+REBATE_ROWS: list[Row] = [
+    ("300102", "300102", "1234", "payee-a", "-107.00/CNY", "-107.00/CNY"),
+    ("300103", "300103", "1234", "payee-b", "-213.00/CNY", "-213.00/CNY"),
+]
+REBATE_SPENDING = spending(REBATE_ROWS)
+REBATE_USED = Decimal("53.00")
 REBATE_HTML = f"""<html>
 <head><title>金穗信用卡电子对账单</title></head>
 <body>
@@ -511,40 +523,31 @@ REBATE_HTML = f"""<html>
     <tr><td><span>620000******1234</span></td></tr>
     <tr><td><span>2030/01/01-2030/01/31</span></td></tr>
     <tr><td><span>本期应还款额</span></td></tr>
-    <tr><td>-25.00</td></tr>
-    <tr><td><span>本期使用刷卡金</span></td><td>5.00</td></tr>
+    <tr><td>-{REBATE_SPENDING - REBATE_USED:.2f}</td></tr>
+    <tr><td><span>本期使用刷卡金</span></td><td>{REBATE_USED:.2f}</td></tr>
 </table>
 <table>
     <tr><td><span>本期账单金额</span></td></tr>
 </table>
 <table>
-    <tr><td>30.00</td></tr>
+    <tr><td>{REBATE_SPENDING:.2f}</td></tr>
 </table>
 <table>
     {NEW_HEADER}
-<tr>
-        <td>300102</td>
-        <td>300102</td>
-        <td>1234</td>
-        <td>payee-a</td>
-        <td>-10.00/CNY</td>
-        <td>-10.00/CNY</td>
-    </tr>
-    <tr>
-        <td>300103</td>
-        <td>300103</td>
-        <td>1234</td>
-        <td>payee-b</td>
-        <td>-20.00/CNY</td>
-        <td>-20.00/CNY</td>
-    </tr>
+{detail_rows(REBATE_ROWS)}
 </table>
 </body>
 </html>"""
 
 
 def formula_rebate_html(rebate_used: str, adjustment: str) -> str:
-    """Statement laid out like the real 账务说明 formula and 刷卡金统计 tables."""
+    """Statement laid out like the real 账务说明 formula and 刷卡金统计 tables.
+
+    The previous balance is repaid in full, so the balance is this cycle's
+    spending less the adjustment.
+    """
+    previous = Decimal("1108.00")
+    balance = previous + REBATE_SPENDING - previous - Decimal(adjustment)
     return f"""<html>
 <head><title>金穗信用卡电子对账单</title></head>
 <body>
@@ -552,7 +555,7 @@ def formula_rebate_html(rebate_used: str, adjustment: str) -> str:
     <tr><td><span>620000******1234</span></td></tr>
     <tr><td><span>2030/01/01-2030/01/31</span></td></tr>
     <tr><td><span>本期应还款额</span></td></tr>
-    <tr><td>-27.00</td></tr>
+    <tr><td>-{balance:.2f}</td></tr>
 </table>
 <div>
 <table>
@@ -576,34 +579,19 @@ def formula_rebate_html(rebate_used: str, adjustment: str) -> str:
 <table>
 <tr>
 <td><span>人民币(CNY)</span></td>
-<td><span>27.00</span></td>
+<td><span>{balance:.2f}</span></td>
 <td><span>0.00</span></td>
-<td><span>100.00</span></td>
+<td><span>{previous:.2f}</span></td>
 <td><span>0.00</span></td>
-<td><span>30.00</span></td>
-<td><span>100.00</span></td>
+<td><span>{REBATE_SPENDING:.2f}</span></td>
+<td><span>{previous:.2f}</span></td>
 <td><span>{adjustment}</span></td>
 </tr>
 </table>
 </div>
 <table>
     {NEW_HEADER}
-<tr>
-        <td>300102</td>
-        <td>300102</td>
-        <td>1234</td>
-        <td>payee-a</td>
-        <td>-10.00/CNY</td>
-        <td>-10.00/CNY</td>
-    </tr>
-    <tr>
-        <td>300103</td>
-        <td>300103</td>
-        <td>1234</td>
-        <td>payee-b</td>
-        <td>-20.00/CNY</td>
-        <td>-20.00/CNY</td>
-    </tr>
+{detail_rows(REBATE_ROWS)}
 </table>
 <table>
 <tr><td><span>可用刷卡金余额</span></td><td><span>0.00</span></td></tr>
@@ -613,28 +601,28 @@ def formula_rebate_html(rebate_used: str, adjustment: str) -> str:
 </html>"""
 
 
-EXPECTED_BALANCED_REPORT = """
+EXPECTED_BALANCED_REPORT = f"""
 ; ============================================================
 ; 农业银行信用卡 账单核对
 ; ============================================================
 ;
 ; 卡号: 620000******1234 (尾号 1234)
-; 账单周期: 2025/10/24-2025/11/23
+; 账单周期: 2030/10/24-2030/11/23
 ;
-;   解析消费:            2324.00 CNY
-;   账单消费:            2324.00 CNY
-;   账单应还:            2324.00 CNY
+;   解析消费:       {BASIC_SPENDING:>12.2f} CNY
+;   账单消费:       {BASIC_SPENDING:>12.2f} CNY
+;   账单应还:       {BASIC_SPENDING:>12.2f} CNY
 ;
 ;   状态: ✅ 平账
 ; ============================================================
 """
 
 
-EXPECTED_REBATE_OUTPUT = """; base
+EXPECTED_REBATE_OUTPUT = f"""; base
 
 ; --- 刷卡金抵扣 ---
 2030-01-31 * "农业银行" "刷卡金抵扣 (尾号1234)"
-  Liabilities:Credit:ABC:1234  5.00 CNY
+  Liabilities:Credit:ABC:1234  {REBATE_USED:.2f} CNY
   Income:Rebate:ABC
 ; ============================================================
 ; 农业银行信用卡 账单核对
@@ -643,12 +631,12 @@ EXPECTED_REBATE_OUTPUT = """; base
 ; 卡号: 620000******1234 (尾号 1234)
 ; 账单周期: 2030/01/01-2030/01/31
 ;
-;   解析消费:              30.00 CNY
-;   账单消费:              30.00 CNY
-;   账单应还:              25.00 CNY
-;   刷卡金抵扣:             5.00 CNY
+;   解析消费:       {REBATE_SPENDING:>12.2f} CNY
+;   账单消费:       {REBATE_SPENDING:>12.2f} CNY
+;   账单应还:       {REBATE_SPENDING - REBATE_USED:>12.2f} CNY
+;   刷卡金抵扣:     {REBATE_USED:>12.2f} CNY
 ;
-;   状态: ✅ 平账 (刷卡金 5.00)
+;   状态: ✅ 平账 (刷卡金 {REBATE_USED:.2f})
 ; ============================================================
 """
 
@@ -761,6 +749,17 @@ class TestABCPostOutput:
         assert sorted(reads) == statements
 
 
+TWO_CURRENCY_ROWS: list[Row] = [
+    ("300102", "300102", "1234", "payee-a", "-113.00/CNY", "-113.00/CNY"),
+    ("300103", "300103", "1234", "payee-b", "-127.00/CNY", "-127.00/CNY"),
+    ("300104", "300105", "1234", "payee-c", "-85.00/USD", "-85.00/USD"),
+    ("300106", "300107", "1234", "退货 payee-c", "33.00/USD", "33.00/USD"),
+]
+TWO_CNY = spending(TWO_CURRENCY_ROWS, "CNY")
+TWO_USD = spending(TWO_CURRENCY_ROWS, "USD")
+CURRENCY_NAMES = {"CNY": "人民币(CNY)", "USD": "美元(USD)"}
+
+
 def two_currency_html(
     formula: tuple[str, ...] = ("CNY", "USD"), rows: tuple[str, ...] = ("CNY", "USD")
 ) -> str:
@@ -788,41 +787,36 @@ def two_currency_html(
             "本期调整金额",
         )
     )
-    formula_rows = {
-        "CNY": (
-            "人民币(CNY)",
-            "40.00",
-            "0.00",
-            "0.00",
-            "0.00",
-            "40.00",
-            "0.00",
-            "0.00",
-        ),
-        "USD": ("美元(USD)", "7.00", "0.00", "0.00", "0.00", "9.00", "2.00", "0.00"),
-    }
-    value_rows = [formula_rows[currency] for currency in formula]
+    # Each currency starts from a zero balance, so its balance is its spending
+    # less its refunds.
+    value_rows = [
+        (
+            CURRENCY_NAMES[currency],
+            spending(TWO_CURRENCY_ROWS, currency)
+            - credits(TWO_CURRENCY_ROWS, currency),
+            *[Decimal(0)] * 3,
+            spending(TWO_CURRENCY_ROWS, currency),
+            credits(TWO_CURRENCY_ROWS, currency),
+            Decimal(0),
+        )
+        for currency in formula
+    ]
     balances = "".join(
-        f"<tr><td>{row[0]}</td><td>-{row[1]}</td></tr>"
-        for row in sorted(value_rows, key=lambda row: row[0] != "人民币(CNY)")
+        f"<tr><td>{row[0]}</td><td>-{row[1]:.2f}</td></tr>"
+        for row in sorted(value_rows, key=lambda row: row[0] != CURRENCY_NAMES["CNY"])
     )
     values = "".join(
         "<table><tr>"
-        + "".join(f"<td><span>{v}</span></td>" for v in row)
+        + "".join(
+            f"<td><span>{v:.2f}</span></td>"
+            if isinstance(v, Decimal)
+            else f"<td><span>{v}</span></td>"
+            for v in row
+        )
         + "</tr></table>"
         for row in value_rows
     )
-    details = [
-        ("300102", "300102", "1234", "payee-a", "-10.00/CNY", "-10.00/CNY"),
-        ("300103", "300103", "1234", "payee-b", "-30.00/CNY", "-30.00/CNY"),
-        ("300104", "300105", "1234", "payee-c", "-9.00/USD", "-9.00/USD"),
-        ("300106", "300107", "1234", "退货 payee-c", "2.00/USD", "2.00/USD"),
-    ]
-    body = "".join(
-        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
-        for row in details
-        if row[-1][-3:] in rows
-    )
+    body = detail_rows([row for row in TWO_CURRENCY_ROWS if booked(row)[1] in rows])
     return f"""<html><body>
 <table>
     <tr><td><span>620000******1234</span></td></tr>
@@ -836,7 +830,7 @@ def two_currency_html(
 </body></html>"""
 
 
-EXPECTED_TWO_CURRENCY_REPORT = """
+EXPECTED_TWO_CURRENCY_REPORT = f"""
 ; ============================================================
 ; 农业银行信用卡 账单核对
 ; ============================================================
@@ -845,15 +839,15 @@ EXPECTED_TWO_CURRENCY_REPORT = """
 ; 账单周期: 2030/01/01-2030/01/31
 ;
 ;   币种: CNY
-;   解析消费:              40.00 CNY
-;   账单消费:              40.00 CNY
-;   账单应还:              40.00 CNY
+;   解析消费:       {TWO_CNY:>12.2f} CNY
+;   账单消费:       {TWO_CNY:>12.2f} CNY
+;   账单应还:       {TWO_CNY - credits(TWO_CURRENCY_ROWS):>12.2f} CNY
 ;
 ;   状态: ✅ 平账
 ;
 ;   币种: USD
-;   解析消费:               9.00 USD
-;   账单消费:               9.00 USD
+;   解析消费:       {TWO_USD:>12.2f} USD
+;   账单消费:       {TWO_USD:>12.2f} USD
 ;
 ;   状态: ✅ 平账
 ; ============================================================
@@ -874,7 +868,10 @@ class TestABCCurrencies:
 
         summary = ABCCreditProvider()._extract_summary(path)
 
-        assert summary.new_charges == {"CNY": Decimal("40.00"), "USD": Decimal("9.00")}
+        assert summary.new_charges == {
+            "CNY": TWO_CNY,
+            "USD": TWO_USD,
+        }
         assert summary.balance_currency == "CNY"
 
     def test_report_compares_each_currency(self, tmp_path):
@@ -899,9 +896,9 @@ class TestABCCurrencies:
 
         assert output.endswith(
             ";   币种: USD\n"
-            ";   解析消费:               9.00 USD\n"
+            f";   解析消费:       {TWO_USD:>12.2f} USD\n"
             ";\n"
-            ";   差额: +9.00 USD\n"
+            f";   差额: +{TWO_USD:.2f} USD\n"
             "; " + "=" * 60 + "\n"
         )
 
@@ -917,9 +914,9 @@ class TestABCCurrencies:
         assert output.endswith(
             ";   币种: USD\n"
             ";   解析消费:               0.00 USD\n"
-            ";   账单消费:               9.00 USD\n"
+            f";   账单消费:       {TWO_USD:>12.2f} USD\n"
             ";\n"
-            ";   差额: -9.00 USD\n"
+            f";   差额: -{TWO_USD:.2f} USD\n"
             "; " + "=" * 60 + "\n"
         )
 
@@ -928,7 +925,7 @@ class TestABCCurrencies:
 
         summary = ABCCreditProvider()._extract_summary(path)
 
-        assert summary.new_charges == {"USD": Decimal("9.00")}
+        assert summary.new_charges == {"USD": TWO_USD}
         assert summary.balance_currency == "USD"
 
     def test_balance_currency_does_not_follow_formula_order(self, tmp_path):
@@ -938,7 +935,7 @@ class TestABCCurrencies:
 
         assert list(summary.new_charges) == ["USD", "CNY"]
         assert summary.balance_currency == "CNY"
-        assert summary.statement_balance == Decimal("-40.00")
+        assert summary.statement_balance == credits(TWO_CURRENCY_ROWS) - TWO_CNY
 
     def test_formula_ends_at_the_first_row_without_a_currency(self, tmp_path):
         stray = (
@@ -982,34 +979,34 @@ class TestABCRebateAdjustment:
     def test_summary_reads_formula_fields(self, tmp_path):
         file_path = tmp_path / "农业银行金穗信用卡.eml"
         file_path.write_text(
-            create_abc_eml(formula_rebate_html("5.00", "3.00")), encoding="utf-8"
+            create_abc_eml(formula_rebate_html("53.00", "34.00")), encoding="utf-8"
         )
 
         summary = ABCCreditProvider()._extract_summary(file_path)
 
-        assert summary.new_charges == {"CNY": Decimal("30.00")}
-        assert summary.adjustment == Decimal("3.00")
-        assert summary.rebate_used == Decimal("5.00")
+        assert summary.new_charges == {"CNY": Decimal("320.00")}
+        assert summary.adjustment == Decimal("34.00")
+        assert summary.rebate_used == Decimal("53.00")
 
     def test_entry_books_adjustment_when_it_differs_from_rebate_used(self, tmp_path):
-        output = self.run(tmp_path, "5.00", "3.00")
+        output = self.run(tmp_path, "53.00", "34.00")
 
-        assert "  Liabilities:Credit:ABC:1234  3.00 CNY\n" in output
-        assert ";   刷卡金抵扣:             3.00 CNY\n" in output
-        assert ";     (本期使用刷卡金 5.00, 本期调整 3.00)\n" in output
-        assert "状态: ✅ 平账 (刷卡金 3.00)" in output
+        assert "  Liabilities:Credit:ABC:1234  34.00 CNY\n" in output
+        assert ";   刷卡金抵扣:            34.00 CNY\n" in output
+        assert ";     (本期使用刷卡金 53.00, 本期调整 34.00)\n" in output
+        assert "状态: ✅ 平账 (刷卡金 34.00)" in output
 
     def test_equal_amounts_report_no_breakdown(self, tmp_path):
-        output = self.run(tmp_path, "3.00", "3.00")
+        output = self.run(tmp_path, "34.00", "34.00")
 
-        assert "  Liabilities:Credit:ABC:1234  3.00 CNY\n" in output
+        assert "  Liabilities:Credit:ABC:1234  34.00 CNY\n" in output
         assert "本期调整" not in output
 
     def test_adjustment_above_rebate_used_is_flagged(self, tmp_path):
-        output = self.run(tmp_path, "3.00", "5.00")
+        output = self.run(tmp_path, "34.00", "53.00")
 
-        assert "  Liabilities:Credit:ABC:1234  3.00 CNY\n" in output
-        assert "⚠️ 调整金额 5.00 超出刷卡金使用 3.00" in output
+        assert "  Liabilities:Credit:ABC:1234  34.00 CNY\n" in output
+        assert "⚠️ 调整金额 53.00 超出刷卡金使用 34.00" in output
 
 
 class TestABCStatementPeriod:
@@ -1030,16 +1027,16 @@ class TestABCStatementPeriod:
         <td>300302</td>
         <td>1234</td>
         <td>merchant-a</td>
-        <td>-10.00/CNY</td>
-        <td>-10.00/CNY</td>
+        <td>-119.00/CNY</td>
+        <td>-119.00/CNY</td>
     </tr>
     <tr>
         <td>300310</td>
         <td>300310</td>
         <td>1234</td>
         <td>merchant-b</td>
-        <td>-20.00/CNY</td>
-        <td>-20.00/CNY</td>
+        <td>-126.00/CNY</td>
+        <td>-126.00/CNY</td>
     </tr>
 </table>
 </body>
@@ -1054,30 +1051,24 @@ class TestABCStatementPeriod:
             assert txn.statement_period == (date(2030, 3, 1), date(2030, 3, 31))
 
 
-# (trans date, post date, card cell, description, amount, booked amount)
-Row = tuple[str, str, str, str, str, str]
-
 ROWS: list[Row] = [
     (
         "300302",
         "300302",
         "2468主",
         "网上消费 支付宝，payee-a",
-        "-53.00/CNY",
-        "-53.00/CNY",
+        "-128.00/CNY",
+        "-128.00/CNY",
     ),
-    ("300305", "300306", "9753附", "消费 shop-b", "-77.00/CNY", "-77.00/CNY"),
-    ("300309", "300310", "2468", "退货 shop-b", "81.00/CNY", "81.00/CNY"),
-    ("300315", "300315", "", "约定还款", "1,093.00/CNY", "1,093.00/CNY"),
+    ("300305", "300306", "9753附", "消费 shop-b", "-131.00/CNY", "-131.00/CNY"),
+    ("300309", "300310", "2468", "退货 shop-b", "132.00/CNY", "132.00/CNY"),
+    ("300315", "300315", "", "约定还款", "1,137.00/CNY", "1,137.00/CNY"),
 ]
 CARD = "620000******2468"
 CYCLE = "2030/03/01-2030/03/31"
 
 
 def write_abc_eml(path: Path, rows: list[Row], cycle: str = CYCLE) -> Path:
-    body = "\n".join(
-        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows
-    )
     html = f"""<html><body>
 <table>
 <tr><td><span>{CARD}</span></td></tr>
@@ -1085,18 +1076,23 @@ def write_abc_eml(path: Path, rows: list[Row], cycle: str = CYCLE) -> Path:
 </table>
 <table>
 {NEW_HEADER}
-{body}
+{detail_rows(rows)}
 </table>
 </body></html>"""
     path.write_text(create_abc_eml(html), encoding="utf-8")
     return path
 
 
+# The reissue's 本期应还款额 carries the previous cycle, so it is no sum of
+# its rows.
+REISSUE_BALANCE = Decimal("-1330.00")
+
+
 def write_abc_pdf(
     path: Path,
     rows: list[Row],
     cycle: str = CYCLE,
-    balance: str = "-1,186.00",
+    balance: Decimal = REISSUE_BALANCE,
     rows_per_page: int = 30,
 ) -> Path:
     """Draw a reissued ABC statement; a blank card cell prints nothing."""
@@ -1114,9 +1110,9 @@ def write_abc_pdf(
     put(35, 366, "本期应还款额(欠款为-) New Balance")
     put(325, 366, "最低还款额(欠款为-) Min Payment")
     put(36, 394, "人民币(CNY)")
-    put(240, 394, balance)
+    put(240, 394, f"{balance:,.2f}")
     put(326, 394, "人民币(CNY)")
-    put(520, 394, "-118.60")
+    put(520, 394, f"{balance / 10:.2f}")
     put(28, 524, "交易明细")
     y = 625.0
     for i, row in enumerate(rows):
@@ -1154,11 +1150,11 @@ class TestABCReissue:
         txns = ABCCreditProvider().parse(write_abc_pdf(tmp_path / "r.pdf", ROWS))
 
         assert [(t.date, t.amount, t.card_last4) for t in txns] == [
-            (date(2030, 3, 2), Decimal("53.00"), "2468"),
-            (date(2030, 3, 5), Decimal("77.00"), "9753"),
-            (date(2030, 3, 9), Decimal("-81.00"), "2468"),
+            (date(2030, 3, 2), Decimal("128.00"), "2468"),
+            (date(2030, 3, 5), Decimal("131.00"), "9753"),
+            (date(2030, 3, 9), Decimal("-132.00"), "2468"),
             # A row without a card number belongs to the statement's card.
-            (date(2030, 3, 15), Decimal("-1093.00"), "2468"),
+            (date(2030, 3, 15), Decimal("-1137.00"), "2468"),
         ]
         assert txns[0].description == "网上消费 支付宝，payee-a"
         assert txns[0].metadata[STATEMENT_CYCLE] == (
@@ -1193,7 +1189,7 @@ class TestABCReissue:
 
         assert summary.card_number == CARD
         assert summary.statement_period == (date(2030, 3, 1), date(2030, 3, 31))
-        assert summary.statement_balance == Decimal("-1186.00")
+        assert summary.statement_balance == REISSUE_BALANCE
         assert summary.new_charges == {}
         assert summary.rebate_used == Decimal(0)
 
@@ -1206,7 +1202,7 @@ class TestABCReissue:
         )
 
         assert f"卡号: {CARD} (尾号 2468)" in output
-        assert "账单应还:            1186.00 CNY" in output
+        assert f"账单应还:       {-REISSUE_BALANCE:>12.2f} CNY" in output
         assert "账单消费" not in output
         assert "刷卡金抵扣 ---" not in output
 
@@ -1233,7 +1229,7 @@ class TestABCReissue:
         )
 
         assert output.count(f"卡号: {CARD}") == 1
-        assert "账单应还:            1186.00 CNY" not in output
+        assert f"账单应还:       {-REISSUE_BALANCE:>12.2f} CNY" not in output
 
 
 class TestABCCoverage:
@@ -1288,18 +1284,22 @@ def _bilingual(zh: str, en: str) -> str:
     return f"<td><table><tr><td>{zh}</td></tr><tr><td>{en}</td></tr></table></td>"
 
 
-def old_template_html(
-    rows: list[Row],
-    cycle: str = "20300301-20300331",
-    balance: str = "-1,186.00",
-    new_charge: str = "130.00",
-) -> str:
+OLD_PREVIOUS = Decimal("-1346.40")
+
+
+def old_balance(rows: list[Row]) -> Decimal:
+    return OLD_PREVIOUS - spending(rows) + credits(rows)
+
+
+def old_template_html(rows: list[Row], cycle: str = "20300301-20300331") -> str:
     """Render rows in the older mail layout.
 
     Every block sits in nested layout tables, each detail row with a spacer
     cell in front, YYYYMMDD dates and 交易摘要 / 交易地点 in separate cells; a
-    description without a space prints as one merged cell.
+    description without a space prints as one merged cell. The formula and
+    the summary follow from the rows and a fixed previous balance.
     """
+    balance = old_balance(rows)
     header = "".join(
         _bilingual(zh, en)
         for zh, en in (
@@ -1333,7 +1333,13 @@ def old_template_html(
     )
     formula_values = "".join(
         f"<td>{v}</td>"
-        for v in ("人民币(CNY)", "-1,072.50", new_charge, "16.50", balance)
+        for v in (
+            "人民币(CNY)",
+            f"{OLD_PREVIOUS:,.2f}",
+            f"{spending(rows):.2f}",
+            f"{credits(rows):.2f}",
+            f"{balance:,.2f}",
+        )
     )
     summary = (
         "<table><tr><td></td><td>卡号</td>"
@@ -1343,8 +1349,8 @@ def old_template_html(
         "<td>最低还款额(欠款为-)</td><td>信用额度</td></tr>"
         "<tr><td>Curr</td><td>New Balance</td><td>Min.Payment</td>"
         "<td>Credit Limit</td></tr>"
-        f"<tr><td>人民币(CNY)</td><td>{balance}</td><td>-118.60</td>"
-        "<td>23000.00</td></tr></table>"
+        f"<tr><td>人民币(CNY)</td><td>{balance:,.2f}</td><td>{balance / 10:.2f}</td>"
+        "<td>27000.00</td></tr></table>"
     )
     return f"""<html>
 <head><meta http-equiv='Content-Type' content='text/html;charset=gbk'></head>
@@ -1393,7 +1399,7 @@ class TestABCOldTemplate:
 
     def test_gb2312_label_decodes_characters_outside_gb2312(self, tmp_path):
         # 镕 is in GBK but not in GB2312.
-        rows = [("300302", "300302", "", "消费 镕-shop", "-53.00/CNY", "-53.00/CNY")]
+        rows = [("300302", "300302", "", "消费 镕-shop", "-128.00/CNY", "-128.00/CNY")]
         path = write_old_template_eml(
             tmp_path / "old.eml", rows, content_type="text/html; charset=gb2312"
         )
@@ -1408,8 +1414,8 @@ class TestABCOldTemplate:
 
         assert summary.card_number == OLD_CARD
         assert summary.statement_period == (date(2030, 3, 1), date(2030, 3, 31))
-        assert summary.statement_balance == Decimal("-1186.00")
-        assert summary.new_charges == {"CNY": Decimal("130.00")}
+        assert summary.statement_balance == old_balance(ROWS)
+        assert summary.new_charges == {"CNY": spending(ROWS)}
         assert summary.adjustment is None
         assert summary.rebate_used == Decimal(0)
 
@@ -1423,7 +1429,7 @@ class TestABCOldTemplate:
 
         assert f"卡号: {OLD_CARD} (尾号 2468)" in output
         assert "账单周期: 2030/03/01-2030/03/31" in output
-        assert "账单消费:             130.00 CNY" in output
+        assert f"账单消费:       {spending(ROWS):>12.2f} CNY" in output
         assert "状态: ✅ 平账" in output
         assert "未读出" not in output
 
@@ -1481,7 +1487,10 @@ class TestABCUnreadableMail:
         )
 
         assert "刷卡金抵扣 ---" not in output
-        assert "状态: ✅ 平账 (刷卡金 5.00，账单周期未读出，未生成分录)" in output
+        assert (
+            f"状态: ✅ 平账 (刷卡金 {REBATE_USED:.2f}，账单周期未读出，未生成分录)"
+            in output
+        )
 
 
 def test_mail_without_html_part_warns(tmp_path, caplog):
