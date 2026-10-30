@@ -38,6 +38,18 @@ class FakeAccountBank(BaseProvider):
         return []
 
 
+class FakeUncycledStatementBank(BaseProvider):
+    """Exports one billing cycle without printing it; not registered."""
+
+    provider_id = "fake_uncycled_statement_bank"
+    provider_name = "Fake Uncycled Statement Bank"
+    supported_formats = [".csv"]
+    uncycled_export_is_statement = True
+
+    def parse(self, file_path: Path) -> list[Transaction]:  # noqa: ARG002
+        return []
+
+
 class FakePerCardBank(BaseProvider):
     """Per-card provider; not registered, so it never affects auto-detection."""
 
@@ -433,3 +445,31 @@ def test_unkeyed_rows_of_an_unnamed_statement_cover_the_sole_account() -> None:
     assert provider.get_covered_ranges(transactions, config) == {
         ACCOUNT_A: [PERIOD_JAN],
     }
+
+
+def test_missing_cycle_spans_each_card_booked_dates_on_a_statement_export() -> None:
+    # The installment's purchase date lies months before the cycle that bills
+    # it; its posting date is inside that cycle.
+    installment = make_bare_txn(date(2030, 1, 5), "1111", date(2030, 3, 8))
+    purchase = make_bare_txn(date(2030, 3, 20), "1111", date(2030, 3, 21))
+    other = make_bare_txn(date(2030, 3, 2), "2222")
+
+    FakeUncycledStatementBank.assign_statement_periods([installment, purchase, other])
+
+    span = (date(2030, 3, 8), date(2030, 3, 21))
+    assert installment.statement_period == span
+    assert purchase.statement_period == span
+    assert other.statement_period == (date(2030, 3, 2), date(2030, 3, 2))
+
+
+def test_missing_cycle_keeps_the_trade_span_without_a_statement_export() -> None:
+    # A trade-dated history may end with rows the bank has not posted yet, so
+    # the period stays on the dates the export lists.
+    installment = make_bare_txn(date(2030, 1, 5), "1111", date(2030, 3, 8))
+    purchase = make_bare_txn(date(2030, 3, 20), "1111", date(2030, 3, 21))
+
+    BaseProvider.assign_statement_periods([installment, purchase])
+
+    span = (date(2030, 1, 5), date(2030, 3, 20))
+    assert installment.statement_period == span
+    assert purchase.statement_period == span

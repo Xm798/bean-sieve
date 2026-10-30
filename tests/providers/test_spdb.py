@@ -191,9 +191,9 @@ class TestSPDBCreditProvider:
             (transaction.card_last4, transaction.statement_period)
             for transaction in transactions
         ] == [
-            ("8888", (date(2030, 1, 2), date(2030, 1, 31))),
-            ("1234", (date(2030, 1, 17), date(2030, 1, 17))),
-            ("8888", (date(2030, 1, 2), date(2030, 1, 31))),
+            ("8888", (date(2030, 1, 3), date(2030, 2, 1))),
+            ("1234", (date(2030, 1, 18), date(2030, 1, 18))),
+            ("8888", (date(2030, 1, 3), date(2030, 2, 1))),
         ]
 
     def test_empty_statement(self, tmp_path: Path) -> None:
@@ -416,8 +416,8 @@ def test_covered_ranges_keep_each_statement_period(spdb_xls_file: Path) -> None:
 
     assert provider.get_covered_ranges(provider.parse(spdb_xls_file), config) == {
         "Liabilities:CC:SPDB": [
-            (date(2030, 1, 2), date(2030, 1, 31)),
-            (date(2030, 1, 17), date(2030, 1, 17)),
+            (date(2030, 1, 3), date(2030, 2, 1)),
+            (date(2030, 1, 18), date(2030, 1, 18)),
         ]
     }
 

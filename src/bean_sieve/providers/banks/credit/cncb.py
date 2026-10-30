@@ -48,6 +48,8 @@ class CNCBCreditProvider(BaseProvider):
     # credit export's column layout.
     filename_keywords = ["中信信用卡", "已出账单明细"]
     per_card_statement = True  # CNCB sends separate statements per card
+    # The 已出账单明细 export lists one billed cycle without printing it.
+    uncycled_export_is_statement = True
 
     COL_TRANS_DATE = 0  # 交易日期
     COL_POST_DATE = 1  # 入账日期
@@ -97,8 +99,6 @@ class CNCBCreditProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
-        # The export carries no billing cycle, so each card's own transaction
-        # date range is the narrowest safe approximation.
         self.assign_statement_periods(transactions)
 
         return transactions

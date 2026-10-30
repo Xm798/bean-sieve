@@ -189,11 +189,18 @@ class InstallmentProvider(BaseProvider):
     filename_keywords = ["fake-hull-installment"]
     per_card_statement = True
 
+    cycle: tuple[date, date] | None = (date(2030, 2, 11), date(2030, 3, 10))
+    # (trade date, posting date, amount, description)
+    rows: tuple[tuple[date, date, Decimal, str], ...] = (
+        (date(2030, 1, 5), date(2030, 2, 20), Decimal("100.00"), "installment-1-of-3"),
+        (date(2030, 2, 20), date(2030, 2, 20), Decimal("30.00"), "purchase-a"),
+    )
+
     def parse(self, file_path: Path) -> list[Transaction]:
         rows = [
             Transaction(
                 date=day,
-                post_date=date(2030, 2, 20),
+                post_date=posted,
                 amount=amount,
                 currency="CNY",
                 description=description,
@@ -201,12 +208,9 @@ class InstallmentProvider(BaseProvider):
                 provider=self.provider_id,
                 source_file=file_path,
             )
-            for day, amount, description in (
-                (date(2030, 1, 5), Decimal("100.00"), "installment-1-of-3"),
-                (date(2030, 2, 20), Decimal("30.00"), "purchase-a"),
-            )
+            for day, posted, amount, description in self.rows
         ]
-        self.assign_statement_periods(rows, (date(2030, 2, 11), date(2030, 3, 10)))
+        self.assign_statement_periods(rows, self.cycle)
         return rows
 
 
@@ -265,6 +269,77 @@ def test_installment_row_neither_widens_extra_nor_goes_unmatched(
         "purchase-a",
     }
     assert extra_dates(result) == {(date(2030, 3, 1), "Liabilities:Fake:Card")}
+
+
+class UncycledStatementProvider(InstallmentProvider):
+    """An export of one billing cycle that prints no cycle."""
+
+    provider_id = "fake_hull_uncycled"
+    provider_name = "Fake Hull Uncycled"
+    filename_keywords = ["fake-hull-uncycled"]
+    uncycled_export_is_statement = True
+
+    cycle = None
+    rows = (
+        (date(2030, 1, 5), date(2030, 3, 8), Decimal("100.00"), "installment-1-of-3"),
+        (date(2030, 3, 2), date(2030, 3, 2), Decimal("10.00"), "purchase-a"),
+        (date(2030, 3, 20), date(2030, 3, 21), Decimal("20.00"), "purchase-b"),
+    )
+
+
+def test_installment_row_on_an_uncycled_statement_export_bounds_extra_by_posting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(
+        PROVIDERS, UncycledStatementProvider.provider_id, UncycledStatementProvider
+    )
+    config_path = tmp_path / "bean-sieve.yaml"
+    config_path.write_text(
+        INSTALLMENT_CONFIG.replace("fake_hull_installment", "fake_hull_uncycled"),
+        encoding="utf-8",
+    )
+    ledger_path = tmp_path / "main.bean"
+    ledger_path.write_text(
+        """
+2020-01-01 open Liabilities:Fake:Card CNY
+2020-01-01 open Expenses:FIXME
+
+2030-01-05 * "payee-a" "installment purchase, matched by its row"
+  Liabilities:Fake:Card  -100.00 CNY
+  Expenses:FIXME
+
+2030-01-20 * "payee-b" "not extra: billed by an earlier cycle"
+  Liabilities:Fake:Card  -40.00 CNY
+  Expenses:FIXME
+
+2030-03-02 * "payee-c" "matched by its row"
+  Liabilities:Fake:Card  -10.00 CNY
+  Expenses:FIXME
+
+2030-03-10 * "payee-d" "extra: inside the export, no row"
+  Liabilities:Fake:Card  -50.00 CNY
+  Expenses:FIXME
+
+2030-03-20 * "payee-e" "matched by its row"
+  Liabilities:Fake:Card  -20.00 CNY
+  Expenses:FIXME
+""",
+        encoding="utf-8",
+    )
+
+    result = full_reconcile(
+        [write_statement(tmp_path, "fake-hull-uncycled.csv")],
+        ledger_path,
+        config_path=config_path,
+    )
+
+    assert result.match_result.missing == []
+    assert {t.description for t, _ in result.match_result.matched} == {
+        "installment-1-of-3",
+        "purchase-a",
+        "purchase-b",
+    }
+    assert extra_dates(result) == {(date(2030, 3, 10), "Liabilities:Fake:Card")}
 
 
 def test_a_row_traded_before_its_cycle_leaves_a_range_less_account_alone(

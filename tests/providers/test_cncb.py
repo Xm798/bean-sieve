@@ -190,14 +190,14 @@ class TestCNCBCreditProvider:
         assert "年费" in txn4.description
 
     def test_statement_period_inferred(self, cncb_xls_file):
-        """Test that statement_period is inferred from transaction date range."""
+        """The statement period spans the rows' posting dates."""
         provider = CNCBCreditProvider()
         transactions = provider.parse(cncb_xls_file)
 
         assert len(transactions) == 4
         for txn in transactions:
             assert txn.statement_period is not None
-            assert txn.statement_period == (date(2026, 1, 5), date(2026, 1, 15))
+            assert txn.statement_period == (date(2026, 1, 6), date(2026, 1, 15))
 
     def test_parse_empty_statement(self, tmp_path):
         """Test handling of statement with no data rows."""

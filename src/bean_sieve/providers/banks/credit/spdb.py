@@ -70,6 +70,9 @@ class SPDBCreditProvider(BaseProvider):
     # downloaded later as a reissue, and nothing in it tells an original
     # statement from a reissue.
     coverage_priority = ("statement", "reissue")
+    # The XLS export is one monthly report, and a PDF without a closing date
+    # is still one month's statement: both bill every row inside one cycle.
+    uncycled_export_is_statement = True
 
     EXPECTED_HEADERS = (
         "交易日期",
@@ -285,8 +288,6 @@ class SPDBCreditProvider(BaseProvider):
             if transaction:
                 transactions.append(transaction)
 
-        # The export has no explicit query period, so use each card's own
-        # transaction-date range as the narrowest safe approximation.
         self.assign_statement_periods(transactions)
 
         return transactions

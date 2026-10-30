@@ -119,6 +119,11 @@ class BaseProvider(ABC):
     # keys its config on the wallet and leaves this False.
     unkeyed_rows_share_account: bool = False
 
+    # True when a file printing no billing cycle still lists one billed cycle,
+    # so every row posts inside it. False keeps the trade-date span: a
+    # trade-dated history may list rows not yet posted.
+    uncycled_export_is_statement: bool = False
+
     # Source kinds of coverage() in descending precedence; an unlisted kind
     # ranks below every listed one.
     coverage_priority: tuple[str, ...] = ()
@@ -386,8 +391,9 @@ class BaseProvider(ABC):
         day = billing_day or closing.day
         return previous.replace(day=min(day, previous.day)) + timedelta(days=1), closing
 
-    @staticmethod
+    @classmethod
     def assign_statement_periods(
+        cls,
         transactions: list[Transaction],
         cycle: tuple[date, date] | None = None,
     ) -> None:
@@ -400,7 +406,8 @@ class BaseProvider(ABC):
         to the statement covering that date. The booked dates still extend a
         cycle a provider approximates, such as a calendar month.
 
-        Without a cycle the period is the card's trade-date span. Each card
+        Without a cycle the period is the card's span of booked dates when
+        ``uncycled_export_is_statement`` holds, else of trade dates. Each card
         gets its own, since a file-wide span would cover another card's tail.
 
         Args:
@@ -412,12 +419,11 @@ class BaseProvider(ABC):
         for txn in transactions:
             by_card[txn.card_last4].append(txn)
 
+        by_booking = cycle is not None or cls.uncycled_export_is_statement
         for card_txns in by_card.values():
+            days = [txn.booked_date if by_booking else txn.date for txn in card_txns]
             if cycle:
-                days = [txn.booked_date for txn in card_txns]
                 days.extend(cycle)
-            else:
-                days = [txn.date for txn in card_txns]
             period = (min(days), max(days))
             for txn in card_txns:
                 txn.statement_period = period
