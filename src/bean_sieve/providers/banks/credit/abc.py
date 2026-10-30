@@ -128,10 +128,17 @@ class ABCCreditProvider(BaseProvider):
     per_card_statement = True  # ABC sends separate statements per card
     coverage_priority = ("statement", "reissue")
 
+    def __init__(self) -> None:
+        super().__init__()
+        # A run calls parse() and post_output() on the same instance, so the
+        # report reads each file's summary from here.
+        self._summaries: dict[Path, StatementSummary] = {}
+
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse an ABC credit card statement, mailed or reissued."""
         lines = self._lines(file_path)
         summary = _read_summary(lines)
+        self._summaries[file_path] = summary
         statement_period = summary.statement_period
         statement_card = summary.card_number[-4:] if summary.card_number else None
         if file_path.suffix.lower() == ".pdf":
@@ -363,7 +370,10 @@ class ABCCreditProvider(BaseProvider):
             return None, "CNY"
 
     def _extract_summary(self, file_path: Path) -> StatementSummary:
-        return _read_summary(self._lines(file_path))
+        summary = self._summaries.get(file_path)
+        if summary is None:
+            summary = self._summaries[file_path] = _read_summary(self._lines(file_path))
+        return summary
 
     def post_output(
         self,
@@ -371,7 +381,11 @@ class ABCCreditProvider(BaseProvider):
         result: ReconcileResult,
         context: ReconcileContext,
     ) -> str:
-        """Append statement summary comparison and rebate entries to output."""
+        """Append statement summary comparison and rebate entries to output.
+
+        Relies on the run calling this on the instance that ran parse(), whose
+        stored summaries it reads instead of reopening each file.
+        """
         source_files = self.own_statement_paths(context)
         # A file statement selection dropped repeats the one adopted for its
         # cycle; reporting it would list the card twice.
@@ -390,9 +404,9 @@ class ABCCreditProvider(BaseProvider):
         summary_lines.append("; " + "=" * 60)
 
         for file_path in sorted(source_files):
-            summary = self._extract_summary(file_path)
             parsed = context.parsed.get(file_path)
             txns = self.parse(file_path) if parsed is None else parsed
+            summary = self._extract_summary(file_path)
 
             # Get card info
             card_last4 = summary.card_number[-4:] if summary.card_number else "????"

@@ -9,6 +9,7 @@ from pathlib import Path
 import fitz
 import pytest
 
+from bean_sieve.api import full_reconcile
 from bean_sieve.config.schema import Config, ProviderConfig
 from bean_sieve.core.coverage import CoverageEntry, select
 from bean_sieve.core.metadata_keys import STATEMENT_CYCLE
@@ -732,6 +733,32 @@ class TestABCPostOutput:
 
         assert "尾号 1234" in output
         assert "5678" not in output
+
+    def test_run_reads_each_statement_once(self, tmp_path, monkeypatch):
+        """The report reuses what parse read instead of reopening the file."""
+        reads: list[Path] = []
+        lines = ABCCreditProvider._lines
+
+        def counting_lines(self, file_path):
+            reads.append(file_path)
+            return lines(self, file_path)
+
+        monkeypatch.setattr(ABCCreditProvider, "_lines", counting_lines)
+        example = EXAMPLES / "abc_credit"
+        statements = sorted(
+            p
+            for p in example.iterdir()
+            if p.suffix in ABCCreditProvider.supported_formats
+        )
+
+        full_reconcile(
+            statements,
+            example / "ledger.bean",
+            config_path=example / "bean-sieve.yaml",
+            output_path=tmp_path / "out.bean",
+        )
+
+        assert sorted(reads) == statements
 
 
 class TestABCRebateAdjustment:
