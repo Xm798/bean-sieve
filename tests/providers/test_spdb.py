@@ -259,6 +259,20 @@ class TestSPDBCellFormats:
         assert transaction.amount == Decimal("73.19")
         assert transaction.currency == "USD"
 
+    @pytest.mark.parametrize(
+        ("value", "expected"), [(2468.0, "2468.00"), (1357.07 + 0.1, "1357.17")]
+    )
+    def test_numeric_amount_cells_in_cents(
+        self, tmp_path: Path, value: float, expected: str
+    ) -> None:
+        rows: list[list[object]] = [
+            ["20300102", "20300103", "payee-a", "1234", "测试标准卡", "人民币",
+             value, "-"],
+        ]  # fmt: skip
+        path = create_spdb_xls(rows, tmp_path / "numeric-amount.xls")
+        (txn,) = SPDBCreditProvider().parse(path)
+        assert str(txn.amount) == expected
+
     def test_amount_with_thousands_separator(self, tmp_path: Path) -> None:
         rows = [
             [

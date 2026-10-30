@@ -270,6 +270,18 @@ class TestCNCBCreditProvider:
 class TestCNCBEdgeCases:
     """Tests for edge cases in CNCB statement parsing."""
 
+    @pytest.mark.parametrize(
+        ("value", "expected"), [(2468.0, "2468.00"), (1357.07 + 0.1, "1357.17")]
+    )
+    def test_numeric_amount_cells_in_cents(self, tmp_path, value, expected):
+        rows = [
+            ["2030-01-02", "2030-01-02", "payee-a", "1234", "人民币", "人民币",
+             value, value],
+        ]  # fmt: skip
+        path = create_cncb_xls(rows, tmp_path / "已出账单明细.xls")
+        (txn,) = CNCBCreditProvider().parse(path)
+        assert str(txn.amount) == expected
+
     def test_skip_invalid_rows(self, tmp_path):
         """Test that rows with invalid data are skipped."""
         rows = [

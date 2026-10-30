@@ -11,6 +11,7 @@ from pathlib import Path
 from ....core.types import Transaction
 from ... import register_provider
 from ..._tabular import (
+    amount_cell_str,
     join_description,
     load_openpyxl_workbook,
     masked_card_last4,
@@ -141,7 +142,7 @@ class ABCDebitProvider(BaseProvider):
         summary = str(row[self.COL_SUMMARY] or "").strip()
         description = join_description(purpose, summary)
 
-        balance = str(row[self.COL_BALANCE] or "").strip()
+        balance = amount_cell_str(row[self.COL_BALANCE] or "")
         counterparty_account = str(row[self.COL_COUNTERPARTY_ACCOUNT] or "").strip()
         bank = str(row[self.COL_BANK] or "").strip()
         channel = str(row[self.COL_CHANNEL] or "").strip()
@@ -197,7 +198,7 @@ class ABCDebitProvider(BaseProvider):
     def _parse_amount(self, value) -> Decimal | None:
         """Parse signed amount string. Negate: source -=expense → positive, source +=income → negative."""
         try:
-            cleaned = str(value or "").replace(",", "").strip()
+            cleaned = amount_cell_str(value or "").replace(",", "")
             if not cleaned:
                 return None
             d = Decimal(cleaned)

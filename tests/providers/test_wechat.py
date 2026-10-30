@@ -5,7 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from bean_sieve.providers import get_provider
 from bean_sieve.providers.payment.wechat import WechatProvider
@@ -148,6 +148,21 @@ class TestWechatProvider:
         assert income.amount == Decimal("-100.00")  # income is negative
         assert income.payee == "张三"
         assert income.is_income
+
+    @pytest.mark.parametrize(
+        ("value", "expected"), [(2468.0, "2468.00"), (1357.07 + 0.1, "1357.17")]
+    )
+    def test_numeric_amount_cell_in_cents(self, wechat_xlsx_file, value, expected):
+        wb = load_workbook(wechat_xlsx_file)
+        ws = wb.active
+        assert ws is not None
+        row = next(r for r in ws.iter_rows() if r[8].value == "TX001")
+        row[5].value = value
+        wb.save(wechat_xlsx_file)
+
+        txns = WechatProvider().parse(wechat_xlsx_file)
+        (txn,) = [t for t in txns if t.order_id == "TX001"]
+        assert str(txn.amount) == expected
 
     def test_metadata_extraction(self, wechat_xlsx_file):
         """Test that metadata is properly extracted."""

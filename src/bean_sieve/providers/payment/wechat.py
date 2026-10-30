@@ -15,6 +15,7 @@ from ...core.metadata_keys import WITHDRAWAL_TARGET
 from ...core.preset_rules import PresetRule, PresetRuleAction, PresetRuleCondition
 from ...core.types import Transaction
 from .. import register_provider
+from .._tabular import amount_cell_str
 from ..base import BaseProvider
 from ._utils import extract_card_last4
 
@@ -57,6 +58,8 @@ LINGQIANTONG_OUT_REGEX = re.compile(LINGQIANTONG_OUT_PREFIX + "(.+)$")
 
 # Number of header lines to skip in WeChat CSV/XLSX
 WECHAT_HEADER_LINES = 17
+
+_COL_AMOUNT = 5
 
 # Regex to extract commission from remarks
 COMMISSION_REGEX = re.compile(r"\d+\.\d{2}")
@@ -135,8 +138,14 @@ class WechatProvider(BaseProvider):
             if line_num < WECHAT_HEADER_LINES:
                 continue
 
-            # Convert tuple to list and filter None values
-            row_data = [str(cell) if cell is not None else "" for cell in row]
+            row_data = [
+                ""
+                if cell is None
+                else amount_cell_str(cell)
+                if col == _COL_AMOUNT
+                else str(cell)
+                for col, cell in enumerate(row)
+            ]
 
             # Skip empty rows
             if not row_data or all(not cell for cell in row_data):
@@ -224,7 +233,7 @@ class WechatProvider(BaseProvider):
         peer = row[2]
         item = row[3]
         order_type_str = row[4]
-        amount_str = row[5]
+        amount_str = row[_COL_AMOUNT]
         method = row[6]
         status = row[7]
         order_id = row[8] if len(row) > 8 else ""

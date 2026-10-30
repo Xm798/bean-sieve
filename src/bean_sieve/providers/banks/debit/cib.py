@@ -13,6 +13,7 @@ import xlrd
 from ....core.types import Transaction
 from ... import register_provider
 from ..._tabular import (
+    amount_cell_str,
     join_description,
     normalize_cell_str,
     sheet_head_contains,
@@ -163,7 +164,7 @@ class CIBDebitProvider(BaseProvider):
         description = join_description(summary, purpose)
 
         metadata: dict[str, str] = {"summary": summary}
-        balance = str(row[self.COL_BALANCE]).strip()
+        balance = amount_cell_str(row[self.COL_BALANCE])
         if balance:
             metadata["balance"] = balance
         if counterparty_bank:
@@ -212,8 +213,8 @@ class CIBDebitProvider(BaseProvider):
 
     def _parse_amount(self, row: list) -> Decimal | None:
         """Parse amount. Expense=positive, income=negative."""
-        expense = to_decimal(row[self.COL_EXPENSE])
-        income = to_decimal(row[self.COL_INCOME])
+        expense = to_decimal(amount_cell_str(row[self.COL_EXPENSE]))
+        income = to_decimal(amount_cell_str(row[self.COL_INCOME]))
 
         if expense is not None and income is not None:
             logger.warning(

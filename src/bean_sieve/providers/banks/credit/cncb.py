@@ -11,7 +11,12 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import currency_code, normalize_cell_str, sheet_head_contains
+from ..._tabular import (
+    amount_cell_str,
+    currency_code,
+    normalize_cell_str,
+    sheet_head_contains,
+)
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -128,7 +133,7 @@ class CNCBCreditProvider(BaseProvider):
             currency = self._map_currency(str(row[self.COL_SETTLE_CURRENCY]).strip())
 
             # Use settlement amount (结算金额)
-            amount = self._parse_amount(row[self.COL_SETTLE_AMOUNT])
+            amount = self._parse_amount(row[self.COL_SETTLE_AMOUNT], currency)
             if amount is None:
                 logger.warning("Invalid amount at row %d in %s", row_idx, file_path)
                 return None
@@ -158,13 +163,10 @@ class CNCBCreditProvider(BaseProvider):
         parts = date_str.split("-")
         return date(int(parts[0]), int(parts[1]), int(parts[2]))
 
-    def _parse_amount(self, value) -> Decimal | None:
+    def _parse_amount(self, value, currency: str) -> Decimal | None:
         """Parse amount value from cell."""
         try:
-            if isinstance(value, float):
-                return Decimal(str(value))
-            cleaned = str(value).replace(",", "").strip()
-            return Decimal(cleaned)
+            return Decimal(amount_cell_str(value, currency).replace(",", ""))
         except (InvalidOperation, ValueError):
             return None
 

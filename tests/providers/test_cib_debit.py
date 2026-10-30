@@ -146,6 +146,24 @@ def cib_xls_file(tmp_path: Path) -> Path:
 class TestCIBDebitProvider:
     """Tests for CIBDebitProvider."""
 
+    @pytest.mark.parametrize(
+        ("value", "expected"), [(2468.0, "2468.00"), (1357.07 + 0.1, "1357.17")]
+    )
+    def test_numeric_amount_cells_in_cents(
+        self, tmp_path: Path, value: float, expected: str
+    ) -> None:
+        transactions = [
+            {
+                "tx_time": "2030-01-02 10:00:00",
+                "post_date": "2030-01-02",
+                "expense": value,
+                "balance": value,
+            },
+        ]
+        (txn,) = CIBDebitProvider().parse(create_cib_xls(tmp_path, transactions))
+        assert str(txn.amount) == expected
+        assert txn.metadata["balance"] == expected
+
     def test_provider_registration(self) -> None:
         """Test that CIB debit provider is properly registered."""
         provider = get_provider("cib_debit")

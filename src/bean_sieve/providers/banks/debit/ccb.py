@@ -15,7 +15,7 @@ from ... import register_provider
 from ..._tabular import (
     join_description,
     masked_card_last4,
-    normalize_cell_str,
+    row_cells,
     sheet_head_contains,
     to_decimal,
 )
@@ -63,6 +63,7 @@ class CCBDebitProvider(BaseProvider):
         "交易地点/附言": "location",
     }
     AMOUNT_FIELDS = frozenset({"signed_amount", "expense", "income"})
+    NUMERIC_FIELDS = AMOUNT_FIELDS | {"balance"}
 
     HEADER_KEYWORD = "交易日期"
     # The two layouts title the sheet in English and in Chinese respectively.
@@ -91,9 +92,8 @@ class CCBDebitProvider(BaseProvider):
             if self._is_footer(row):
                 break
 
-            cells = dict.fromkeys(self.COLUMN_FIELDS.values(), "")
-            cells.update(
-                (field, normalize_cell_str(row[col])) for field, col in columns.items()
+            cells = row_cells(
+                row, columns, self.COLUMN_FIELDS.values(), self.NUMERIC_FIELDS
             )
             txn = self._parse_row(cells, row_idx + 1, card_last4, file_path)
             if txn:

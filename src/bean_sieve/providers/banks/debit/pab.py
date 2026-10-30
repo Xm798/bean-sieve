@@ -9,7 +9,11 @@ from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import load_openpyxl_workbook, sheet_head_contains
+from ..._tabular import (
+    amount_cell_str,
+    load_openpyxl_workbook,
+    sheet_head_contains,
+)
 from ...base import BaseProvider
 
 
@@ -98,7 +102,7 @@ class PABDebitProvider(BaseProvider):
         amount_raw = row[self.COL_AMOUNT]
         if amount_raw is None:
             return None
-        amount = Decimal(str(amount_raw))
+        amount = Decimal(amount_cell_str(amount_raw))
 
         tx_type = row[self.COL_TYPE]
         # "转入" = income (negative), "转出" = expense (positive)
@@ -127,9 +131,8 @@ class PABDebitProvider(BaseProvider):
         }
         if counterparty_account:
             metadata["counterparty_account"] = counterparty_account
-        balance = str(row[self.COL_BALANCE]).strip() if row[self.COL_BALANCE] else ""
-        if balance:
-            metadata["balance"] = balance
+        if row[self.COL_BALANCE]:
+            metadata["balance"] = amount_cell_str(row[self.COL_BALANCE])
 
         return Transaction(
             date=tx_date,

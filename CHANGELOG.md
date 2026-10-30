@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### 修复
 
+- 金额、余额存为数值单元格的 XLS/XLSX 导出补齐两位小数（建行/平安/中信/兴业/交行/农行借记卡，中信/浦发信用卡，微信）
 - 同一时刻入账的几笔交易，`balance` 断言固定取账单记账顺序里最后一笔之后的余额
 - 一期没有交易的账单也按它的账期检查，账本里这段时间的条目报为 Extra
 - 民生银行信用卡：读不到卡号的行记到各卡共用的账户，不再是 `Assets:FIXME`

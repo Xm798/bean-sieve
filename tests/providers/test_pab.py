@@ -279,6 +279,37 @@ class TestPABTransactionTypes:
         assert parsed[0].is_income
 
 
+class TestPABNumericCells:
+    @pytest.mark.parametrize(
+        ("amount", "balance", "amount_text", "balance_text"),
+        [
+            (4321, 2468, "4321.00", "2468.00"),
+            (2468.1, 1357.07 + 0.1, "2468.10", "1357.17"),
+        ],
+    )
+    def test_numeric_cells_in_cents(
+        self, tmp_path, amount, balance, amount_text, balance_text
+    ):
+        file_path = create_pab_xlsx(
+            tmp_path,
+            [{"time": "2030-01-02 10:00:00", "amount": amount, "balance": balance}],
+            card_suffix="1234",
+        )
+        (txn,) = PABDebitProvider().parse(file_path)
+        assert str(txn.amount) == amount_text
+        assert txn.metadata["balance"] == balance_text
+
+    def test_text_cells_unchanged(self, tmp_path):
+        file_path = create_pab_xlsx(
+            tmp_path,
+            [{"time": "2030-01-02 10:00:00", "amount": "4321.5", "balance": "2468.5"}],
+            card_suffix="1234",
+        )
+        (txn,) = PABDebitProvider().parse(file_path)
+        assert str(txn.amount) == "4321.5"
+        assert txn.metadata["balance"] == "2468.5"
+
+
 class TestPABDateTimeParsing:
     """Tests for PAB datetime parsing."""
 

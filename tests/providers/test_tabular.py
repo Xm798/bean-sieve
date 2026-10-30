@@ -14,6 +14,7 @@ import xlwt
 from openpyxl import Workbook
 
 from bean_sieve.providers._tabular import (
+    amount_cell_str,
     currency_code,
     find_header_line,
     first_masked_card_last4,
@@ -24,6 +25,7 @@ from bean_sieve.providers._tabular import (
     parse_stamp,
     read_csv_rows,
     read_text_lines,
+    row_cells,
     sheet_head_contains,
     to_decimal,
 )
@@ -88,6 +90,55 @@ class TestNormalizeCellStr:
     def test_non_finite_floats_raise(self, value: float, exc: type[Exception]) -> None:
         with pytest.raises(exc):
             normalize_cell_str(value)
+
+
+class TestAmountCellStr:
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (2468, "2468.00"),
+            (2468.0, "2468.00"),
+            (2468.1, "2468.10"),
+            (1357.07 + 0.1, "1357.17"),
+            (1.005, "1.01"),
+            (2468.125, "2468.13"),
+            (-4321.5, "-4321.50"),
+            (Decimal("8642"), "8642.00"),
+            (0.0, "0.00"),
+        ],
+    )
+    def test_numeric_cells_are_rendered_in_cents(
+        self, value: object, expected: str
+    ) -> None:
+        assert amount_cell_str(value) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "expected"), [(4321.0, "4321"), (2468.4, "2468"), (2468.5, "2469")]
+    )
+    def test_whole_unit_currency_has_no_decimals(
+        self, value: float, expected: str
+    ) -> None:
+        assert amount_cell_str(value, "JPY") == expected
+
+    @pytest.mark.parametrize("value", ["1,357.00", " 2468.5 ", "__", "", "--"])
+    def test_text_cells_are_unchanged(self, value: str) -> None:
+        assert amount_cell_str(value) == value.strip()
+
+
+class TestRowCells:
+    def test_numeric_fields_in_cents_and_missing_fields_empty(self) -> None:
+        cells = row_cells(
+            [20300102.0, 4321.0, 1357.5],
+            {"date": 0, "amount": 1, "balance": 2},
+            ("date", "amount", "balance", "summary"),
+            {"amount", "balance"},
+        )
+        assert cells == {
+            "date": "20300102",
+            "amount": "4321.00",
+            "balance": "1357.50",
+            "summary": "",
+        }
 
 
 class TestReadTextLines:

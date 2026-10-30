@@ -129,6 +129,25 @@ def bocom_xls_file(tmp_path: Path) -> Path:
 class TestBOCOMDebitProvider:
     """Tests for BOCOMDebitProvider."""
 
+    @pytest.mark.parametrize(
+        ("value", "expected"), [(2468.0, "2468.00"), (1357.07 + 0.1, "1357.17")]
+    )
+    def test_numeric_amount_cells_in_cents(
+        self, tmp_path: Path, value: float, expected: str
+    ) -> None:
+        transactions = [
+            {
+                "date": "2030-01-02",
+                "time": "2030-01-02 10:00:00",
+                "income": value,
+                "balance": value,
+            },
+        ]
+        path = create_bocom_xls(tmp_path, transactions)
+        (txn,) = BOCOMDebitProvider().parse(path)
+        assert str(txn.amount) == f"-{expected}"
+        assert txn.metadata["balance"] == expected
+
     def test_provider_registration(self) -> None:
         """Test that BOCOM debit provider is properly registered."""
         provider = get_provider("bocom_debit")

@@ -12,7 +12,7 @@ import xlrd
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import to_decimal
+from ..._tabular import amount_cell_str, to_decimal
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -183,7 +183,7 @@ class BOCOMDebitProvider(BaseProvider):
             metadata["counterparty_account"] = counterparty_account
         if counterparty_bank:
             metadata["counterparty_bank"] = counterparty_bank
-        balance = str(row[self.COL_BALANCE]).strip()
+        balance = amount_cell_str(row[self.COL_BALANCE])
         if balance and balance != "--":
             metadata["balance"] = balance
 
@@ -225,8 +225,8 @@ class BOCOMDebitProvider(BaseProvider):
 
     def _parse_amount(self, row: list) -> Decimal | None:
         """Parse amount from expense/income columns. Expense=positive, income=negative."""
-        expense = to_decimal(row[self.COL_EXPENSE])
-        income = to_decimal(row[self.COL_INCOME])
+        expense = to_decimal(amount_cell_str(row[self.COL_EXPENSE]))
+        income = to_decimal(amount_cell_str(row[self.COL_INCOME]))
 
         if expense is not None and income is not None:
             logger.warning(

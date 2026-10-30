@@ -317,6 +317,25 @@ class TestCCBNumericCellHandling:
         assert transactions[0].date == date(2025, 1, 15)
         assert transactions[0].amount == Decimal("200")
 
+    @pytest.mark.parametrize(
+        ("expense", "balance", "amount", "balance_text"),
+        [
+            (4321.0, 2468.0, "4321.00", "2468.00"),
+            (2468.1, 1357.07 + 0.1, "2468.10", "1357.17"),
+        ],
+    )
+    def test_numeric_amount_cells_in_cents(
+        self, tmp_path, expense, balance, amount, balance_text
+    ):
+        file_path = create_ccb_xls(
+            tmp_path,
+            [{"date": "20300102", "expense": expense, "balance": balance}],
+            card_suffix="1234",
+        )
+        (txn,) = CCBDebitProvider().parse(file_path)
+        assert str(txn.amount) == amount
+        assert txn.metadata["balance"] == balance_text
+
     def test_zero_counterparty_not_leaked_as_payee(self, tmp_path):
         """Test that numeric zero counterparty does not become '0.0' payee."""
         wb = xlwt.Workbook()

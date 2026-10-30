@@ -119,13 +119,13 @@ class TestParse:
 
     def test_numeric_cells(self, tmp_path, provider):
         rows = [
-            [20300103, "08:00:00", "", 73.0, 927.0, "payee-d", "", "", "消费",
+            [20300103, "08:00:00", "", 4321.0, 8642.0, "payee-d", "", "", "消费",
              "", "--", "完成"],
         ]  # fmt: skip
         (txn,) = provider.parse(create_xls(tmp_path, rows=rows))
         assert txn.date == date(2030, 1, 3)
-        assert txn.amount == Decimal("73")
-        assert txn.metadata["balance"] == "927"
+        assert str(txn.amount) == "4321.00"
+        assert txn.metadata["balance"] == "8642.00"
 
     def test_unknown_currency_raises(self, tmp_path, provider):
         with pytest.raises(ValueError, match="currency"):

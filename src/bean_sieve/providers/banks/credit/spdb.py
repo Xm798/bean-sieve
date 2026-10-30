@@ -21,7 +21,7 @@ from ....core.metadata_keys import (
 )
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import currency_code
+from ..._tabular import amount_cell_str, currency_code
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -341,15 +341,15 @@ class SPDBCreditProvider(BaseProvider):
             if not description:
                 raise ValueError("empty description")
 
-            amount = self._parse_amount(row[self.COL_AMOUNT])
-            if amount is None:
-                raise ValueError("invalid amount")
-
             currency = self._map_currency(
                 self._normalize_cell_str(row[self.COL_CURRENCY])
             )
             if not currency:
                 raise ValueError("empty currency")
+
+            amount = self._parse_amount(row[self.COL_AMOUNT], currency)
+            if amount is None:
+                raise ValueError("invalid amount")
 
             card_last4 = self._normalize_card_last4(row[self.COL_CARD_LAST4])
             metadata: dict[str, str | Decimal] = {}
@@ -422,13 +422,10 @@ class SPDBCreditProvider(BaseProvider):
         return date(int(compact[:4]), int(compact[4:6]), int(compact[6:8]))
 
     @staticmethod
-    def _parse_amount(value: object) -> Decimal | None:
+    def _parse_amount(value: object, currency: str) -> Decimal | None:
         """Parse a signed transaction amount."""
         try:
-            if isinstance(value, float):
-                return Decimal(str(value))
-            cleaned = str(value).replace(",", "").strip()
-            return Decimal(cleaned)
+            return Decimal(amount_cell_str(value, currency).replace(",", ""))
         except (InvalidOperation, ValueError):
             return None
 
@@ -439,8 +436,8 @@ class SPDBCreditProvider(BaseProvider):
             return None, None
 
         amount_value, currency_value = value.rsplit("(", 1)
-        amount = cls._parse_amount(amount_value)
         currency = cls._map_currency(currency_value[:-1].strip())
+        amount = cls._parse_amount(amount_value, currency)
         if amount is None or not currency:
             return None, None
         return amount, currency

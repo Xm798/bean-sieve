@@ -40,6 +40,24 @@ HEADER_ROW = [
 class TestABCDebitProvider:
     """Tests for ABCDebitProvider."""
 
+    @pytest.mark.parametrize(
+        ("value", "expected"), [(2468.0, "2468.00"), (1357.07 + 0.1, "1357.17")]
+    )
+    def test_numeric_amount_cells_in_cents(
+        self, tmp_path: Path, value: float, expected: str
+    ) -> None:
+        rows = [
+            TITLE_ROW,
+            INFO_ROW,
+            HEADER_ROW,
+            ["2030-01-02", "10:00:00", -value, value, "payee-a", "", "", "",
+             "", "", ""],
+        ]  # fmt: skip
+        f = _create_xlsx(tmp_path / "detail20300102.xlsx", rows)
+        (txn,) = ABCDebitProvider().parse(f)
+        assert str(txn.amount) == expected
+        assert txn.metadata["balance"] == expected
+
     def test_parse_basic(self, tmp_path: Path) -> None:
         """Test basic expense and income parsing."""
         rows = [

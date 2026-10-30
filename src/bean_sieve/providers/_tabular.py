@@ -15,9 +15,9 @@ import re
 import shutil
 import tempfile
 import warnings
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
 import xlrd
@@ -58,6 +58,43 @@ def normalize_cell_str(value: object) -> str:
     if isinstance(value, float) and value == int(value):
         return str(int(value))
     return str(value).strip()
+
+
+# Currencies without minor units; every other currency prints two decimals.
+_WHOLE_UNIT_CURRENCIES = frozenset({"JPY", "KRW"})
+
+
+def amount_cell_str(value: object, currency: str = "CNY") -> str:
+    """Convert an amount or balance cell to text, numeric cells in minor units.
+
+    Workbooks store a numeric cell as a binary float, which renders as "7000"
+    or "0.30000000000000004" rather than the "7000.00" the bank prints. Text
+    cells pass through ``normalize_cell_str`` unchanged.
+    """
+    if isinstance(value, int | float | Decimal) and not isinstance(value, bool):
+        unit = Decimal(1) if currency in _WHOLE_UNIT_CURRENCIES else Decimal("0.01")
+        # Banks round half up; Decimal's default half-even turns 1.005 into 1.00.
+        return str(Decimal(str(value)).quantize(unit, rounding=ROUND_HALF_UP))
+    return normalize_cell_str(value)
+
+
+def row_cells(
+    row: Sequence[object],
+    columns: Mapping[str, int],
+    fields: Iterable[str],
+    numeric_fields: Collection[str],
+    currency: str = "CNY",
+) -> dict[str, str]:
+    """Read a workbook row as text keyed by field, "" for fields without a column."""
+    cells = dict.fromkeys(fields, "")
+    for field, col in columns.items():
+        value = row[col]
+        cells[field] = (
+            amount_cell_str(value, currency)
+            if field in numeric_fields
+            else normalize_cell_str(value)
+        )
+    return cells
 
 
 # Ordered widest-first: the BOM variant must win before plain utf-8 swallows it.

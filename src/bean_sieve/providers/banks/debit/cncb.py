@@ -14,6 +14,7 @@ from ..._tabular import (
     join_description,
     normalize_cell_str,
     parse_stamp,
+    row_cells,
     sheet_head_contains,
     to_decimal,
 )
@@ -39,6 +40,7 @@ _COLUMN_FIELDS = {
     "状态": "status",
 }
 _REQUIRED_FIELDS = frozenset({"date", "income", "expense"})
+_NUMERIC_FIELDS = frozenset({"income", "expense", "balance"})
 _METADATA_FIELDS = (
     "summary",
     "balance",
@@ -104,10 +106,7 @@ class CNCBDebitProvider(BaseProvider):
         # which keeps same-moment rows in the order their balances follow.
         for row_idx in range(sheet.nrows - 1, header_row, -1):
             row = sheet.row_values(row_idx)
-            cells = dict.fromkeys(_COLUMN_FIELDS.values(), "")
-            cells.update(
-                (field, normalize_cell_str(row[col])) for field, col in columns.items()
-            )
+            cells = row_cells(row, columns, _COLUMN_FIELDS.values(), _NUMERIC_FIELDS)
             txn = self._parse_row(cells, row_idx + 1, card_last4, currency, file_path)
             if txn:
                 transactions.append(txn)
