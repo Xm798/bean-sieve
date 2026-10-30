@@ -4,6 +4,8 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from bean_sieve.core.types import MatchResult, Transaction
 from tests.helpers import load_sieve, run_full_reconcile, write_alipay_csv
 
@@ -233,3 +235,141 @@ def test_matched_leg_exempts_at_most_one_sibling(tmp_path: Path) -> None:
 
     assert result.matched[0][1].posting.account == "Assets:Bal"
     assert [e.posting.account for e in result.extra] == ["Liabilities:Hb"]
+
+
+FX_OPENS = """
+2020-01-01 open Assets:Bank:CNY CNY
+2020-01-01 open Assets:Bank:USD USD
+2020-01-01 open Expenses:Fx CNY
+2020-01-01 open Income:Fx USD
+"""
+
+FX_GROUP = {"Assets:Bank:CNY", "Assets:Bank:USD"}
+
+
+def _fx_match(
+    tmp_path: Path,
+    ledger_body: str,
+    amount: str = "700.00",
+    currency: str = "CNY",
+    account: str = "Assets:Bank:CNY",
+    groups: list[set[str]] | None = None,
+) -> MatchResult:
+    sieve = load_sieve(tmp_path, ledger_body)
+    groups = groups or [FX_GROUP]
+    row = Transaction(
+        date=date(2030, 1, 5),
+        amount=Decimal(amount),
+        currency=currency,
+        description="exchange",
+        provider="test",
+        account=account,
+    )
+    return sieve.match(
+        [row], covered_accounts=sorted(set().union(*groups)), covered_groups=groups
+    )
+
+
+def _fx_exchange(usd_leg: str) -> str:
+    return (
+        FX_OPENS
+        + f"""
+2030-01-05 * "payee-g" "exchange"
+    Assets:Bank:CNY  -700.00 CNY
+    Assets:Bank:USD  {usd_leg}
+"""
+    )
+
+
+@pytest.mark.parametrize(
+    "usd_leg", ["100.00 USD @@ 700.00 CNY", "100.00 USD @ 7.00 CNY"]
+)
+def test_exchange_priced_leg_settled_by_matched_leg(
+    tmp_path: Path, usd_leg: str
+) -> None:
+    result = _fx_match(tmp_path, _fx_exchange(usd_leg))
+
+    assert result.matched[0][1].posting.account == "Assets:Bank:CNY"
+    assert result.extra == []
+
+
+def test_exchange_leg_settled_by_matched_priced_leg(tmp_path: Path) -> None:
+    result = _fx_match(
+        tmp_path,
+        _fx_exchange("100.00 USD @@ 700.00 CNY"),
+        amount="-100.00",
+        currency="USD",
+        account="Assets:Bank:USD",
+    )
+
+    assert result.matched[0][1].posting.account == "Assets:Bank:USD"
+    assert result.extra == []
+
+
+def test_exchange_within_one_account_settled(tmp_path: Path) -> None:
+    result = _fx_match(
+        tmp_path,
+        """
+2020-01-01 open Assets:Bank:Multi
+2030-01-05 * "payee-j" "exchange"
+    Assets:Bank:Multi  -700.00 CNY @@ 100.00 USD
+    Assets:Bank:Multi   100.00 USD
+""",
+        account="Assets:Bank:Multi",
+        groups=[{"Assets:Bank:Multi"}],
+    )
+
+    assert result.matched[0][1].posting.units.currency == "CNY"
+    assert result.extra == []
+
+
+@pytest.mark.parametrize(
+    ("ledger_body", "groups"),
+    [
+        pytest.param(
+            _fx_exchange("100.00 USD @@ 700.00 CNY"),
+            [{"Assets:Bank:CNY"}, {"Assets:Bank:USD"}],
+            id="other-group",
+        ),
+        pytest.param(
+            FX_OPENS
+            + """
+2030-01-05 * "payee-h" "partial exchange"
+    Assets:Bank:CNY  -700.00 CNY
+    Assets:Bank:USD    50.00 USD @@ 350.00 CNY
+    Expenses:Fx       350.00 CNY
+""",
+            None,
+            id="other-total-price",
+        ),
+        pytest.param(
+            FX_OPENS
+            + """
+2030-01-05 * "payee-i" "two currencies"
+    Assets:Bank:CNY  -700.00 CNY
+    Expenses:Fx       700.00 CNY
+    Assets:Bank:USD   100.00 USD
+    Income:Fx        -100.00 USD
+""",
+            None,
+            id="unpriced",
+        ),
+    ],
+)
+def test_other_currency_leg_stays_extra(
+    tmp_path: Path, ledger_body: str, groups: list[set[str]] | None
+) -> None:
+    result = _fx_match(tmp_path, ledger_body, groups=groups)
+
+    assert [e.posting.account for e in result.extra] == ["Assets:Bank:USD"]
+
+
+def test_uncovered_exchange_leg_is_not_reported(tmp_path: Path) -> None:
+    result = _fx_match(
+        tmp_path,
+        _fx_exchange("100.00 USD @@ 700.00 CNY"),
+        groups=[{"Assets:Bank:CNY"}],
+    )
+
+    assert result.matched[0][1].posting.account == "Assets:Bank:CNY"
+    assert result.extra == []

@@ -7,7 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from beancount import loader
-from beancount.core.data import Directive, TxnPosting
+from beancount.core.data import Directive, Posting, TxnPosting
 from beancount.core.data import Transaction as BeanTransaction
 
 from .metadata_keys import REBATE_TOPUP_MATCH
@@ -177,12 +177,10 @@ class Sieve:
                 ranges. An account listed here yields Extra entries only within its
                 ranges; an account absent from it keeps every unmatched entry.
             covered_groups: Optional sets of accounts that one statement speaks for
-                as a whole. An unmatched posting is exempt from Extra when it is
-                the opposite leg of a matched posting of the same ledger
-                transaction: a different account in the same group, same
-                currency, and the negated amount. Each matched posting exempts at
-                most one such leg. If None, covered_accounts forms the single
-                group (every account when covered_accounts is also None).
+                as a whole. An unmatched posting in the same group as a matched
+                sibling it offsets is exempt from Extra (see
+                _settled_transfer_legs). If None, covered_accounts forms the
+                single group (every account when covered_accounts is also None).
             meta_check: When True (default), card_last4 is a soft check producing
                 MetaDiagnostic entries. When False, card_last4 hard-filters matches.
             ambiguous_check: When True (default), matches with multiple viable
@@ -281,7 +279,8 @@ class Sieve:
         A transfer between two accounts of one statement-wide provider shows up
         as a single statement row, which consumes one leg; that same row also
         accounts for the opposite leg. One row settles one two-sided transfer,
-        so each matched leg pairs with at most one opposite leg.
+        so each matched leg pairs with at most one opposite leg. The two legs
+        of a currency exchange offset each other in the price currency.
         """
         if covered_groups is None and covered_accounts is not None:
             covered_groups = [set(covered_accounts)]
@@ -292,22 +291,26 @@ class Sieve:
             return any(a in group and b in group for group in covered_groups)
 
         tolerance = self.config.amount_tolerance
+
+        def offsets(leg: dict[str, Decimal], sibling: dict[str, Decimal]) -> bool:
+            return any(
+                abs(leg[currency] + sibling[currency]) <= tolerance
+                for currency in leg.keys() & sibling.keys()
+            )
+
         exempt: set[int] = set()
         for leg in matched:
-            units = leg.posting.units
-            if units is None or units.number is None:
+            leg_amounts = _amounts_by_currency(leg.posting)
+            if not leg_amounts:
                 continue
             for sibling in self._postings_by_txn[id(leg.txn)]:
                 posting = sibling.posting
                 if (
                     id(sibling) in used
                     or id(sibling) in exempt
-                    or posting.account == leg.posting.account
-                    or posting.units is None
-                    or posting.units.number is None
-                    or posting.units.currency != units.currency
-                    or abs(posting.units.number + units.number) > tolerance
+                    or _balance_key(posting) == _balance_key(leg.posting)
                     or not same_group(posting.account, leg.posting.account)
+                    or not offsets(leg_amounts, _amounts_by_currency(posting))
                 ):
                     continue
                 exempt.add(id(sibling))
@@ -604,6 +607,23 @@ class Sieve:
             actual=meta_card,
             message=message,
         )
+
+
+def _balance_key(posting: Posting) -> tuple[str, str | None]:
+    return posting.account, posting.units.currency if posting.units else None
+
+
+def _amounts_by_currency(posting: Posting) -> dict[str, Decimal]:
+    """Beancount stores an `@@` total as a per-unit price, so units × price
+    recovers the total in the price currency."""
+    units = posting.units
+    if units is None or units.number is None:
+        return {}
+    amounts = {units.currency: units.number}
+    price = posting.price
+    if price is not None and price.number is not None:
+        amounts[price.currency] = units.number * price.number
+    return amounts
 
 
 def _has_gross_fallback(txn: Transaction) -> bool:
