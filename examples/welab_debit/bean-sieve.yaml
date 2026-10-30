@@ -10,6 +10,8 @@ defaults:
 
 providers:
   welab_debit:
+    # Closing balance of each currency section, as a balance assertion.
+    balance: true
     # One account per currency section of the statement.
     accounts:
       HKD: Assets:Bank:WeLab:HKD

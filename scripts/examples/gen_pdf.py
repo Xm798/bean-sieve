@@ -1,6 +1,5 @@
 """PDF statements drawn with PyMuPDF."""
 
-import re
 from datetime import date, timedelta
 from decimal import Decimal
 from itertools import accumulate
@@ -142,68 +141,106 @@ def spdb_credit_pdf(out: Path, month: str, pages: list[list[list[str]]]) -> None
     pdf.save(out)
 
 
+# Cell edges of WeLab's statement table. Every row outlines its own cells; a
+# shaded balance row splits the width differently from a transaction row.
+_WELAB_ROW_EDGES = (61, 69, 145, 249, 475, 535, 544)
+_WELAB_BALANCE_EDGES = (61, 69, 145, 177, 430, 475, 535, 544)
+_WELAB_LINE_H = 8.0
+
+
+class _WelabTable:
+    """Draws WeLab statement sections top-down on one page."""
+
+    def __init__(self, pdf: PdfPage, top: float) -> None:
+        self.pdf = pdf
+        self.y = top
+
+    def _border(self, y: float, edges: tuple[int, ...]) -> None:
+        for x0, x1 in zip(edges, edges[1:]):
+            self.pdf.page.draw_line((x0, y), (x1, y), color=(0.8, 0.8, 0.8), width=0.5)
+
+    def _right(self, y: float, text: str, size: float = 6.0) -> None:
+        width = fitz.get_text_length(text, fontname="china-s", fontsize=size)
+        self.pdf.put(534 - width, y, text, size)
+
+    def section(self, marker: str, unit: tuple[str, str]) -> None:
+        self.pdf.put(94, self.y, marker)
+        # An underline under the title, as on the real statement.
+        self.pdf.page.draw_line((400, self.y + 4), (545, self.y + 4), width=0.5)
+        top = self.y + 16
+        self.pdf.page.draw_rect(
+            fitz.Rect(60, top, 545, top + 30), color=None, fill=(0.9, 0.9, 0.9)
+        )
+        # The header labels do not start at the cell edges.
+        for x, cn, en in ((70, "日期", "Date"), (145, "种类", "Type"), (265, "交易详情", "Transaction Description")):  # fmt: skip
+            self.pdf.put(x, top + 12, cn)
+            self.pdf.put(x, top + 21, en)
+        self._right(top + 12, f"金额 ({unit[0]})")
+        self._right(top + 21, f"Amount ({unit[1]})")
+        self.y = top + 30
+
+    def balance(self, day: str, cn: str, en: str, amount: str) -> None:
+        top, bottom = self.y, self.y + 21
+        edges = _WELAB_BALANCE_EDGES
+        for x0, x1 in zip(edges, edges[1:]):
+            self.pdf.page.draw_rect(
+                fitz.Rect(x0, top, x1, bottom), color=None, fill=(0.95, 0.95, 0.95)
+            )
+        self._border(top, edges)
+        self._border(bottom, edges)
+        self.pdf.put(70, top + 11, day)
+        self.pdf.put(145, top + 11, cn)
+        self.pdf.put(177, top + 11, en)
+        self._right(top + 11, amount)
+        self.y = bottom
+
+    def row(self, day: str, kind: list[str], detail: list[str], amount: str) -> None:
+        top = self.y
+        bottom = top + 14 + _WELAB_LINE_H * max(len(kind), len(detail))
+        self._border(top, _WELAB_ROW_EDGES)
+        self._border(bottom, _WELAB_ROW_EDGES)
+        self.pdf.put(70, top + 11, day)
+        # The built-in CJK font runs wider than the bank's, so wrapped lines
+        # use a smaller size to stay inside their cells.
+        for column_x, lines in ((146, kind), (250, detail)):
+            for i, text in enumerate(lines):
+                self.pdf.put(column_x, top + 11 + _WELAB_LINE_H * i, text, 6.0 if i == 0 else 4.0)  # fmt: skip
+        self._right(top + 11, amount)
+        self.y = bottom
+
+    def gap(self, height: float) -> None:
+        self.y += height
+
+
 @generator("welab_debit")
 def welab_debit(out_dir: Path) -> None:
-    date_x, type_x, desc_x, amt_x = 55, 165, 270, 505
     pdf = PdfPage(font_size=6.0)
-    put = pdf.put
+    pdf.put(40, 75, "Your Bank Statement (1 Feb 2030 - 28 Feb 2030) 你的银行月结单")
+    pdf.put(40, 90, "寰球钱包 核心账户 Global Wallet Core Account (包括智安存 Include Money Safe)")  # fmt: skip
+    pdf.put(40, 100, "定期存款 Time Deposit（包括目标定期存款及智安存 Includes Target Time Deposit and Money Safe）")  # fmt: skip
 
-    def row(y: float, d: str, ty: str, de: str, am: str) -> None:
-        put(date_x, y, d)
-        # A bilingual type wraps onto a second line, Chinese first.
-        match = re.match(r"^([一-鿿（）()]+)\s*(.*)$", ty)
-        if match and match.group(2):
-            put(type_x, y, match.group(1))
-            put(type_x, y + 8, match.group(2))
-        else:
-            put(type_x, y, ty)
-        put(desc_x, y, de)
-        put(amt_x, y, am)
+    table = _WelabTable(pdf, 130)
+    table.section("核心账户 Core Account (1010000000) - 港元 HKD (包括智安存 Include Money Safe)", ("港元", "HKD"))  # fmt: skip
+    table.balance("1 Feb 2030", "承上结余", "Balance From Previous Statement", "400.00")
+    table.row("3 Feb 2030", ["收款", "Receive money"], ["Receive money from employer-a", "Ref: FT30F001"], "10,000.00")  # fmt: skip
+    table.row("6 Feb 2030", ["付款", "Send money"], ["Transfer to landlord-b", "Ref: FT30F002"], "-6,000.00")  # fmt: skip
+    table.row("10 Feb 2030", ["外币兑换", "Foreign currency exchange"], ["CNY/HKD @ 1.10", "Ref: FX30F00003"], "-1,100.00")  # fmt: skip
+    table.row("15 Feb 2030", ["服务收费", "Service Charge"], ["service-fee-a", "Ref: FT30F004"], "-20.00")  # fmt: skip
+    table.row("28 Feb 2030", ["HKD 存款利息", "HKD Deposit interest"], ["GoSave interest", "Ref: FT30F005"], "12.00")  # fmt: skip
+    table.balance("28 Feb 2030", "帐户结余", "Closing Balance", "3,292.00")
 
-    put(40, 75, "Your Bank Statement (1 Feb 2030 - 28 Feb 2030) 你的银行月结单")
-    put(40, 90, "寰球钱包 核心账户 Global Wallet Core Account")
-    put(40, 100, "定期存款 Time Deposits - GoSave 2.0 智安存")
+    table.gap(30)
+    table.section("核心账户 Core Account (1010000000) - 人民币 CNY (包括智安存 Include Money Safe)", ("人民币", "CNY"))  # fmt: skip
+    table.balance("1 Feb 2030", "承上结余", "Balance From Previous Statement", "250.00")
+    # Traded on the last day of January, posted in February.
+    table.row("31 Jan 2030", ["借记卡消费", "Debit Card spending"], ["WEIXIN*store-c CHN Online 5999", "Ref: FT30F009, Transaction Date: 2 Feb 2030"], "-60.00")  # fmt: skip
+    table.row("10 Feb 2030", ["外币兑换", "Foreign currency exchange"], ["CNY/HKD @ 1.10", "Ref: FX30F00003"], "1,000.00")  # fmt: skip
+    table.row("18 Feb 2030", ["借记卡消费", "Debit Card spending"], ["WEIXIN*store-c CHN Online 5999", "Ref: FT30F006, Transaction Date: 20 Feb 2030"], "-300.00")  # fmt: skip
+    table.row("21 Feb 2030", ["借记卡退款", "Debit Card Refund"], ["WEIXIN*store-c CHN Online", "Ref: FT30F007"], "100.00")  # fmt: skip
+    table.row("24 Feb 2030", ["借记卡消费", "Debit Card spending"], ["Alipay*shop-d CHN Online 5812", "Ref: FT30F008, Transaction Date: 26 Feb 2030"], "-45.00")  # fmt: skip
+    table.balance("28 Feb 2030", "帐户结余", "Closing Balance", "945.00")
 
-    put(
-        40,
-        120,
-        "核心账户 Core Account (1010000000) - 港元 HKD (包括智安存 Include Money Safe)",
-    )
-    put(40, 138, "日期 种类 交易详情 金额 (港元)")
-    put(40, 147, "Date Type Transaction Description Amount (HKD)")
-    row(168, "01 Feb 2030", "承上结余", "Balance From Previous Statement", "-")
-    row(190, "03 Feb 2030", "收款 Receive money", "Receive money from employer-a", "10,000.00")  # fmt: skip
-    put(desc_x, 198, "Ref: FT30F001", 4)
-    row(212, "06 Feb 2030", "转账 Transfer", "Transfer to landlord-b Ref: FT30F002", "-6,000.00")  # fmt: skip
-    row(234, "10 Feb 2030", "外币兑换", "CNY/HKD @ 1.10 Ref: FX30F00003", "-1,100.00")
-    row(256, "15 Feb 2030", "服务收费 Service Charge", "service-fee-a Ref: FT30F004", "-20.00")  # fmt: skip
-    row(278, "28 Feb 2030", "利息 Interest", "GoSave interest Ref: FT30F005", "12.00")
-    row(300, "28 Feb 2030", "帐户结余 Closing Balance", "", "2,892.00")
-
-    put(
-        40,
-        340,
-        "核心账户 Core Account (1010000000) - 人民币 CNY (包括智安存 Include Money Safe)",
-    )
-    put(40, 358, "日期 种类 交易详情 金额 (人民币)")
-    put(40, 367, "Date Type Transaction Description Amount (CNY)")
-    row(388, "10 Feb 2030", "外币兑换", "CNY/HKD @ 1.10 Ref: FX30F00003", "1,000.00")
-    put(date_x, 410, "18 Feb 2030")
-    put(type_x, 410, "借记卡消费")
-    put(type_x, 418, "Debit Card spending")
-    put(desc_x, 410, "WEIXIN*store-c CHN Online 5999")
-    put(desc_x, 418, "Ref: FT30F006, Transaction Date: 17 Feb 2030", 4)
-    put(amt_x, 410, "-300.00")
-    row(432, "21 Feb 2030", "借记卡退款 Debit Card Refund", "WEIXIN*store-c CHN Online Ref: FT30F007", "100.00")  # fmt: skip
-    put(date_x, 454, "24 Feb 2030")
-    put(type_x, 454, "借记卡消费")
-    put(type_x, 462, "Debit Card spending")
-    put(desc_x, 454, "Alipay*shop-d CHN Online 5812")
-    put(desc_x, 462, "Ref: FT30F008, Transaction Date: 24 Feb 2030", 4)
-    put(amt_x, 454, "-45.00")
-    row(476, "28 Feb 2030", "帐户结余 Closing Balance", "", "755.00")
-
-    put(40, 750, "Page 1 of 1")
+    pdf.put(280, 818, "Page 1 of 1")
     pdf.save(out_dir / "welab_203002.pdf")
 
 

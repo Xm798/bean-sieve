@@ -4,6 +4,12 @@
 ; Source: welab_203002.pdf
 ; ============================================================
 
+2030-01-31 * "WEIXIN*store-c" "WEIXIN*store-c CHN Online 5999"
+    order_id: "FT30F009"
+    source: "welab_debit"
+    Assets:Bank:WeLab:CNY  -60.00 CNY
+    Expenses:Shopping  60.00 CNY
+
 2030-02-03 * "employer-a" "Receive money from employer-a"
     order_id: "FT30F001"
     source: "welab_debit"
@@ -47,7 +53,7 @@
     Income:Bank:Interest  -12.00 HKD
 
 ; --- Summary ---
-; Matched: 2, Missing: 7, Extra: 1
+; Matched: 2, Missing: 8, Extra: 1
 
 ; ============================================================
 ; Extra entries in ledger (1)
@@ -59,3 +65,6 @@
   Assets:Bank:WeLab:CNY  -42.00 CNY
   Expenses:Shopping
 
+
+2030-03-01 balance Assets:Bank:WeLab:CNY  945.00 CNY
+2030-03-01 balance Assets:Bank:WeLab:HKD  3292.00 HKD

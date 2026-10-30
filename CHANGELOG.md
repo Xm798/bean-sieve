@@ -21,11 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 广发银行信用卡：解析 PDF 补发账单；同一账单周期邮件与 PDF 同时传入时只采用邮件
 - 民生银行信用卡：同一账单周期的正本与补发邮件同时传入时只采用靠前的一份
 - 农业银行信用卡：解析 PDF 补发账单；同一账单周期邮件与 PDF 同时传入时只采用邮件
+- 汇立银行：`balance: true` 时按各币种的帐户结余生成余额断言，交易带 `balance` 元数据
 - 配置项 `fee_account`（`defaults` 和 `providers.<id>` 下均可设置）：账单里单列的手续费另记一条 posting，默认记到 `Expenses:FIXME`
 
 ### 修复
 
 - 带 `@@` 价格的换汇 posting 不再抢走同日同额的外币付款，换汇的另一条腿也不再误报缺失
+- 汇立银行：折成多行的交易详情不再串到下一笔；繁体月结单也能解析
+- 汇立银行：各币种的承上结余加各行金额对不上帐户结余时打印警告
+- 汇立银行：卡消费的 `Transaction Date` 作为入账日，不再输出为 `transaction_date` 元数据
+- 汇立银行：`transaction_type` 不再重复币种前缀（如 `HKD HKD Deposit interest`），英文里的括号也保留
+- 汇立银行：2026-09 起首页的「GoSave 2.0」改为「Time Deposit」，改按 `Global Wallet Core Account` 和 `Money Safe` 识别
 - `bean-sieve --version` 不再报 `'bean-sieve' is not installed`
 - 中信、浦发信用卡没有账单周期的导出（浦发含读不到账单日的 PDF）按记账日确定对账范围，分期和延迟入账的交易日不再拉宽范围
 - 中信银行借记卡：外币账户按币种解析；币种识别不了的文件打印警告后跳过，不再中断整次运行
