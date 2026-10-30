@@ -242,6 +242,8 @@ FX_OPENS = """
 2020-01-01 open Assets:Bank:USD USD
 2020-01-01 open Expenses:Fx CNY
 2020-01-01 open Income:Fx USD
+2020-01-01 open Assets:Cash CNY
+2020-01-01 open Expenses:Fee CNY
 """
 
 FX_GROUP = {"Assets:Bank:CNY", "Assets:Bank:USD"}
@@ -337,10 +339,22 @@ def test_exchange_within_one_account_settled(tmp_path: Path) -> None:
 2030-01-05 * "payee-h" "partial exchange"
     Assets:Bank:CNY  -700.00 CNY
     Assets:Bank:USD    50.00 USD @@ 350.00 CNY
-    Expenses:Fx       350.00 CNY
+    Expenses:Fx       300.00 CNY
+    Assets:Cash        50.00 CNY
 """,
             None,
-            id="other-total-price",
+            id="fee-short-of-gap",
+        ),
+        pytest.param(
+            FX_OPENS
+            + """
+2030-01-05 * "payee-k" "exchange paid partly in cash"
+    Assets:Bank:CNY  -700.00 CNY
+    Assets:Bank:USD    50.00 USD @@ 350.00 CNY
+    Assets:Cash       350.00 CNY
+""",
+            None,
+            id="gap-on-balance-account",
         ),
         pytest.param(
             FX_OPENS
@@ -362,6 +376,103 @@ def test_other_currency_leg_stays_extra(
     result = _fx_match(tmp_path, ledger_body, groups=groups)
 
     assert [e.posting.account for e in result.extra] == ["Assets:Bank:USD"]
+
+
+def _fx_with_charge(paid: str, charge: str) -> str:
+    return (
+        FX_OPENS
+        + f"""
+2020-01-01 open Income:Rebate CNY
+2030-01-05 * "payee-l" "exchange with charge"
+    Assets:Bank:CNY  -{paid} CNY
+    Assets:Bank:USD   100.00 USD @@ 700.00 CNY
+    {charge}
+"""
+    )
+
+
+@pytest.mark.parametrize(
+    ("ledger_body", "row"),
+    [
+        pytest.param(
+            _fx_with_charge("705.00", "Expenses:Fee  5.00 CNY"),
+            {"amount": "705.00"},
+            id="fee",
+        ),
+        pytest.param(
+            _fx_with_charge("695.00", "Income:Rebate  -5.00 CNY"),
+            {"amount": "695.00"},
+            id="rebate",
+        ),
+        pytest.param(
+            _fx_with_charge("705.00", "Expenses:Fee  5.00 CNY"),
+            {"amount": "-100.00", "currency": "USD", "account": "Assets:Bank:USD"},
+            id="fee-usd-leg-matched",
+        ),
+    ],
+)
+def test_exchange_leg_settled_across_charge_posting(
+    tmp_path: Path, ledger_body: str, row: dict[str, str]
+) -> None:
+    result = _fx_match(tmp_path, ledger_body, **row)
+
+    assert len(result.matched) == 1
+    assert result.extra == []
+
+
+def test_same_currency_leg_beside_expense_stays_extra(tmp_path: Path) -> None:
+    sieve = load_sieve(
+        tmp_path,
+        TRANSFER_OPENS
+        + """
+2020-01-01 open Expenses:Shop CNY
+2030-01-05 * "payee-q" "purchase and inflow"
+    Assets:A1      -30.00 CNY
+    Assets:B1       10.00 CNY
+    Expenses:Shop   20.00 CNY
+""",
+    )
+
+    result = sieve.match(
+        [_row("30.00", "Assets:A1")],
+        covered_accounts=["Assets:A1", "Assets:B1"],
+        covered_groups=[{"Assets:A1", "Assets:B1"}],
+    )
+
+    assert [e.posting.account for e in result.extra] == ["Assets:B1"]
+
+
+def test_conversion_beside_gap_sized_expense_settles(tmp_path: Path) -> None:
+    # An Expenses/Income posting equal to a conversion's gap cannot be told
+    # apart from a fee, so the foreign leg settles.
+    result = _fx_match(
+        tmp_path,
+        FX_OPENS
+        + """
+2030-01-05 * "payee-h" "partial exchange"
+    Assets:Bank:CNY  -700.00 CNY
+    Assets:Bank:USD    50.00 USD @@ 350.00 CNY
+    Expenses:Fx       350.00 CNY
+""",
+    )
+
+    assert result.extra == []
+
+
+def test_exchange_settled_when_fee_is_paid_elsewhere(tmp_path: Path) -> None:
+    result = _fx_match(
+        tmp_path,
+        FX_OPENS
+        + """
+2030-01-05 * "payee-m" "exchange, fee paid in cash"
+    Assets:Bank:CNY  -700.00 CNY
+    Assets:Bank:USD   100.00 USD @@ 700.00 CNY
+    Expenses:Fee        5.00 CNY
+    Assets:Cash        -5.00 CNY
+""",
+    )
+
+    assert result.extra == []
 
 
 def test_uncovered_exchange_leg_is_not_reported(tmp_path: Path) -> None:

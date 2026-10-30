@@ -280,7 +280,8 @@ class Sieve:
         as a single statement row, which consumes one leg; that same row also
         accounts for the opposite leg. One row settles one two-sided transfer,
         so each matched leg pairs with at most one opposite leg. The two legs
-        of a currency exchange offset each other in the price currency.
+        of a currency exchange offset each other in the price currency, and a
+        fee or rebate booked beside the exchange closes the gap between them.
         """
         if covered_groups is None and covered_accounts is not None:
             covered_groups = [set(covered_accounts)]
@@ -292,25 +293,45 @@ class Sieve:
 
         tolerance = self.config.amount_tolerance
 
-        def offsets(leg: dict[str, Decimal], sibling: dict[str, Decimal]) -> bool:
-            return any(
-                abs(leg[currency] + sibling[currency]) <= tolerance
-                for currency in leg.keys() & sibling.keys()
-            )
+        def offsets(
+            leg: dict[str, Decimal],
+            sibling: dict[str, Decimal],
+            charges: dict[str, Decimal],
+        ) -> bool:
+            for currency in leg.keys() & sibling.keys():
+                # Opposite signs keep a split payment's second funding leg out:
+                # its transaction balances through the expense just as well.
+                if leg[currency] * sibling[currency] >= 0:
+                    continue
+                net = leg[currency] + sibling[currency]
+                charge = charges.get(currency, Decimal(0))
+                if abs(net) <= tolerance or abs(net + charge) <= tolerance:
+                    return True
+            return False
 
         exempt: set[int] = set()
         for leg in matched:
             leg_amounts = _amounts_by_currency(leg.posting)
             if not leg_amounts:
                 continue
+            charges = _income_statement_sums(leg.txn)
+            leg_currency = _balance_key(leg.posting)[1]
             for sibling in self._postings_by_txn[id(leg.txn)]:
                 posting = sibling.posting
+                # Only a conversion tells a fee or rebate apart: between two
+                # legs of one currency an expense of any size balances the
+                # transaction, purchase or fee alike.
+                converts = _balance_key(posting)[1] != leg_currency
                 if (
                     id(sibling) in used
                     or id(sibling) in exempt
                     or _balance_key(posting) == _balance_key(leg.posting)
                     or not same_group(posting.account, leg.posting.account)
-                    or not offsets(leg_amounts, _amounts_by_currency(posting))
+                    or not offsets(
+                        leg_amounts,
+                        _amounts_by_currency(posting),
+                        charges if converts else {},
+                    )
                 ):
                     continue
                 exempt.add(id(sibling))
@@ -624,6 +645,18 @@ def _amounts_by_currency(posting: Posting) -> dict[str, Decimal]:
     if price is not None and price.number is not None:
         amounts[price.currency] = units.number * price.number
     return amounts
+
+
+def _income_statement_sums(txn: BeanTransaction) -> dict[str, Decimal]:
+    """Per-currency total of the Expenses/Income postings, such as a fee or a
+    rebate booked beside a transfer."""
+    sums: dict[str, Decimal] = {}
+    for posting in txn.postings:
+        if not posting.account.startswith(("Expenses:", "Income:")):
+            continue
+        for currency, number in _amounts_by_currency(posting).items():
+            sums[currency] = sums.get(currency, Decimal(0)) + number
+    return sums
 
 
 def _has_gross_fallback(txn: Transaction) -> bool:
