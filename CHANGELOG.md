@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### 修复
 
 - 带 `@@` 价格的换汇 posting 不再抢走同日同额的外币付款，换汇的另一条腿也不再误报缺失
+- `bean-sieve --version` 不再报 `'bean-sieve' is not installed`
 - 中信、浦发信用卡没有账单周期的导出（浦发含读不到账单日的 PDF）按记账日确定对账范围，分期和延迟入账的交易日不再拉宽范围
 - 中信银行借记卡：外币账户按币种解析；币种识别不了的文件打印警告后跳过，不再中断整次运行
 - 中信银行借记卡：正序导出的明细也按记账顺序输出

@@ -113,7 +113,7 @@ def resolve_ledger_path(
 
 
 @click.group()
-@click.version_option(package_name="bean-sieve")
+@click.version_option(package_name="beancount-sieve")
 def main():
     """Bean-Sieve: Rule-based statement importer and reconciler for Beancount."""
     pass
