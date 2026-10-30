@@ -550,12 +550,14 @@ class TestCMBCCoverage:
 
     @staticmethod
     def select_files(*paths: Path):
+        # A run parses every file before selecting, as full_reconcile does.
         provider = CMBCCreditProvider()
+        parsed = {path: provider.parse(path) for path in paths}
         return select(
             [
                 CoverageEntry(provider.provider_id, path, coverage)
-                for path in paths
-                for coverage in provider.coverage(path, provider.parse(path))
+                for path, rows in parsed.items()
+                for coverage in provider.coverage(path, rows)
             ]
         )
 
@@ -607,6 +609,37 @@ class TestCMBCCoverage:
         assert len(selection.adopted) == 2
         assert selection.drops == []
 
+    def test_a_quiet_statement_covers_its_cycle_with_no_rows(self, tmp_path):
+        path = self.write(
+            tmp_path, "quiet.eml", create_cmbc_html_with_transactions([], "2030/03/25")
+        )
+        provider = CMBCCreditProvider()
+
+        coverages = provider.coverage(path, provider.parse(path))
+
+        assert [(c.start, c.end, c.rows, c.itemized) for c in coverages] == [
+            (date(2030, 2, 26), date(2030, 3, 25), [], True)
+        ]
+
+    def test_a_quiet_statement_displaces_its_resend(self, tmp_path):
+        html = create_cmbc_html_with_transactions([], "2030/03/25")
+        selection = self.select_files(
+            self.write(tmp_path, "original.eml", html),
+            self.write(tmp_path, "resend.eml", html),
+        )
+
+        assert [e.path.name for e in selection.adopted] == ["original.eml"]
+        assert [d.entry.path.name for d in selection.drops] == ["resend.eml"]
+
+    def test_an_unrecognised_layout_reports_no_coverage(self, tmp_path):
+        html = create_cmbc_html_with_transactions([], "2030/03/25").replace(
+            "<span id='loopBand1'>", "<span id='loopBand1'>03/05 03/05 payee-a"
+        )
+        path = self.write(tmp_path, "changed.eml", html)
+        provider = CMBCCreditProvider()
+
+        assert provider.coverage(path, provider.parse(path)) == []
+
     def test_a_lone_resend_is_kept(self, tmp_path):
         selection = self.select_files(self.statement(tmp_path, "resend.eml"))
 
@@ -634,3 +667,141 @@ class TestCMBCCoverage:
             start,
             date(*map(int, stmt_date.split("/"))),
         )
+
+
+class TestCMBCCycleAcrossStatements:
+    """A cycle starts the day after the previous statement of the run closed."""
+
+    @staticmethod
+    def statement(
+        tmp_path: Path, closing: date, *row_dates: str, card: str = "0001"
+    ) -> Path:
+        rows = [
+            {
+                "trans_date": mm_dd,
+                "post_date": mm_dd,
+                "description": "payee-a",
+                "amount": "41.30",
+                "card_last4": card,
+            }
+            for mm_dd in row_dates
+        ]
+        html = create_cmbc_html_with_transactions(
+            rows, statement_date=closing.strftime("%Y/%m/%d")
+        )
+        path = tmp_path / f"{closing.isoformat()}-{card}.eml"
+        path.write_text(create_cmbc_eml(html), encoding="utf-8")
+        return path
+
+    @staticmethod
+    def parse_run(*paths: Path) -> tuple[CMBCCreditProvider, dict[Path, list]]:
+        # A run parses every file before selecting, as full_reconcile does.
+        provider = CMBCCreditProvider()
+        return provider, {path: provider.parse(path) for path in paths}
+
+    def cycles(self, *paths: Path) -> dict[date, date]:
+        """Map each statement's closing date to its cycle start."""
+        provider, parsed = self.parse_run(*paths)
+        return {
+            c.end: c.start
+            for path, rows in parsed.items()
+            for c in provider.coverage(path, rows)
+        }
+
+    def three_statements(self, tmp_path: Path) -> list[Path]:
+        return [
+            self.statement(tmp_path, date(2030, 1, 10), "01/05"),
+            self.statement(tmp_path, date(2030, 2, 25), "02/15"),
+            self.statement(tmp_path, date(2030, 3, 10), "03/05"),
+        ]
+
+    @pytest.mark.parametrize(
+        ("previous", "closing", "start"),
+        [
+            (date(2030, 2, 10), date(2030, 3, 25), date(2030, 2, 11)),
+            (date(2030, 2, 25), date(2030, 3, 10), date(2030, 2, 26)),
+        ],
+    )
+    def test_moved_billing_day_starts_after_the_previous_closing(
+        self, tmp_path, previous, closing, start
+    ):
+        paths = (
+            self.statement(tmp_path, previous, f"{previous:%m}/05"),
+            self.statement(tmp_path, closing, f"{closing:%m}/05"),
+        )
+        provider, parsed = self.parse_run(*paths)
+
+        (coverage,) = provider.coverage(paths[1], parsed[paths[1]])
+        assert (coverage.start, coverage.end) == (start, closing)
+        # Extra follows the cycle, so no day between the two statements is lost.
+        assert parsed[paths[1]][0].statement_period == (start, closing)
+        selection = TestCMBCCoverage.select_files(*paths)
+        assert len(selection.adopted) == 2
+        assert selection.drops == []
+
+    def test_three_statements_join_end_to_end(self, tmp_path):
+        assert self.cycles(*self.three_statements(tmp_path)) == {
+            date(2030, 1, 10): date(2029, 12, 11),
+            date(2030, 2, 25): date(2030, 1, 11),
+            date(2030, 3, 10): date(2030, 2, 26),
+        }
+
+    def test_file_order_does_not_change_the_cycles(self, tmp_path):
+        paths = self.three_statements(tmp_path)
+
+        assert self.cycles(*reversed(paths)) == self.cycles(*paths)
+
+    def test_a_statement_without_rows_still_marks_the_previous_closing(self, tmp_path):
+        feb = self.statement(tmp_path, date(2030, 2, 10))
+        mar = self.statement(tmp_path, date(2030, 3, 25), "02/15")
+
+        assert self.cycles(feb, mar) == {
+            date(2030, 2, 10): date(2030, 1, 11),
+            date(2030, 3, 25): date(2030, 2, 11),
+        }
+
+    def test_a_missing_month_falls_back_to_the_same_day_a_month_earlier(self, tmp_path):
+        jan = self.statement(tmp_path, date(2030, 1, 10), "01/05")
+        mar = self.statement(tmp_path, date(2030, 3, 25), "03/05")
+
+        assert self.cycles(jan, mar)[date(2030, 3, 25)] == date(2030, 2, 26)
+
+    def test_every_statement_of_the_household_is_a_candidate(self, tmp_path):
+        """One statement covers every card, so the cards may differ month to month."""
+        jan = self.statement(tmp_path, date(2030, 1, 10), "01/05", card="0001")
+        feb = self.statement(tmp_path, date(2030, 2, 25), "02/15", card="1234")
+
+        assert self.cycles(jan, feb)[date(2030, 2, 25)] == date(2030, 1, 11)
+
+    def test_a_statement_a_month_earlier_on_the_same_day_wins(self, tmp_path):
+        paths = [
+            self.statement(tmp_path, closing, f"{closing:%m}/05")
+            for closing in (
+                date(2030, 2, 10),
+                date(2030, 2, 25),
+                date(2030, 3, 10),
+                date(2030, 3, 25),
+            )
+        ]
+
+        cycles = self.cycles(*paths)
+
+        assert cycles[date(2030, 3, 10)] == date(2030, 2, 11)
+        assert cycles[date(2030, 3, 25)] == date(2030, 2, 26)
+
+    def test_full_reconcile_keeps_both_statements_of_a_moved_billing_day(
+        self, tmp_path
+    ):
+        """full_reconcile parses every file before selecting coverage."""
+        from bean_sieve.api import full_reconcile
+
+        feb = self.statement(tmp_path, date(2030, 2, 25), "02/15")
+        mar = self.statement(tmp_path, date(2030, 3, 10), "03/05")
+        ledger = tmp_path / "main.bean"
+        ledger.write_text("", encoding="utf-8")
+
+        result = full_reconcile([mar, feb], ledger)
+
+        assert result.coverage is not None
+        assert result.coverage.drops == []
+        assert len(result.match_result.missing) == 2

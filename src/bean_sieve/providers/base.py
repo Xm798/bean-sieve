@@ -9,8 +9,9 @@ import quopri
 import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from collections.abc import Sequence
-from datetime import date
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from datetime import date, timedelta
 from email.header import decode_header
 from email.message import Message
 from pathlib import Path
@@ -52,6 +53,21 @@ def _decode_body(part: Message, body: bytes) -> str:
     return body.decode(charset or "utf-8", errors="replace")
 
 
+@dataclass(eq=False)
+class ClosingStatement:
+    """A statement printing only its closing date, as stamp_closing_cycle saw it.
+
+    ``cycle`` follows the latest restamp, so it reads as final once the run
+    has parsed every file.
+    """
+
+    closing: date
+    billing_day: int
+    cards: frozenset[str]
+    rows: list[Transaction]
+    cycle: tuple[date, date] | None = None
+
+
 class BaseProvider(ABC):
     """
     Base class for statement data source parsers.
@@ -66,6 +82,11 @@ class BaseProvider(ABC):
     provider_id: str
     provider_name: str
     supported_formats: list[str]
+
+    def __init__(self) -> None:
+        # Statements of this run passed to stamp_closing_cycle; an instance
+        # belongs to one run, as resolve_providers creates it.
+        self._closing_statements: list[ClosingStatement] = []
 
     @abstractmethod
     def parse(self, file_path: Path) -> list[Transaction]:
@@ -299,6 +320,65 @@ class BaseProvider(ABC):
         if cycle:
             for txn in transactions:
                 txn.metadata[STATEMENT_CYCLE] = cycle
+
+    def stamp_closing_cycle(
+        self,
+        transactions: list[Transaction],
+        closing: date,
+        billing_day: int | None = None,
+        cards: Iterable[str] = (),
+    ) -> ClosingStatement:
+        """Stamp the cycle of a statement that prints only its closing date.
+
+        The cycle starts the day after the previous statement of the run
+        closed. Every statement this instance parsed is a candidate, or on a
+        per-card provider only those sharing a card with this one: its rows'
+        cards and ``cards``, which a quiet statement prints without rows. The
+        previous statement is the first of:
+
+        - the candidate closing on the billing day a month earlier;
+        - the latest candidate closing from the first of the previous month
+          on, for a bank that moved its billing day;
+        - neither: month_cycle().
+
+        Each call restamps the statements this instance parsed before, so once
+        the run has parsed all its files every cycle holds, whatever the
+        order. ``billing_day`` defaults to the closing day, which a short
+        month clamps.
+        """
+        record = ClosingStatement(
+            closing,
+            billing_day or closing.day,
+            frozenset(cards) | {t.card_last4 for t in transactions if t.card_last4},
+            transactions,
+        )
+        statements = self._closing_statements
+        statements.append(record)
+        for statement in statements:
+            closings = {
+                other.closing
+                for other in statements
+                if not self.per_card_statement or statement.cards & other.cards
+            }
+            start, end = self.month_cycle(statement.closing, statement.billing_day)
+            previous = start - timedelta(days=1)
+            if previous not in closings:
+                floor = previous.replace(day=1)
+                earlier = [c for c in closings if floor <= c < end]
+                start = max(earlier, default=previous) + timedelta(days=1)
+            statement.cycle = (start, end)
+            self.stamp_cycle(statement.rows, statement.cycle)
+        return record
+
+    @staticmethod
+    def month_cycle(closing: date, billing_day: int | None = None) -> tuple[date, date]:
+        """Return the cycle from the billing day a month earlier to ``closing``.
+
+        A billing day past the end of the previous month falls on its last day.
+        """
+        previous = closing.replace(day=1) - timedelta(days=1)
+        day = billing_day or closing.day
+        return previous.replace(day=min(day, previous.day)) + timedelta(days=1), closing
 
     @staticmethod
     def assign_statement_periods(

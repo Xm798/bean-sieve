@@ -503,3 +503,46 @@ class TestHXBStatementPeriod:
             date(2025, 12, 1),
             date(2025, 12, 31),
         )
+
+
+class TestHXBCycleAcrossStatements:
+    """A cycle derived from 账单日 starts after the run's previous statement."""
+
+    @staticmethod
+    def statement(tmp_path: Path, month: str, billing_day: int, row: str) -> Path:
+        html = f"""<html><body>
+<div>华夏信用卡对账单({month})</div>
+<div>账单日</div>
+<div>每月{billing_day}日</div>
+<table><tr><td>交易日</td></tr></table>
+<table>
+<tr><td>{row}</td></tr>
+<tr><td>{row}</td></tr>
+<tr><td>merchant-a</td></tr>
+<tr><td>0001</td></tr>
+<tr><td>￥57.90</td></tr>
+</table>
+</body></html>"""
+        path = tmp_path / f"HXB-{month.replace('/', '')}.eml"
+        path.write_text(create_hxb_eml(html), encoding="utf-8")
+        return path
+
+    @pytest.mark.parametrize(
+        ("days", "start"),
+        [((10, 25), date(2030, 2, 11)), ((25, 10), date(2030, 2, 26))],
+    )
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_moved_billing_day_starts_after_the_previous_closing(
+        self, tmp_path, days, start, reverse
+    ):
+        paths = [
+            self.statement(tmp_path, "2030/02", days[0], "02/05"),
+            self.statement(tmp_path, "2030/03", days[1], "03/05"),
+        ]
+        provider = HXBCreditProvider()
+        parsed = {p: provider.parse(p) for p in (paths[::-1] if reverse else paths)}
+
+        assert parsed[paths[1]][0].statement_period == (
+            start,
+            date(2030, 3, days[1]),
+        )

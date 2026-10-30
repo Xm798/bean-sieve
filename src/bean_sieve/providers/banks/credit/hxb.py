@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -32,14 +32,18 @@ class HXBCreditProvider(BaseProvider):
         html = self.extract_html_from_eml(file_path)
         text = self._html_to_text(html)
 
-        # Extract statement period from HTML content or filename
-        statement_period = self._extract_statement_period(html, text, file_path)
+        statement_period, billing_day = self._extract_statement_period(
+            html, text, file_path
+        )
         fallback_year = self._extract_year_from_path(file_path)
 
         transactions = self._parse_transactions(
             text, statement_period, fallback_year, file_path
         )
-        self.assign_statement_periods(transactions, statement_period)
+        if statement_period and billing_day:
+            self.stamp_closing_cycle(transactions, statement_period[1], billing_day)
+        else:
+            self.assign_statement_periods(transactions, statement_period)
         return transactions
 
     def _html_to_text(self, html: str) -> str:
@@ -55,13 +59,16 @@ class HXBCreditProvider(BaseProvider):
 
     def _extract_statement_period(
         self, html: str, text: str, file_path: Path
-    ) -> tuple[date, date] | None:
+    ) -> tuple[tuple[date, date] | None, int | None]:
         """Extract statement period from HTML content or filename.
 
         Tries multiple patterns:
         1. HTML content: 2025/11/01-2025/11/30, 2025年11月01日-2025年11月30日
         2. HTML billing date (账单日 每月XX日) + statement month
         3. Statement month alone -> assumes full month coverage
+
+        The billing day is returned only for pattern 2, whose cycle start
+        stamp_closing_cycle derives from the run's previous statement.
         """
         # Try to find period in HTML content
         # Pattern: YYYY/MM/DD-YYYY/MM/DD
@@ -69,7 +76,7 @@ class HXBCreditProvider(BaseProvider):
         if match:
             start = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
             end = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
-            return (start, end)
+            return (start, end), None
 
         # Pattern: YYYY年MM月DD日-YYYY年MM月DD日
         match = re.search(
@@ -78,22 +85,22 @@ class HXBCreditProvider(BaseProvider):
         if match:
             start = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
             end = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
-            return (start, end)
+            return (start, end), None
 
         statement_month = self._extract_statement_month(text, file_path)
         if statement_month is None:
-            return None
+            return None, None
         year, month = statement_month
+        last_day = calendar.monthrange(year, month)[1]
 
-        # e.g., "账单日 每月26日" on the 2026/02 statement → Jan 27 - Feb 26
-        period = self._derive_period_from_billing_date(text, year, month)
-        if period:
-            return period
+        # e.g., "账单日 每月26日" on the 2026/02 statement closes on Feb 26
+        match = re.search(r"账单日\s*每月\s*(\d{1,2})\s*日", text)
+        if match:
+            billing_day = int(match.group(1))
+            closing = date(year, month, min(billing_day, last_day))
+            return self.month_cycle(closing, billing_day), billing_day
 
-        return (
-            date(year, month, 1),
-            date(year, month, calendar.monthrange(year, month)[1]),
-        )
+        return (date(year, month, 1), date(year, month, last_day)), None
 
     def _extract_statement_month(
         self, text: str, file_path: Path
@@ -105,36 +112,6 @@ class HXBCreditProvider(BaseProvider):
         if match is None:
             return None
         return int(match.group(1)), int(match.group(2))
-
-    def _derive_period_from_billing_date(
-        self, text: str, year: int, month: int
-    ) -> tuple[date, date] | None:
-        """Derive billing period from billing date (账单日) and statement month.
-
-        Credit card billing period runs from previous billing date + 1
-        to current billing date. e.g., billing date 26th for Feb statement
-        means the period is Jan 27 - Feb 26.
-        """
-        match = re.search(r"账单日\s*每月\s*(\d{1,2})\s*日", text)
-        if not match:
-            return None
-
-        billing_day = int(match.group(1))
-
-        # End date: billing day of statement month (clamp to month's last day)
-        max_day = calendar.monthrange(year, month)[1]
-        end = date(year, month, min(billing_day, max_day))
-
-        # Start date: previous billing day + 1
-        if month == 1:
-            prev_year, prev_month = year - 1, 12
-        else:
-            prev_year, prev_month = year, month - 1
-        prev_max_day = calendar.monthrange(prev_year, prev_month)[1]
-        prev_billing = date(prev_year, prev_month, min(billing_day, prev_max_day))
-        start = prev_billing + timedelta(days=1)
-
-        return (start, end)
 
     def _parse_date_with_period(
         self,

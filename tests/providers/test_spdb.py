@@ -411,7 +411,9 @@ def test_covered_ranges_keep_each_statement_period(spdb_xls_file: Path) -> None:
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
 
-def create_spdb_pdf(path: Path, month: str, pages: list[list[str]]) -> Path:
+def create_spdb_pdf(
+    path: Path, month: str, pages: list[list[str]], billing_day: str = "20"
+) -> Path:
     """Write a synthetic SPDB PDF statement, one text line per cell."""
     doc = fitz.open()
     for number, cells in enumerate(pages):
@@ -423,7 +425,7 @@ def create_spdb_pdf(path: Path, month: str, pages: list[list[str]]) -> Path:
                 "现呈上您浦发个人信用卡对账单。",
                 "账单日：",
                 "Statement Due Date",
-                "20",
+                billing_day,
                 "本期账务明细",
                 "交易日期",
                 "记账日期",
@@ -434,6 +436,14 @@ def create_spdb_pdf(path: Path, month: str, pages: list[list[str]]) -> Path:
     doc.save(path)
     doc.close()
     return path
+
+
+def one_row_pdf(tmp_path: Path, month: str, billing_day: str) -> Path:
+    """A statement for ``month`` (YYYYMM) with one row on its 5th."""
+    row = [f"{month}05", f"{month}05", "消费 payee-a", "8888", "￥57.90"]
+    return create_spdb_pdf(
+        tmp_path / f"{month}-{billing_day}.pdf", month, [row], billing_day
+    )
 
 
 @pytest.fixture
@@ -520,14 +530,36 @@ class TestSPDBPdf:
         [
             ("203001", "20", (date(2029, 12, 21), date(2030, 1, 20))),
             ("203003", "31", (date(2030, 3, 1), date(2030, 3, 31))),
+            ("203003", "30", (date(2030, 3, 1), date(2030, 3, 30))),
+            ("203002", "30", (date(2030, 1, 31), date(2030, 2, 28))),
         ],
     )
     def test_cycle_ends_on_billing_day(
-        self, month: str, day: str, cycle: tuple[date, date]
+        self, tmp_path: Path, month: str, day: str, cycle: tuple[date, date]
     ) -> None:
-        text = f"{month}信用卡账单\n账单日：\nStatement Due Date\n{day}\n"
+        [transaction] = SPDBCreditProvider().parse(one_row_pdf(tmp_path, month, day))
 
-        assert SPDBCreditProvider._parse_pdf_cycle(text) == cycle
+        assert transaction.metadata[STATEMENT_CYCLE] == cycle
+
+    @pytest.mark.parametrize(
+        ("days", "start"),
+        [(("10", "25"), date(2030, 2, 11)), (("25", "10"), date(2030, 2, 26))],
+    )
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_cycle_starts_after_the_previous_statement_of_the_run(
+        self, tmp_path: Path, days: tuple[str, str], start: date, reverse: bool
+    ) -> None:
+        """A moved billing day joins the cycle to the previous statement's end."""
+        paths = [
+            one_row_pdf(tmp_path, "203002", days[0]),
+            one_row_pdf(tmp_path, "203003", days[1]),
+        ]
+        provider = SPDBCreditProvider()
+        parsed = {p: provider.parse(p) for p in (paths[::-1] if reverse else paths)}
+
+        [coverage] = provider.coverage(paths[1], parsed[paths[1]])
+
+        assert (coverage.start, coverage.end) == (start, date(2030, 3, int(days[1])))
 
     def test_row_without_card_or_amount_is_skipped_with_warning(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

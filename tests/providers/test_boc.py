@@ -5,8 +5,14 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import fitz
+import pytest
+
+from bean_sieve.core.metadata_keys import STATEMENT_CYCLE
 from bean_sieve.providers import get_provider
 from bean_sieve.providers.banks.credit.boc import BOCCreditProvider
+
+EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "boc_credit"
 
 
 class TestBOCCreditProvider:
@@ -82,53 +88,67 @@ class TestBOCDateParsing:
 class TestBOCStatementPeriodExtraction:
     """Tests for statement period extraction from filename."""
 
-    def test_extract_period_from_filename(self, tmp_path):
+    def test_filename_period_spans_two_months(self, tmp_path):
         """Filename fallback: span the whole previous-and-current months."""
-        # Mock document with no extractable closing date
-        mock_page = MagicMock()
-        mock_page.get_text.return_value = []
-
-        mock_doc = MagicMock()
-        mock_doc.page_count = 1
-        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
-
         file_path = tmp_path / "中国银行信用卡电子合并账单2025年12月账单.PDF"
-        file_path.write_bytes(b"%PDF-1.4")
 
-        provider = BOCCreditProvider()
-        with patch("fitz.open", return_value=mock_doc):
-            period = provider._extract_statement_period(mock_doc, file_path)
+        assert BOCCreditProvider._filename_period(file_path) == (
+            date(2025, 11, 1),
+            date(2025, 12, 31),
+        )
 
-        assert period is not None
-        start, end = period
-        # Conservative span: whole previous month start to current month end
-        assert (start.year, start.month, start.day) == (2025, 11, 1)
-        assert (end.year, end.month, end.day) == (2025, 12, 31)
-
-    def test_extract_period_from_pdf_closing_date(self, tmp_path):
-        """Prefer the actual closing date parsed from PDF blocks."""
-        # Block layout: payment_due_date then closing_date in same block
+    def test_closing_date_read_from_the_summary_block(self):
+        """Due date then closing date in one block, as the summary prints them."""
         mock_page = MagicMock()
         mock_page.get_text.return_value = [
             (0, 0, 0, 0, "2025-12-25\n2025-12-04\n95.59\nUSD  0.00\n", 0, 0),
         ]
-
         mock_doc = MagicMock()
         mock_doc.page_count = 1
         mock_doc.__getitem__ = MagicMock(return_value=mock_page)
 
-        file_path = tmp_path / "中国银行信用卡电子合并账单2025年12月账单.PDF"
-        file_path.write_bytes(b"%PDF-1.4")
+        assert BOCCreditProvider()._find_closing_date(mock_doc) == date(2025, 12, 4)
 
+    def test_cycle_starts_the_day_after_the_closing_a_month_earlier(self):
+        [pdf] = EXAMPLE.glob("*.pdf")
+
+        transactions = BOCCreditProvider().parse(pdf)
+
+        assert transactions[0].metadata[STATEMENT_CYCLE] == (
+            date(2030, 2, 5),
+            date(2030, 3, 4),
+        )
+
+    @staticmethod
+    def quiet_statement(path: Path, closing: str, card: str) -> Path:
+        """A statement printing its closing date and one card without rows."""
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_textbox(fitz.Rect(30, 80, 300, 140), f"2030-02-28\n{closing}\n0.00")
+        page.insert_text(
+            (30, 200), f"(卡号：000000000000{card})", fontname="china-s", fontsize=9
+        )
+        doc.save(path)
+        doc.close()
+        return path
+
+    @pytest.mark.parametrize(
+        ("card", "start"),
+        [("1234", date(2030, 2, 21)), ("9999", date(2030, 2, 5))],
+    )
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_a_quiet_statement_anchors_only_its_own_card(
+        self, tmp_path, card, start, reverse
+    ):
+        """BOC bills per card: the billing day moved for card 1234 only."""
+        [example] = EXAMPLE.glob("*.pdf")
+        previous = self.quiet_statement(tmp_path / "previous.pdf", "2030-02-20", card)
         provider = BOCCreditProvider()
-        with patch("fitz.open", return_value=mock_doc):
-            period = provider._extract_statement_period(mock_doc, file_path)
+        paths = [previous, example]
+        parsed = {p: provider.parse(p) for p in (paths[::-1] if reverse else paths)}
 
-        assert period is not None
-        start, end = period
-        # End = closing date; start = same day one month earlier
-        assert end == date(2025, 12, 4)
-        assert start == date(2025, 11, 4)
+        by_card = {t.card_last4: t.metadata[STATEMENT_CYCLE] for t in parsed[example]}
+        assert by_card["1234"] == (start, date(2030, 3, 4))
 
 
 class TestBOCRowGrouping:

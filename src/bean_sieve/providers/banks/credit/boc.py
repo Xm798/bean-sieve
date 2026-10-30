@@ -14,6 +14,8 @@ from ...base import BaseProvider
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+_CARD_HEADER_RE = re.compile(r"\(卡号[：:]\s*(\d+)\)")
+
 
 @register_provider
 class BOCCreditProvider(BaseProvider):
@@ -43,15 +45,20 @@ class BOCCreditProvider(BaseProvider):
         doc = fitz.open(file_path)
         transactions: list[Transaction] = []
 
-        statement_period = self._extract_statement_period(doc, file_path)
+        closing = self._find_closing_date(doc)
 
         # Track current card
         current_card: str | None = None
         row_counter = 0
+        cards: set[str] = set()
 
         for page_num in range(doc.page_count):
             page = doc[page_num]
             blocks = list(page.get_text("blocks"))
+            # A card without transactions still prints its section header.
+            cards.update(
+                number[-4:] for number in _CARD_HEADER_RE.findall(str(page.get_text()))
+            )
 
             tables, current_card = self._find_tables(blocks, current_card)
 
@@ -69,7 +76,12 @@ class BOCCreditProvider(BaseProvider):
 
         doc.close()
 
-        self.assign_statement_periods(transactions, statement_period)
+        if closing:
+            self.stamp_closing_cycle(transactions, closing, cards=cards)
+        else:
+            self.assign_statement_periods(
+                transactions, self._filename_period(file_path)
+            )
 
         return transactions
 
@@ -97,7 +109,7 @@ class BOCCreditProvider(BaseProvider):
             y0 = float(block[1])
             content = str(block[4]).strip()
 
-            card_match = re.search(r"\(卡号[：:]\s*(\d+)\)", content)
+            card_match = _CARD_HEADER_RE.search(content)
             if card_match:
                 table_blocks = None
                 current_card = card_match.group(1)[-4:]
@@ -271,37 +283,20 @@ class BOCCreditProvider(BaseProvider):
             },
         )
 
-    def _extract_statement_period(
-        self, doc, file_path: Path
-    ) -> tuple[date, date] | None:
-        """Extract statement period.
-
-        BOC's closing day varies per cardholder, so the actual Statement
-        Closing Date must be read from the PDF; the filename only encodes
-        the statement month, not the cycle boundaries.
-        """
-        closing_date = self._find_closing_date(doc)
-        if closing_date:
-            return (self._months_back(closing_date, 1), closing_date)
-
-        filename_match = re.search(r"(\d{4})年(\d{2})月", file_path.name)
-        if filename_match:
-            year = int(filename_match.group(1))
-            month = int(filename_match.group(2))
-            start = date(year - 1, 12, 1) if month == 1 else date(year, month - 1, 1)
-            end = date(year, month, calendar.monthrange(year, month)[1])
-            return (start, end)
-
-        return None
-
     @staticmethod
-    def _months_back(d: date, months: int) -> date:
-        """Subtract whole months, clamping the day to the target month's length."""
-        total = d.year * 12 + (d.month - 1) - months
-        year, month = divmod(total, 12)
-        month += 1
-        last_day = calendar.monthrange(year, month)[1]
-        return date(year, month, min(d.day, last_day))
+    def _filename_period(file_path: Path) -> tuple[date, date] | None:
+        """Span the previous and the statement month named in the file name.
+
+        BOC's closing day varies per cardholder and the file name gives only
+        the month, so the period is wide enough for any closing day.
+        """
+        filename_match = re.search(r"(\d{4})年(\d{2})月", file_path.name)
+        if not filename_match:
+            return None
+        year = int(filename_match.group(1))
+        month = int(filename_match.group(2))
+        start = date(year - 1, 12, 1) if month == 1 else date(year, month - 1, 1)
+        return start, date(year, month, calendar.monthrange(year, month)[1])
 
     def _find_closing_date(self, doc) -> date | None:
         """Locate the Statement Closing Date on page 1."""

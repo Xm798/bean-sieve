@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import calendar
 import logging
 import re
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, NamedTuple
 
 from ....core.coverage import Coverage
-from ....core.metadata_keys import STATEMENT_CYCLE
 from ....core.types import Transaction
 from ... import register_provider
-from ...base import BaseProvider
+from ...base import BaseProvider, ClosingStatement
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +69,12 @@ class CMBCCreditProvider(BaseProvider):
     filename_keywords = ["民生信用卡", "民生银行信用卡"]
     content_keywords = ["民生银行", "cmbc.com.cn"]
 
+    def __init__(self) -> None:
+        super().__init__()
+        # The statement each parsed file reports coverage for, None when its
+        # date is guessed or its layout unrecognised.
+        self._statements: dict[Path, ClosingStatement | None] = {}
+
     def parse(self, file_path: Path) -> list[Transaction]:
         """Parse CMBC credit card email statement."""
         html = self.extract_html_from_eml(file_path)
@@ -84,15 +88,16 @@ class CMBCCreditProvider(BaseProvider):
                 file_path,
             )
         stmt_date = printed_date or self._fallback_statement_date(file_path)
-        statement_period = self._compute_statement_period(stmt_date)
 
         transactions: list[Transaction] = []
         loop_band = soup.find("span", id="loopBand3")
-        if not loop_band:
-            return transactions
-
-        rows = self._template_rows(loop_band)
-        if not rows and _ROW_DATES_RE.search(self.clean_text(loop_band.get_text())):
+        rows = self._template_rows(loop_band) if loop_band else []
+        unrecognised = bool(
+            loop_band
+            and not rows
+            and _ROW_DATES_RE.search(self.clean_text(loop_band.get_text()))
+        )
+        if unrecognised:
             # Dated rows that no template claims mean the bank changed its
             # layout; an empty result alone would look like a quiet month.
             logger.warning("Unrecognised CMBC statement layout in %s", file_path)
@@ -101,28 +106,38 @@ class CMBCCreditProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
-        self.assign_statement_periods(transactions, statement_period)
         # A cycle guessed from the file name could displace a neighbouring
-        # statement in coverage selection, so only a printed one is recorded.
+        # statement in coverage selection or misplace a neighbour's start, so
+        # only a printed one is recorded.
+        statement = None
         if printed_date:
-            for txn in transactions:
-                txn.metadata[STATEMENT_CYCLE] = statement_period
+            statement = self.stamp_closing_cycle(transactions, printed_date)
+        else:
+            self.assign_statement_periods(transactions, self.month_cycle(stmt_date))
+        self._statements[file_path] = None if unrecognised else statement
         return transactions
 
     def coverage(
         self,
-        file_path: Path,  # noqa: ARG002
+        file_path: Path,
         transactions: list[Transaction],
     ) -> list[Coverage]:
         """Cover the account for the cycle ending on the printed 账单日.
 
-        A re-sent mail matches the original in subject, sender and body, so both
-        are one source kind and the earlier file on the command line wins.
+        A statement without transactions covers its cycle with no rows, so a
+        quiet month still displaces a re-sent copy and bounds Extra. A re-sent
+        mail matches the original in subject, sender and body, so both are one
+        source kind and the earlier file on the command line wins.
+
+        Requires parse() of file_path on this provider, and of every file of
+        the run before the cycle is final: reads the statement it kept.
         """
-        rows = [t for t in transactions if STATEMENT_CYCLE in t.metadata]
-        if not rows:
+        if file_path not in self._statements:
+            raise RuntimeError(f"coverage() of {file_path} before parse()")
+        statement = self._statements[file_path]
+        if statement is None or statement.cycle is None:
             return []
-        return [Coverage("", *rows[0].metadata[STATEMENT_CYCLE], rows=rows)]
+        return [Coverage("", *statement.cycle, rows=transactions)]
 
     @staticmethod
     def _template_rows(loop_band) -> list[tuple[Any, _Section]]:
@@ -159,20 +174,6 @@ class CMBCCreditProvider(BaseProvider):
             return date(int(match.group(1)), int(match.group(2)), 10)
 
         return date(date.today().year, date.today().month, 10)
-
-    @staticmethod
-    def _compute_statement_period(stmt_date: date) -> tuple[date, date]:
-        """Compute statement period: previous statement day + 1 to current statement day.
-
-        A statement day past the end of the previous month falls on its last day.
-        """
-        year, month = (
-            (stmt_date.year - 1, 12)
-            if stmt_date.month == 1
-            else (stmt_date.year, stmt_date.month - 1)
-        )
-        day = min(stmt_date.day, calendar.monthrange(year, month)[1])
-        return (date(year, month, day) + timedelta(days=1), stmt_date)
 
     def _parse_row(
         self,

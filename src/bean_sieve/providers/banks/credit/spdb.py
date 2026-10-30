@@ -6,7 +6,7 @@ import calendar
 import logging
 import re
 from collections.abc import Sequence
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -165,8 +165,8 @@ class SPDBCreditProvider(BaseProvider):
             pages = [str(page.get_text()) for page in doc]
         text = "\n".join(pages)
 
-        cycle = self._parse_pdf_cycle(text)
-        if cycle is None:
+        closing = self._parse_pdf_closing(text)
+        if closing is None:
             logger.warning("No SPDB statement cycle found")
 
         transactions: list[Transaction] = []
@@ -177,30 +177,27 @@ class SPDBCreditProvider(BaseProvider):
             if transaction:
                 transactions.append(transaction)
 
-        self.stamp_cycle(transactions, cycle)
+        if closing:
+            self.stamp_closing_cycle(transactions, *closing)
+        else:
+            self.assign_statement_periods(transactions)
         return transactions
 
     @staticmethod
-    def _parse_pdf_cycle(text: str) -> tuple[date, date] | None:
-        """Return the billing cycle ending on the statement month's billing day.
+    def _parse_pdf_closing(text: str) -> tuple[date, int] | None:
+        """Return the closing date and billing day of the statement month.
 
-        The statement prints only its closing day, so the cycle is taken to
-        start the day after the same day of the previous month.
+        The statement prints no cycle start; stamp_closing_cycle derives it.
         """
         month_match = _PDF_MONTH_RE.search(text)
         day_match = _PDF_BILLING_DAY_RE.search(text)
         if not month_match or not day_match:
             return None
 
+        year, month = int(month_match.group(1)), int(month_match.group(2))
         billing_day = int(day_match.group(1))
-
-        def closing(year: int, month: int) -> date:
-            last_day = calendar.monthrange(year, month)[1]
-            return date(year, month, min(billing_day, last_day))
-
-        end = closing(int(month_match.group(1)), int(month_match.group(2)))
-        previous = end.replace(day=1) - timedelta(days=1)
-        return closing(previous.year, previous.month) + timedelta(days=1), end
+        last_day = calendar.monthrange(year, month)[1]
+        return date(year, month, min(billing_day, last_day)), billing_day
 
     @classmethod
     def _extract_pdf_rows(cls, text: str, file_path: Path) -> list[list[str]]:
