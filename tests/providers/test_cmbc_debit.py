@@ -117,12 +117,14 @@ def _build_statement(
     currency: str = "人民币",
     count: int | None = None,
     ruled_pages: frozenset[int] = frozenset(),
+    tableless_pages: frozenset[int] = frozenset(),
     rule: bool = True,
     stamp: bool = True,
 ) -> Path:
     """Write a synthetic CMBC statement PDF, one row list per page.
 
-    Pages numbered in ``ruled_pages`` lose their last header cell; ``rule``
+    Pages numbered in ``ruled_pages`` lose their last header cell, those in
+    ``tableless_pages`` the whole table header; ``rule``
     and ``stamp`` drop the underscore and totals lines and the 打印渠道 line.
     """
     doc = fitz.open()
@@ -143,6 +145,8 @@ def _build_statement(
         for i, ((left, right), label) in enumerate(
             zip(pairwise(_COL_X), _HEADER, strict=True)
         ):
+            if number in tableless_pages:
+                break
             if not (number in ruled_pages and i == len(_HEADER) - 1):
                 page.draw_rect(fitz.Rect(left, 88, right, 103), width=0.5)
             put(left + 2, 97, label)
@@ -298,6 +302,45 @@ class TestParse:
         assert [t.description for t in txns] == ["快捷支付"]
         assert f"Skipping page 1 of {path}: unexpected header layout" in caplog.text
 
+    def test_row_cut_by_page_break_continues_on_next_page(self, tmp_path: Path):
+        head = [*INCOME[:9], "雇主甲有限", "测试银行甲"]
+        tail = [""] * 9 + ["公司/100000001", "支行"]
+        path = _build_statement(
+            tmp_path / "statement.pdf", [[EXPENSE, head], [tail, REFUND]]
+        )
+        expense, income, refund = CMBCDebitProvider().parse(path)
+        assert income.payee == "雇主甲有限公司"
+        assert income.metadata["counterparty_account"] == "100000001"
+        assert income.metadata["counterparty_bank"] == "测试银行甲支行"
+        assert expense.payee == refund.payee == "商户乙"
+
+    def test_page_tail_after_skipped_page_is_dropped(self, tmp_path: Path):
+        tail = [""] * 9 + ["tail-x", ""]
+        path = _build_statement(
+            tmp_path / "statement.pdf",
+            [[EXPENSE], [INCOME], [tail, REFUND]],
+            ruled_pages=frozenset({2}),
+        )
+        expense, refund = CMBCDebitProvider().parse(path)
+        assert expense.payee == "商户乙"
+        assert expense.metadata["counterparty_account"] == "100000002"
+
+    def test_page_tail_after_page_without_table_is_dropped(self, tmp_path: Path):
+        tail = [""] * 9 + ["tail-x", ""]
+        path = _build_statement(
+            tmp_path / "statement.pdf",
+            [[EXPENSE], [], [tail, REFUND]],
+            tableless_pages=frozenset({2}),
+        )
+        expense, refund = CMBCDebitProvider().parse(path)
+        assert expense.payee == "商户乙"
+        assert expense.metadata["counterparty_account"] == "100000002"
+
+    def test_text_above_first_row_of_statement_is_no_row(self, tmp_path: Path):
+        notice = [""] * 3 + ["notice-a"] + [""] * 7
+        path = _build_statement(tmp_path / "statement.pdf", [[notice]], count=0)
+        assert CMBCDebitProvider().parse(path) == []
+
     def test_empty_statement(self, tmp_path: Path):
         path = _build_statement(tmp_path / "statement.pdf", [[]])
         assert CMBCDebitProvider().parse(path) == []
@@ -313,6 +356,44 @@ class TestParse:
         with caplog.at_level(logging.WARNING):
             assert CMBCDebitProvider().parse(path) == []
         assert "Unsupported currency" in caplog.text
+
+
+class TestCoverage:
+    @pytest.mark.parametrize("rows", [[EXPENSE, REFUND], []], ids=["rows", "quiet"])
+    def test_covers_printed_period(self, tmp_path: Path, rows: list[list[str]]):
+        path = _build_statement(tmp_path / "statement.pdf", [rows])
+        provider = CMBCDebitProvider()
+        txns = provider.parse(path)
+        (coverage,) = provider.coverage(path, txns)
+        assert (coverage.account, coverage.start, coverage.end) == (
+            "1111",
+            date(2030, 1, 1),
+            date(2030, 1, 31),
+        )
+        assert coverage.rows == txns
+        assert len(txns) == len(rows)
+        assert coverage.itemized
+
+    def test_statement_missing_a_page_is_partial(self, tmp_path: Path):
+        path = _build_statement(
+            tmp_path / "statement.pdf",
+            [[INCOME], [EXPENSE]],
+            ruled_pages=frozenset({1}),
+        )
+        provider = CMBCDebitProvider()
+        (coverage,) = provider.coverage(path, provider.parse(path))
+        assert coverage.itemized
+        assert coverage.source == "partial"
+
+    def test_no_coverage_for_unsupported_currency(self, tmp_path: Path):
+        path = _build_statement(tmp_path / "statement.pdf", [[INCOME]], currency="?")
+        provider = CMBCDebitProvider()
+        assert provider.coverage(path, provider.parse(path)) == []
+
+    def test_requires_parse(self, tmp_path: Path):
+        path = _build_statement(tmp_path / "statement.pdf", [[INCOME]])
+        with pytest.raises(RuntimeError, match="before parse"):
+            CMBCDebitProvider().coverage(path, [])
 
 
 CONFIG = """
@@ -373,3 +454,63 @@ def test_balance_assertion_after_period(tmp_path: Path):
     )
     content = out.read_text(encoding="utf-8")
     assert "2030-02-01 balance Assets:Bank:CMBC:1111  2430.00 CNY" in content
+
+
+def test_empty_statement_displaces_a_copy_of_its_period(tmp_path: Path):
+    """The earlier file wins, so a re-download listing rows adds none."""
+    empty = _build_statement(tmp_path / "a.pdf", [[]])
+    listed = _build_statement(tmp_path / "b.pdf", [[INCOME, EXPENSE]])
+    (tmp_path / "bean-sieve.yaml").write_text(CONFIG, encoding="utf-8")
+    (tmp_path / "main.bean").write_text(LEDGER, encoding="utf-8")
+    result = full_reconcile(
+        statement_paths=[empty, listed],
+        ledger_path=tmp_path / "main.bean",
+        config_path=tmp_path / "bean-sieve.yaml",
+    )
+
+    assert result.coverage is not None
+    assert [e.path for e in result.coverage.adopted] == [empty]
+    assert result.coverage.adopted[0].coverage.rows == []
+    assert [d.entry.path for d in result.coverage.drops] == [listed]
+    assert result.match_result.matched == []
+    assert result.match_result.missing == []
+
+
+@pytest.mark.parametrize("partial_first", [True, False])
+def test_complete_copy_displaces_statement_missing_a_page(
+    tmp_path: Path, partial_first: bool
+):
+    pages = [[INCOME], [EXPENSE]]
+    partial = _build_statement(
+        tmp_path / "partial.pdf", pages, ruled_pages=frozenset({1})
+    )
+    full = _build_statement(tmp_path / "full.pdf", pages)
+    (tmp_path / "bean-sieve.yaml").write_text(CONFIG, encoding="utf-8")
+    (tmp_path / "main.bean").write_text(LEDGER, encoding="utf-8")
+    result = full_reconcile(
+        statement_paths=[partial, full] if partial_first else [full, partial],
+        ledger_path=tmp_path / "main.bean",
+        config_path=tmp_path / "bean-sieve.yaml",
+    )
+
+    assert result.coverage is not None
+    assert [e.path for e in result.coverage.adopted] == [full]
+    assert [d.entry.path for d in result.coverage.drops] == [partial]
+    assert [t.amount for t in result.match_result.missing] == [Decimal("-2350.00")]
+
+
+def test_lone_statement_missing_a_page_is_adopted(tmp_path: Path):
+    partial = _build_statement(
+        tmp_path / "partial.pdf", [[INCOME], [EXPENSE]], ruled_pages=frozenset({1})
+    )
+    (tmp_path / "bean-sieve.yaml").write_text(CONFIG, encoding="utf-8")
+    (tmp_path / "main.bean").write_text(LEDGER, encoding="utf-8")
+    result = full_reconcile(
+        statement_paths=[partial],
+        ledger_path=tmp_path / "main.bean",
+        config_path=tmp_path / "bean-sieve.yaml",
+    )
+
+    assert result.coverage is not None
+    assert [e.path for e in result.coverage.adopted] == [partial]
+    assert [txn.amount for txn, _ in result.match_result.matched] == [Decimal("20.00")]

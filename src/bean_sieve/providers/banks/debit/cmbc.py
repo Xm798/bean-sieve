@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 from bisect import bisect_right
@@ -10,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from ....core.coverage import Coverage
 from ....core.types import Transaction
 from ... import register_provider
 from ..._tabular import currency_code
@@ -69,8 +71,20 @@ def _is_footer(words: list[_Word], i: int) -> bool:
     return text == "第" and i + 1 < len(words) and words[i + 1].text.isdigit()
 
 
-def _page_rows(page: fitz.Page) -> list[list[str]] | None:
-    """Cell texts of each transaction row on one page, None for an unknown layout.
+class _PageTable(NamedTuple):
+    """One page of the table: cell texts above its first date, then its rows.
+
+    ``lead`` holds the tail of a row the previous page broke off, one text per
+    column, all empty when the page opens with a row; a page without the
+    table has no lead at all, and nothing on it continues a row.
+    """
+
+    lead: list[str]
+    rows: list[list[str]]
+
+
+def _page_table(page: fitz.Page) -> _PageTable | None:
+    """The transaction cells on one page, None for an unknown layout.
 
     The table has ruled header cells but no ruled body: a row starts at the
     date in the 交易时间 column and runs until the next row's date.
@@ -78,7 +92,7 @@ def _page_rows(page: fitz.Page) -> list[list[str]] | None:
     words = [_Word(float(w[0]), float(w[1]), str(w[4])) for w in page.get_text("words")]
     label = next((w for w in words if w.text == "交易时间"), None)
     if label is None:
-        return []
+        return _PageTable([], [])
     cells = [
         d["rect"]
         for d in page.get_drawings()
@@ -96,14 +110,14 @@ def _page_rows(page: fitz.Page) -> list[list[str]] | None:
     starts = sorted(
         {w.y0 for col, w in body if col == _COL_TIME and _DATE_RE.fullmatch(w.text)}
     )
-    cells_by_row = [[[] for _ in range(_NUM_COLS)] for _ in starts]
+    # Slot 0 takes the words above the page's first date: the tail of a row
+    # the previous page cut off.
+    cells_by_row = [[[] for _ in range(_NUM_COLS)] for _ in range(len(starts) + 1)]
     for col, word in body:
-        row = bisect_right(starts, word.y0 + _ROW_SLACK) - 1
-        # Words above the page's first date belong to no row: a cell is
-        # assumed never to wrap across a page break.
-        if row >= 0 and 0 <= col < _NUM_COLS:
-            cells_by_row[row][col].append(word)
-    return [[_join_cell(cell) for cell in row] for row in cells_by_row]
+        if 0 <= col < _NUM_COLS:
+            cells_by_row[bisect_right(starts, word.y0 + _ROW_SLACK)][col].append(word)
+    lead, *rows = [[_join_cell(cell) for cell in row] for row in cells_by_row]
+    return _PageTable(lead, rows)
 
 
 def _parse_period(header: str) -> tuple[date, date] | None:
@@ -134,6 +148,15 @@ class CMBCDebitProvider(BaseProvider):
     provider_name = "民生银行借记卡"
     supported_formats = [".pdf"]
     per_card_statement = True  # CMBC issues one statement per account
+    # A statement missing a page for its layout still stands for its period
+    # when it is the only one, but a complete copy holds the rows it lost.
+    coverage_priority = ("statement", "partial")
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Each file's coverage as parse() read it, rows left to coverage();
+        # None when the file covers no period.
+        self._coverages: dict[Path, Coverage | None] = {}
 
     @classmethod
     def can_handle(cls, file_path: Path) -> bool:
@@ -149,22 +172,33 @@ class CMBCDebitProvider(BaseProvider):
         """Parse a CMBC debit card statement PDF."""
         import fitz
 
+        self._coverages[file_path] = None
         with fitz.open(file_path) as doc:
             if not doc.page_count:
                 return []
             header = str(doc[0].get_text())
             footer = str(doc[-1].get_text())
             rows: list[list[str]] = []
+            skipped = False
+            previous_read = False
             for index in range(doc.page_count):
-                page_rows = _page_rows(doc[index])
-                if page_rows is None:
+                table = _page_table(doc[index])
+                if table is None:
                     logger.warning(
                         "Skipping page %d of %s: unexpected header layout",
                         index + 1,
                         file_path,
                     )
-                    continue
-                rows.extend(page_rows)
+                    skipped = True
+                else:
+                    # A row broken off at a page end continues in the same
+                    # columns above the next page's first date.
+                    if any(table.lead) and previous_read and rows:
+                        rows[-1] = [
+                            a + b for a, b in zip(rows[-1], table.lead, strict=True)
+                        ]
+                    rows.extend(table.rows)
+                previous_read = table is not None and bool(table.lead)
 
         currency_name = _CURRENCY_RE.search(header)
         currency = currency_code(currency_name.group(1)) if currency_name else None
@@ -188,9 +222,26 @@ class CMBCDebitProvider(BaseProvider):
             for row_num, row in enumerate(rows, start=1)
             if (txn := self._build(row, row_num, card_last4, currency, file_path))
         ]
-        if transactions:
-            self.assign_statement_periods(transactions, _parse_period(header))
+        period = _parse_period(header)
+        self.assign_statement_periods(transactions, period)
+        if period:
+            self._coverages[file_path] = Coverage(
+                card_last4 or "", *period, source="partial" if skipped else "statement"
+            )
         return transactions
+
+    def coverage(
+        self, file_path: Path, transactions: list[Transaction]
+    ) -> list[Coverage]:
+        """Cover the printed 起止日期 for the account, quiet periods included.
+
+        Requires parse() of file_path on this provider: reads the period it
+        kept.
+        """
+        if file_path not in self._coverages:
+            raise RuntimeError(f"coverage() of {file_path} before parse()")
+        kept = self._coverages[file_path]
+        return [dataclasses.replace(kept, rows=transactions)] if kept else []
 
     def _build(
         self,
