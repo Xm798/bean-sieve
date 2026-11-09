@@ -157,7 +157,7 @@ from .banks.debit import (  # noqa: E402, F401
     icbc,
     pab,
     welab,
-    zabank,  # noqa: E402, F401
+    zabank,
 )
 from .banks.debit import spdb as spdb_debit  # noqa: E402, F401
 from .payment import alipay, app_store, jd, meituan, wechat  # noqa: E402, F401

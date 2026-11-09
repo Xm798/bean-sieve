@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 import re
 from datetime import date, datetime
 from decimal import Decimal
@@ -15,6 +16,8 @@ from ...core.types import ReconcileContext, Transaction
 from .. import register_provider
 from ..base import BaseProvider
 from ._utils import extract_card_last4
+
+logger = logging.getLogger(__name__)
 
 
 class AlipayTxType(StrEnum):
@@ -108,10 +111,8 @@ class AlipayProvider(BaseProvider):
                 if txn:
                     transactions.append(txn)
             except Exception as e:
-                import logging
-
-                logging.warning(
-                    f"Failed to parse line {line_num + 1} in {file_path}: {e}"
+                logger.warning(
+                    "Failed to parse line %s in %s: %s", line_num + 1, file_path, e
                 )
                 continue
 

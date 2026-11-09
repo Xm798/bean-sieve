@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 import re
 from datetime import date, datetime
 from decimal import Decimal
@@ -18,6 +19,8 @@ from .. import register_provider
 from .._tabular import amount_cell_str
 from ..base import BaseProvider
 from ._utils import extract_card_last4
+
+logger = logging.getLogger(__name__)
 
 
 class WechatOrderType(StrEnum):
@@ -150,10 +153,8 @@ class WechatProvider(BaseProvider):
                 if txn:
                     transactions.append(txn)
             except Exception as e:
-                import logging
-
-                logging.warning(
-                    f"Failed to parse line {line_num + 1} in {file_path}: {e}"
+                logger.warning(
+                    "Failed to parse line %s in %s: %s", line_num + 1, file_path, e
                 )
                 continue
 
@@ -194,10 +195,8 @@ class WechatProvider(BaseProvider):
                 if txn:
                     transactions.append(txn)
             except Exception as e:
-                import logging
-
-                logging.warning(
-                    f"Failed to parse line {line_num + 1} in {file_path}: {e}"
+                logger.warning(
+                    "Failed to parse line %s in %s: %s", line_num + 1, file_path, e
                 )
                 continue
 

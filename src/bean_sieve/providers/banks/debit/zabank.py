@@ -318,7 +318,7 @@ class ZABankProvider(BaseProvider):
     @staticmethod
     def _extract_exchange_info(detail_lines: list[str]) -> str | None:
         for line in detail_lines:
-            if line.startswith("sell") or line.startswith("sell卖出"):
+            if line.startswith("sell"):
                 return line
         return None
 
