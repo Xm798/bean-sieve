@@ -56,6 +56,13 @@ rules:
     target_payee: 打车
     contra_account: Expenses:Transport:Taxi
 
+  # 按 metadata 匹配：借记卡转账按对手方账号落到本人账户
+  - description: "^转账$|汇款汇出"
+    provider: cib_debit
+    metadata:
+      counterparty_account: "^0000.*1234$"
+    contra_account: Assets:Bank:CMB
+
   # 时间范围
   - description: ".*食堂.*"
     time: "11:00-14:00"
@@ -71,6 +78,8 @@ rules:
 ```
 
 规则里的 `description`、`payee` 是匹配条件（正则）；`target_payee` 是写进输出的收款方。
+
+`metadata` 按字段名写正则，所有字段都命中才算匹配，不区分大小写；交易没有这个字段时不匹配。字段名就是各数据源页面「解析出的元数据字段」里列的那些。值要写成带引号的字符串，账号这类纯数字不加引号会被当成数字，配置加载时报错。
 
 有些账单会把手续费单独列出，比如微信零钱提现的服务费。这类交易会多出一条手续费 posting，记到 `providers.<id>.fee_account`；provider 没配时用 `defaults.fee_account`，默认是 `Expenses:FIXME`。
 

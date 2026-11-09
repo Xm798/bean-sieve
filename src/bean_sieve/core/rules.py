@@ -167,7 +167,10 @@ class RulesEngine:
         if cond.metadata:
             patterns = self._metadata_patterns.get(rule_idx, {})
             for key, pattern_str in cond.metadata.items():
-                value = str(txn.metadata.get(key, ""))
+                raw = txn.metadata.get(key)
+                if raw is None:
+                    return False
+                value = str(raw)
                 pattern = patterns.get(key)
                 if pattern:
                     if not pattern.search(value):

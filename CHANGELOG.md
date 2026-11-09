@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 农业银行信用卡：解析 PDF 补发账单；同一账单周期邮件与 PDF 同时传入时只采用邮件
 - 汇立银行：`balance: true` 时按各币种的帐户结余生成余额断言，交易带 `balance` 元数据
 - 配置项 `fee_account`（`defaults` 和 `providers.<id>` 下均可设置）：账单里单列的手续费另记一条 posting，默认记到 `Expenses:FIXME`
+- 规则条件 `metadata`：按交易的 metadata 字段做正则匹配，例如按 `counterparty_account` 区分借记卡转账的去向
 
 ### 修复
 
@@ -111,10 +112,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Release workflow 升级到 `softprops/action-gh-release@v3`
 - PyPI 发布改用 Trusted Publishing
-
-### 新增
-
-- **规则 metadata 条件**：用户规则支持按 metadata 字段做正则匹配（`metadata: {字段: 正则}`），多个键须同时命中，均忽略大小写，缺失的键按空串处理。用于借记卡转账等 description 不含去向的场景，例如按 `counterparty_account` 把本人的跨行转账归到对应账户
 
 ## [0.7.0] - 2026-09-04
 

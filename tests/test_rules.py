@@ -175,6 +175,25 @@ class TestRulesEngine:
         )
         assert RulesEngine(config).apply(txn).contra_account is None
 
+    def test_apply_rule_metadata_missing_key_with_empty_matching_pattern(self):
+        """A pattern that matches the empty string still needs the key present."""
+        config = Config(
+            rules=[
+                Rule(
+                    condition=RuleCondition(metadata={"note": "^$"}),
+                    action=RuleAction(contra_account="Assets:Bank:CMB"),
+                ),
+            ]
+        )
+        txn = Transaction(
+            date=date(2030, 1, 2),
+            amount=Decimal("10.00"),
+            currency="CNY",
+            description="转账",
+            provider="cib_debit",
+        )
+        assert RulesEngine(config).apply(txn).contra_account is None
+
     def test_apply_rule_metadata_requires_all_keys(self):
         """Every configured metadata key must match."""
         config = Config(

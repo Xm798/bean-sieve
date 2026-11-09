@@ -258,7 +258,7 @@ rules:
     target_payee: 打车
     contra_account: Expenses:Transport:Taxi
 
-  # 按 metadata 匹配（AND，忽略大小写）：借记卡转账按对手方账号落到本人账户
+  # 按 metadata 匹配（所有字段都命中，忽略大小写，缺字段不匹配）：借记卡转账按对手方账号落到本人账户
   - description: "^转账$|汇款汇出"
     provider: cib_debit
     metadata:
