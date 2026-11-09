@@ -137,8 +137,8 @@ providers:
       "1234": Liabilities:CreditCard:CNCB:1234
 
   hsbchk_credit:
-    # 文件名需包含卡后四位，如：TransactionHistory_8888.csv
-    # 仅 1 张卡时也可保持原文件名 TransactionHistory.csv，仅配一个 account 即可
+    # CSV 不含卡号：多张卡时在文件名里加卡后四位，如 TransactionHistory_8888.csv；
+    # 只有 1 张卡时可保留原文件名 TransactionHistory.csv，只配一个 account
     accounts:
       "8888": Liabilities:CreditCard:HSBCHK:8888
 
@@ -210,7 +210,7 @@ providers:
     balance: true
 
   welab_debit:
-    # 汇立银行（WeLab Bank）uses currency code as account key
+    # 汇立银行（WeLab Bank）：键是币种代码
     accounts:
       HKD: Assets:Bank:WeLab:HKD
       CNY: Assets:Bank:WeLab:CNY
@@ -265,16 +265,16 @@ rules:
     contra_account: Expenses:Food:Dinner
 
 # 诊断开关
-# meta_check=true (默认): card_last4 软校验，匹配仍然成立，差异会以 lint 风格
-#   打印 hint/warn 提示 ledger 中缺失或不一致的 posting 元数据
-# meta_check=false: 恢复旧行为，card_last4 作为硬过滤条件
+# meta_check=true (默认): card_last4 软校验，匹配仍然成立，ledger 中缺失或
+#   不一致的 posting 元数据以 lint 风格的 hint/warn 打印
+# meta_check=false: card_last4 作为硬过滤条件
 # meta_check_accounts: 需要检查 card_last4 的账户关键字（子串匹配）。
-#   例如"按户管理"的信用卡（HXB/SPDB/CMB 等，同一账户下多张物理卡）
-#   需要在 posting 上写 card_last4 来消歧；列在这里的账户既会触发
-#   诊断，也会在 Writer 输出时自动注入 card_last4 posting meta。
-#   默认为空 —— 不填则不做任何 card_last4 相关的检查和注入。
-# ambiguous_match=true (默认): 当一条账单交易匹配上某条 ledger posting，
-#   但还有来自其它 ledger 交易的同日同额候选时，发出 lint 风格警告。
+#   "按户管理"的信用卡（HXB/SPDB/CMB 等，同一账户下多张物理卡）
+#   要在 posting 上写 card_last4 来区分；列在这里的账户既参与诊断，
+#   输出时也会自动注入 card_last4 posting meta。默认为空，即不做任何
+#   card_last4 检查和注入。
+# ambiguous_match=true (默认): 一条账单交易匹配上某条 ledger posting，
+#   而其它 ledger 交易里还有同日同额的候选时，发出 lint 风格警告。
 #   同一金额同日出现在多个账户上时，贪心匹配可能配错；为该卡配置
 #   accounts 映射（约束目标账户）即可消歧。
 diagnostics:

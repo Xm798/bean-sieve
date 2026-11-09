@@ -208,7 +208,7 @@
         "properties": {
           "pattern": {
             "type": "string",
-            "description": "Regex pattern to match payment method"
+            "description": "Text matched as a substring of the payment method; the first matching mapping in list order wins"
           },
           "account": {
             "type": "string",
@@ -224,7 +224,7 @@
     },
     "rules": {
       "type": "array",
-      "description": "Transaction matching rules (higher priority first)",
+      "description": "Transaction matching rules; earlier rules take priority",
       "items": {
         "type": "object",
         "properties": {
@@ -436,13 +436,13 @@
         "meta_check": {
           "type": "boolean",
           "default": true,
-          "description": "When true, card_last4 is a soft check with lint-style diagnostics; when false, card_last4 acts as a hard filter (legacy behavior)."
+          "description": "When true, card_last4 is a soft check with lint-style diagnostics; when false, card_last4 acts as a hard filter."
         },
         "meta_check_accounts": {
           "type": "array",
           "items": { "type": "string" },
           "default": [],
-          "description": "Extra account-name substrings to include in the card_last4 check scope. The auto-inferred set already covers accounts targeted by 2+ patterns in account_mappings; use this to opt additional accounts in explicitly."
+          "description": "Account-name substrings that put an account in the card_last4 check scope: its metadata diagnostics are reported and its output postings carry card_last4. Empty (the default) checks no account."
         },
         "ambiguous_match": {
           "type": "boolean",
@@ -495,7 +495,7 @@
         "balance": {
           "type": "boolean",
           "default": false,
-          "description": "Generate balance directive after reconciliation using the last transaction's balance metadata. Date is the day after the statement end."
+          "description": "Generate balance directive after reconciliation using the last transaction's balance metadata. Date is the day after the statement end, or after the last booking when the statement has no period."
         }
       },
       "additionalProperties": false

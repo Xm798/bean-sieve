@@ -62,7 +62,7 @@ providers:
 
 ## 检查账本里的卡号
 
-支付宝、微信账单的支付方式（如 `华夏银行信用卡(1234)`）指明了刷的是哪张卡。把一卡多号的账户列进 `diagnostics.meta_check_accounts`，账户名包含其中任一项即可：
+支付宝、微信账单的支付方式（如 `华夏银行信用卡(1234)`）指明了刷的是哪张卡。把挂着多张卡的账户列进 `diagnostics.meta_check_accounts`，账户名包含其中任一项即可：
 
 ```yaml title="bean-sieve.yaml" config-partial
 diagnostics:
