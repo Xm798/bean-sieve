@@ -51,6 +51,7 @@ class RuleCondition(BaseModel):
 
     description: str | None = None
     payee: str | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
     card_last4: str | None = None
     provider: str | None = None
     time_range: str | None = None
@@ -186,6 +187,7 @@ class Config(BaseModel):
             condition = RuleCondition(
                 description=rule_data.get("description"),
                 payee=rule_data.get("payee"),
+                metadata=rule_data.get("metadata", {}),
                 card_last4=rule_data.get("card_last4"),
                 provider=rule_data.get("provider"),
                 time_range=rule_data.get("time"),
