@@ -443,3 +443,48 @@ class TestAlipayCombinedMethod:
 
         assert txn.metadata["method"] == "bank-a储蓄卡(1111)"
         assert REBATE_TOPUP_MATCH not in txn.metadata
+
+
+def _same_second(**overrides):
+    from bean_sieve.core.types import Transaction
+
+    base = {
+        "date": date(2030, 3, 15),
+        "time": time(10, 0, 0),
+        "amount": Decimal("10.00"),
+        "currency": "CNY",
+        "description": "item-a",
+        "payee": "shop-a",
+        "card_last4": "1234",
+        "provider": "alipay",
+        "source_file": Path("a.csv"),
+    }
+    return Transaction(**{**base, **overrides})
+
+
+class TestPreReconcileMerge:
+    @staticmethod
+    def _run(txns):
+        from bean_sieve.core.types import ReconcileContext
+
+        ctx = ReconcileContext(statement_paths=[])
+        return AlipayProvider().pre_reconcile(txns, ctx)
+
+    def test_merged_row_keeps_links_and_period(self):
+        period = (date(2030, 3, 1), date(2030, 3, 31))
+        t1 = _same_second(links=["o1"], statement_period=period)
+        t2 = _same_second(description="item-b", links=["o1", "o2"])
+        (merged,) = self._run([t1, t2])
+        assert merged.amount == Decimal("20.00")
+        assert merged.links == ["o1", "o2"]
+        assert merged.statement_period == period
+
+    def test_different_cards_are_not_merged(self):
+        t1 = _same_second(card_last4="1234")
+        t2 = _same_second(card_last4="5678")
+        assert len(self._run([t1, t2])) == 2
+
+    def test_different_files_are_not_merged(self):
+        t1 = _same_second(source_file=Path("a.csv"))
+        t2 = _same_second(source_file=Path("b.csv"))
+        assert len(self._run([t1, t2])) == 2

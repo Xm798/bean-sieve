@@ -355,14 +355,15 @@ class AlipayProvider(BaseProvider):
         context: ReconcileContext,  # noqa: ARG002
     ) -> list[Transaction]:
         """
-        Merge rows sharing a timestamp: Taobao records a multi-item order as one
-        row per item, while the ledger books it as one transaction.
+        Merge rows of one file and card sharing a timestamp: Taobao records a
+        multi-item order as one row per item, within a single export, while the
+        ledger books it as one transaction.
         """
         from collections import defaultdict
 
         groups: dict[tuple, list[Transaction]] = defaultdict(list)
         for txn in transactions:
-            key = (txn.date, txn.time)
+            key = (txn.source_file, txn.card_last4, txn.date, txn.time)
             groups[key].append(txn)
 
         result = []
@@ -396,6 +397,8 @@ class AlipayProvider(BaseProvider):
                 seen_desc.add(t.description)
         merged_desc = "/".join(descriptions)
 
+        links = list(dict.fromkeys(link for t in txns for link in t.links))
+
         return Transaction(
             date=first.date,
             time=first.time,
@@ -408,5 +411,7 @@ class AlipayProvider(BaseProvider):
             provider=first.provider,
             source_file=first.source_file,
             source_line=first.source_line,
+            statement_period=first.statement_period,
+            links=links,
             metadata=first.metadata,
         )
