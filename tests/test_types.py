@@ -133,3 +133,69 @@ def test_match_result_meta_diagnostics_default_empty():
 
     mr = MatchResult()
     assert mr.meta_diagnostics == []
+
+
+def test_roundtrip_keeps_exchange_links_and_decimal_metadata():
+    import json
+
+    txn = Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("700.00"),
+        currency="CNY",
+        description="exchange",
+        price_amount=Decimal("100.00"),
+        price_currency="USD",
+        links=["order-a"],
+        statement_period=(date(2030, 1, 1), date(2030, 1, 31)),
+        metadata={"_original_amount": Decimal("10.50"), "posted": date(2030, 1, 3)},
+    )
+
+    restored = Transaction.from_dict(json.loads(json.dumps(txn.to_dict())))
+
+    assert restored.price_amount == Decimal("100.00")
+    assert restored.price_currency == "USD"
+    assert restored.links == ["order-a"]
+    assert restored.statement_period == txn.statement_period
+    assert restored.metadata == {"_original_amount": "10.50", "posted": "2030-01-03"}
+
+
+def test_cli_parse_json_serializes_decimal_metadata(tmp_path):
+    import json
+    from pathlib import Path
+
+    from click.testing import CliRunner
+
+    from bean_sieve.cli import main
+
+    statement = (
+        Path(__file__).parent.parent / "examples" / "cmb_credit" / "reissue-2030-02.pdf"
+    )
+
+    out = tmp_path / "rows.json"
+
+    result = CliRunner().invoke(
+        main, ["parse", str(statement), "-f", "json", "-o", str(out)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(out.read_text(encoding="utf-8"))
+
+
+def test_cli_parse_json_on_stdout_is_valid_json():
+    import json
+    from pathlib import Path
+
+    from click.testing import CliRunner
+
+    from bean_sieve.cli import main
+
+    statement = Path(__file__).parent.parent / "examples" / "alipay"
+    statement = next(p for p in statement.iterdir() if p.suffix == ".csv")
+
+    result = CliRunner().invoke(
+        main, ["parse", str(statement), "-f", "json"], terminal_width=40
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)
+    assert "Total:" in result.stderr

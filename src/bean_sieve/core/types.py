@@ -116,75 +116,14 @@ class Transaction(BaseModel):
         return self.metadata.get(ORIGINAL_CURRENCY) or None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "date": self.date.isoformat(),
-            "time": self.time.isoformat() if self.time else None,
-            "post_date": self.post_date.isoformat() if self.post_date else None,
-            "amount": str(self.amount),
-            "currency": self.currency,
-            "description": self.description,
-            "payee": self.payee,
-            "card_last4": self.card_last4,
-            "order_id": self.order_id,
-            "provider": self.provider,
-            "source_file": str(self.source_file) if self.source_file else None,
-            "source_line": self.source_line,
-            "fee": str(self.fee) if self.fee is not None else None,
-            "statement_period": (
-                [
-                    self.statement_period[0].isoformat(),
-                    self.statement_period[1].isoformat(),
-                ]
-                if self.statement_period
-                else None
-            ),
-            "account": self.account,
-            "contra_account": self.contra_account,
-            "confidence": self.confidence,
-            "match_source": self.match_source.value if self.match_source else None,
-            "tags": self.tags,
-            "flag": self.flag,
-            "metadata": self.metadata,
-        }
+        """JSON-ready fields; metadata values such as Decimal become strings."""
+        return self.model_dump(
+            mode="json", exclude=set(type(self).model_computed_fields)
+        )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Transaction:
-        match_source = None
-        if data.get("match_source"):
-            match_source = MatchSource(data["match_source"])
-
-        return cls(
-            date=date.fromisoformat(data["date"]),
-            time=dt.time.fromisoformat(data["time"]) if data.get("time") else None,
-            post_date=(
-                date.fromisoformat(data["post_date"]) if data.get("post_date") else None
-            ),
-            amount=Decimal(data["amount"]),
-            currency=data["currency"],
-            description=data["description"],
-            payee=data.get("payee"),
-            card_last4=data.get("card_last4"),
-            order_id=data.get("order_id"),
-            provider=data.get("provider", ""),
-            source_file=Path(data["source_file"]) if data.get("source_file") else None,
-            source_line=data.get("source_line"),
-            fee=Decimal(data["fee"]) if data.get("fee") is not None else None,
-            statement_period=(
-                (
-                    date.fromisoformat(data["statement_period"][0]),
-                    date.fromisoformat(data["statement_period"][1]),
-                )
-                if data.get("statement_period")
-                else None
-            ),
-            account=data.get("account"),
-            contra_account=data.get("contra_account"),
-            confidence=data.get("confidence", 0.0),
-            match_source=match_source,
-            tags=data.get("tags", []),
-            flag=data.get("flag", "*"),
-            metadata=data.get("metadata", {}),
-        )
+        return cls.model_validate(data)
 
 
 class MetaDiagnostic(BaseModel):

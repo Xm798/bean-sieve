@@ -259,13 +259,18 @@ def parse(files, provider, output_format, output):
             data = [t.to_dict() for t in transactions]
             content = json.dumps(data, indent=2, ensure_ascii=False)
             if output:
-                Path(output).write_text(content)
+                Path(output).write_text(content, encoding="utf-8")
             else:
-                console.print(content)
+                # Plain echo: rich would wrap long lines and read [..] as markup.
+                click.echo(content)
         elif output_format == "csv":
             _output_csv(transactions, Path(output) if output else None)
 
-        console.print(f"\n[bold]Total:[/bold] {len(transactions)} transactions")
+        # JSON or CSV on stdout stays machine-readable with the count on stderr.
+        summary_console = (
+            console if output_format == "table" or output else Console(stderr=True)
+        )
+        summary_console.print(f"\n[bold]Total:[/bold] {len(transactions)} transactions")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {escape(str(e))}")
