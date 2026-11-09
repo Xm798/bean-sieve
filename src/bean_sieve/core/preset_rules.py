@@ -33,7 +33,8 @@ class PresetRuleAction:
     # contra_account, for transfers whose destination varies per row.
     contra_account_metadata_key: str | None = None
 
-    # For transfers whose statement sign is inverted.
+    # Makes the row an inflow (negative), for rows the statement lists as
+    # outflows, such as a transfer into Yu'E Bao; a negative row is unchanged.
     negate: bool = False
 
     ignore: bool = False

@@ -114,10 +114,10 @@ class RulesEngine:
                     txn.match_source = MatchSource.RULE
                     txn.metadata[MATCHED_PRESET_RULE] = preset.rule_id
 
-        # A row api._apply_negate_rules already flipped before matching is no
-        # longer positive and keeps its sign.
-        if action.negate and txn.amount > 0:
-            txn.amount = -txn.amount
+        # Idempotent: api._apply_negate_rules has already applied it to rows
+        # that went through matching.
+        if action.negate:
+            txn.amount = -abs(txn.amount)
 
         return txn
 

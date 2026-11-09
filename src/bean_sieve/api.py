@@ -413,10 +413,12 @@ def _apply_negate_rules(
     preset_rules: list[PresetRule],
 ) -> list[Transaction]:
     """
-    Flip the sign of the rows a ``negate`` preset rule matches.
+    Make the rows a ``negate`` preset rule matches inflows.
 
-    The sign decides which postings a row can match, so refunds and other
-    sign-inverted rows are flipped before matching.
+    The sign decides which postings a row can match, so this runs before
+    matching. A row the parser already made negative (an Alipay ``收入`` row)
+    stays negative, and RulesEngine applies the same rule again to the
+    missing rows without changing them.
     """
     negate_rules = [r for r in preset_rules if r.action.negate]
     if not negate_rules:
@@ -429,7 +431,7 @@ def _apply_negate_rules(
     for txn in transactions:
         for rule in negate_rules:
             if rule.matches(txn):
-                txn = txn.model_copy(update={"amount": -txn.amount})
+                txn = txn.model_copy(update={"amount": -abs(txn.amount)})
                 break
         result.append(txn)
 
