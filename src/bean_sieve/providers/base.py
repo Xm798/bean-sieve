@@ -337,6 +337,23 @@ class BaseProvider(ABC):
         return record
 
     @staticmethod
+    def resolve_month_day(month: int, day: int, latest: date) -> date:
+        """Return the latest date with this month and day on or before ``latest``.
+
+        Statement rows print no year; an instalment row keeps its purchase date,
+        which can lie many months before the cycle that books it.
+        """
+        # 02/29 needs a leap year, at most eight years back across a century gap.
+        for year in range(latest.year, latest.year - 9, -1):
+            try:
+                resolved = date(year, month, day)
+            except ValueError:
+                continue
+            if resolved <= latest:
+                return resolved
+        raise ValueError(f"invalid month/day {month:02d}/{day:02d}")
+
+    @staticmethod
     def month_cycle(closing: date, billing_day: int | None = None) -> tuple[date, date]:
         """Return the cycle from the billing day a month earlier to ``closing``.
 

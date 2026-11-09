@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `parse -f json` 不再因金额类元数据报错，并输出 `links` 和换汇价格；输出到 stdout 时是合法 JSON，`Total` 行改到 stderr（`-f csv` 同理）
 - 返利 posting 按支付方式取 `rebate_account`，不再受账户来源影响；兜底账户改为 `Income:Rebate:FIXME`，可用 `defaults.rebate_account` 配置
 - 汇丰香港：表头大小写不同时也能解析，不再静默返回零行
+- 交通银行、华夏银行信用卡：02/29 的交易在非闰年账单上能正确解析
+- 交通银行、华夏银行、民生银行信用卡：取不到账单日期时报错，不再按运行当天猜测年份
 - 带 `@@` 价格的换汇 posting 不再抢走同日同额的外币付款，换汇的另一条腿也不再误报缺失
 - 汇立银行：折成多行的交易详情不再串到下一笔；繁体月结单也能解析
 - 汇立银行：各币种的承上结余加各行金额对不上帐户结余时打印警告

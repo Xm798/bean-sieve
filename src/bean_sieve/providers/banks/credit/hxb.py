@@ -44,12 +44,10 @@ class HXBCreditProvider(BaseProvider):
     def _html_to_text(self, html: str) -> str:
         return re.sub(r"<[^>]+>", "\n", html)
 
-    def _extract_year_from_path(self, file_path: Path) -> int:
+    def _extract_year_from_path(self, file_path: Path) -> int | None:
         """The bank names the file after its month, as '华夏信用卡-电子账单2030年01月.eml'."""
         match = re.search(r"(\d{4})年", file_path.name)
-        if match:
-            return int(match.group(1))
-        return date.today().year
+        return int(match.group(1)) if match else None
 
     def _extract_statement_period(
         self, html: str, text: str, file_path: Path
@@ -108,29 +106,32 @@ class HXBCreditProvider(BaseProvider):
         self,
         date_str: str,
         statement_period: tuple[date, date] | None,
-        fallback_year: int,
+        fallback_year: int | None,
+        file_path: Path,
     ) -> date:
-        """Resolve a MM/DD row to a full date using the statement period.
+        """Resolve a MM/DD row to the latest such date on or before the period end.
 
-        Rows carry no year, and the statement closes on its period end, so a row
-        is the latest MM/DD falling on or before that day: a December row on a
-        January statement is the previous December, and a November row on that
-        same statement a settlement delayed from the November before it.
+        The statement closes on its period end, so a December row on a January
+        statement is the previous December, and a November row on that same
+        statement a settlement delayed from the November before it. Without a
+        period the file name's year bounds the date.
         """
         month, day = map(int, date_str.split("/"))
 
-        if not statement_period:
-            return date(fallback_year, month, day)
-
-        end = statement_period[1]
-        year = end.year if (month, day) <= (end.month, end.day) else end.year - 1
-        return date(year, month, day)
+        if statement_period:
+            return self.resolve_month_day(month, day, statement_period[1])
+        if fallback_year is None:
+            raise ValueError(
+                f"{file_path}: rows carry no year, and neither a statement "
+                "period nor a year in the file name is available"
+            )
+        return self.resolve_month_day(month, day, date(fallback_year, 12, 31))
 
     def _parse_transactions(
         self,
         text: str,
         statement_period: tuple[date, date] | None,
-        fallback_year: int,
+        fallback_year: int | None,
         file_path: Path,
     ) -> list[Transaction]:
         lines = [line.strip() for line in text.split("\n") if line.strip()]
@@ -170,7 +171,7 @@ class HXBCreditProvider(BaseProvider):
         lines: list[str],
         start_idx: int,
         statement_period: tuple[date, date] | None,
-        fallback_year: int,
+        fallback_year: int | None,
         file_path: Path,
     ) -> tuple[Transaction, int] | None:
         """Return the transaction starting at start_idx and the index after it."""
@@ -208,10 +209,12 @@ class HXBCreditProvider(BaseProvider):
             return None
 
         trans_date = self._parse_date_with_period(
-            date1, statement_period, fallback_year
+            date1, statement_period, fallback_year, file_path
         )
         post_date = (
-            self._parse_date_with_period(post_str, statement_period, fallback_year)
+            self._parse_date_with_period(
+                post_str, statement_period, fallback_year, file_path
+            )
             if post_str
             else None
         )

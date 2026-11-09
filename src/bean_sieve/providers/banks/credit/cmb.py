@@ -117,21 +117,7 @@ def _month_span(year: int, month: int) -> tuple[date, date]:
 
 
 def _resolve_date(mmdd: str, latest: date) -> date:
-    """Place an MMDD date in the latest year that keeps it on or before latest.
-
-    An instalment row keeps its purchase date, which can lie many months
-    before the cycle, so the year is not simply the statement's.
-    """
-    month, day = int(mmdd[:2]), int(mmdd[2:])
-    # 02/29 needs a leap year, at most four years back.
-    for year in range(latest.year, latest.year - 5, -1):
-        try:
-            resolved = date(year, month, day)
-        except ValueError:
-            continue
-        if resolved <= latest:
-            return resolved
-    raise ValueError(f"invalid statement date {mmdd}")
+    return BaseProvider.resolve_month_day(int(mmdd[:2]), int(mmdd[2:]), latest)
 
 
 @register_provider

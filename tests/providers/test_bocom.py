@@ -238,6 +238,46 @@ class TestBOCOMCreditProvider:
         assert transactions[0].date == date(2029, 11, 20)
         assert transactions[0].post_date == date(2029, 12, 20)
 
+    def test_feb_29_row_resolves_to_the_previous_leap_year(self, tmp_path):
+        html = """<html>
+<body>
+<table><tr><td>账单周期 2031/02/14-2031/03/13</td></tr></table>
+<table>
+    <tr><td>消费、取现、其他费用明细</td></tr>
+    <tr><td>
+        <table>
+            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td><td>入账金额</td></tr>
+            <tr><td></td><td>02/29</td><td>02/29</td><td>1234</td><td>消费 测试</td><td>CNY10.00</td><td>CNY10.00</td></tr>
+        </table>
+    </td></tr>
+</table>
+</body></html>"""
+        file_path = tmp_path / "交通银行信用卡2031年03月电子账单.eml"
+        file_path.write_text(create_bocom_eml(html), encoding="utf-8")
+
+        transactions = BOCOMCreditProvider().parse(file_path)
+
+        assert [t.date for t in transactions] == [date(2028, 2, 29)]
+
+    def test_rows_without_a_printed_period_raise(self, tmp_path):
+        html = """<html>
+<body>
+<table>
+    <tr><td>消费、取现、其他费用明细</td></tr>
+    <tr><td>
+        <table>
+            <tr><td></td><td>交易日期</td><td>记账日期</td><td>卡末四位</td><td>交易说明</td><td>交易金额</td><td>入账金额</td></tr>
+            <tr><td></td><td>01/15</td><td>01/15</td><td>1234</td><td>消费 测试</td><td>CNY10.00</td><td>CNY10.00</td></tr>
+        </table>
+    </td></tr>
+</table>
+</body></html>"""
+        file_path = tmp_path / "交通银行信用卡电子账单.eml"
+        file_path.write_text(create_bocom_eml(html), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="电子账单.eml"):
+            BOCOMCreditProvider().parse(file_path)
+
     def test_empty_statement(self, tmp_path):
         html = """<html>
 <body>

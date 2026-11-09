@@ -165,6 +165,11 @@ class BOCOMCreditProvider(BaseProvider):
         row_idx: int,
         statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
+        if statement_period is None and not _FULL_DATE_RE.match(row.trans_date):
+            raise ValueError(
+                f"{file_path}: rows carry no year and the statement period is "
+                "not printed, so their dates cannot be resolved"
+            )
         try:
             trans_date = self._parse_row_date(row.trans_date, statement_period)
             # Some 2021 rows print a single digit in place of the post date.
@@ -210,26 +215,20 @@ class BOCOMCreditProvider(BaseProvider):
     ) -> date:
         if _FULL_DATE_RE.match(date_str):
             return date.fromisoformat(date_str.replace("/", "-"))
+        assert statement_period is not None
         return self._parse_date_with_period(date_str, statement_period)
 
     def _parse_date_with_period(
-        self, date_str: str, statement_period: tuple[date, date] | None
+        self, date_str: str, statement_period: tuple[date, date]
     ) -> date:
-        """Resolve a MM/DD row to a full date using the statement period.
+        """Resolve a MM/DD row to the latest such date on or before the period end.
 
-        Rows carry no year, and the statement closes on its period end, so a row
-        is the latest MM/DD falling on or before that day: a December row on a
-        January statement is the previous December, and a November row on that
-        same statement a settlement delayed from the November before it.
+        The statement closes on its period end, so a December row on a January
+        statement is the previous December, and a November row on that same
+        statement a settlement delayed from the November before it.
         """
         month, day = map(int, date_str.split("/"))
-
-        if not statement_period:
-            return date(date.today().year, month, day)
-
-        end = statement_period[1]
-        year = end.year if (month, day) <= (end.month, end.day) else end.year - 1
-        return date(year, month, day)
+        return self.resolve_month_day(month, day, statement_period[1])
 
     def _parse_amount(self, amount_str: str) -> tuple[Decimal | None, str]:
         """Read 'CNY10.00' or 'USD 10.00'; an unreadable cell gives (None, 'CNY')."""

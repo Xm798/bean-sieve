@@ -284,6 +284,49 @@ class TestHXBDateParsing:
         assert transactions[0].date == date(2025, 12, 28)
 
 
+class TestHXBMissingYear:
+    ROW = """<table><tr><td>交易日</td></tr></table>
+<table>
+<tr><td>01/15</td></tr>
+<tr><td>01/16</td></tr>
+<tr><td>Amazon Purchase</td></tr>
+<tr><td>9999</td></tr>
+<tr><td>￥88.88</td></tr>
+</table>
+<div>美元账务信息</div>"""
+
+    def test_rows_without_period_or_filename_year_raise(self, tmp_path):
+        file_path = tmp_path / "华夏信用卡-电子账单.eml"
+        file_path.write_text(
+            create_hxb_eml(f"<html><body>{self.ROW}</body></html>"), encoding="utf-8"
+        )
+
+        with pytest.raises(ValueError, match="电子账单.eml"):
+            HXBCreditProvider().parse(file_path)
+
+    def test_period_alone_resolves_rows_without_a_filename_year(self, tmp_path):
+        html = f"<html><body><div>账单周期：2030/01/01-2030/01/31</div>{self.ROW}</body></html>"
+        file_path = tmp_path / "华夏信用卡-电子账单.eml"
+        file_path.write_text(create_hxb_eml(html), encoding="utf-8")
+
+        transactions = HXBCreditProvider().parse(file_path)
+
+        assert [t.date for t in transactions] == [date(2030, 1, 15)]
+
+    def test_feb_29_row_resolves_to_the_previous_leap_year(self, tmp_path):
+        html = (
+            "<html><body><div>账单周期：2031/02/14-2031/03/13</div>"
+            + self.ROW.replace("01/15", "02/29").replace("01/16", "02/29")
+            + "</body></html>"
+        )
+        file_path = tmp_path / "华夏信用卡-电子账单.eml"
+        file_path.write_text(create_hxb_eml(html), encoding="utf-8")
+
+        transactions = HXBCreditProvider().parse(file_path)
+
+        assert [t.date for t in transactions] == [date(2028, 2, 29)]
+
+
 class TestHXBAmountParsing:
     def test_cny_amount(self, tmp_path):
         html = """<html><body>

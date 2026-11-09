@@ -255,6 +255,21 @@ class TestCMBCEmptyStatement:
 
         assert transactions == []
 
+    def test_no_printed_date_and_no_filename_month_raises(self, tmp_path):
+        html = """<!DOCTYPE HTML>
+<html>
+<head><meta charset="UTF-8"></head>
+<body>
+<span id='loopBand3'>
+</span>
+</body>
+</html>"""
+        file_path = tmp_path / "民生信用卡电子对账单.eml"
+        file_path.write_text(create_cmbc_eml(html), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="电子对账单.eml"):
+            CMBCCreditProvider().parse(file_path)
+
     def test_no_loop_band(self, tmp_path):
         html = """<!DOCTYPE HTML>
 <html>

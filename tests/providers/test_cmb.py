@@ -218,6 +218,23 @@ class TestCMBCreditProvider:
         assert txn.statement_period == (date(2025, 12, 1), date(2025, 12, 31))
 
 
+class TestResolveMonthDay:
+    def test_latest_date_on_or_before(self):
+        resolve = CMBCreditProvider.resolve_month_day
+        assert resolve(12, 28, date(2031, 1, 10)) == date(2030, 12, 28)
+        assert resolve(1, 10, date(2031, 1, 10)) == date(2031, 1, 10)
+        assert resolve(1, 11, date(2031, 1, 10)) == date(2030, 1, 11)
+
+    def test_feb_29_steps_back_to_a_leap_year(self):
+        resolve = CMBCreditProvider.resolve_month_day
+        assert resolve(2, 29, date(2031, 3, 1)) == date(2028, 2, 29)
+        assert resolve(2, 29, date(2032, 3, 1)) == date(2032, 2, 29)
+
+    def test_impossible_date_raises(self):
+        with pytest.raises(ValueError):
+            CMBCreditProvider.resolve_month_day(2, 30, date(2031, 3, 1))
+
+
 class TestCMBDateParsing:
     def test_date_after_the_statement_month_is_from_the_previous_year(self, tmp_path):
         """An instalment row keeps the purchase date, months before the cycle."""

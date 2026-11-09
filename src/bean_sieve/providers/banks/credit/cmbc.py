@@ -86,7 +86,7 @@ class CMBCCreditProvider(BaseProvider):
                 "coverage for statement selection",
                 file_path,
             )
-        stmt_date = printed_date or self._fallback_statement_date(file_path)
+        stmt_date = printed_date or self._filename_statement_date(file_path)
 
         transactions: list[Transaction] = []
         loop_band = soup.find("span", id="loopBand3")
@@ -167,12 +167,14 @@ class CMBCCreditProvider(BaseProvider):
         return None
 
     @staticmethod
-    def _fallback_statement_date(file_path: Path) -> date:
+    def _filename_statement_date(file_path: Path) -> date:
         match = re.search(r"(\d{4})年(\d{1,2})月", file_path.name)
-        if match:
-            return date(int(match.group(1)), int(match.group(2)), 10)
-
-        return date(date.today().year, date.today().month, 10)
+        if match is None:
+            raise ValueError(
+                f"{file_path}: no statement date printed and no YYYY年MM月 in "
+                "the file name"
+            )
+        return date(int(match.group(1)), int(match.group(2)), 10)
 
     def _parse_row(
         self,
