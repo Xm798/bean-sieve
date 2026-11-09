@@ -40,7 +40,7 @@ DATE_RE = re.compile(r"^\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4}$")
 # A signed money amount, e.g. "-12.34", "1,234.56"
 AMOUNT_RE = re.compile(r"-?[\d,]+\.\d{2}")
 # Transaction reference, e.g. "Ref: FX00000000"
-REF_RE = re.compile(r"Ref:\s*([A-Z0-9]+)")
+REF_RE = re.compile(r"(?<!FX )Ref:\s*([A-Z0-9]+)")
 # Funding-exchange reference on a card spending, e.g. "FX Ref: FX00000000"
 FX_REF_RE = re.compile(r"FX Ref:\s*([A-Z0-9]+)")
 # Posting date on a card spending, e.g. "Transaction Date: 7 May 2026". Despite
@@ -394,12 +394,12 @@ class WeLabProvider(BaseProvider):
             )
             return None
 
-        # order_id is the first "Ref:"; the detail is the text before it (the
+        # order_id is the first plain "Ref:"; the detail is the text before it (the
         # merchant or rate), and the "Transaction Date:" / "FX Ref:" tail goes
         # to its own fields.
         ref = REF_RE.search(desc_str)
         order_id = ref.group(1) if ref else None
-        detail = desc_str.split("Ref:", 1)[0].strip()
+        detail = (desc_str[: ref.start()] if ref else desc_str).strip()
         type_en = self._english_only(type_str)
         is_exchange = "Foreign currency exchange" in type_en
 

@@ -254,6 +254,36 @@ class TestFieldHelpers:
         assert WeLabProvider._extract_payee("测试服务费 Test Fee") is None
 
 
+class TestRefExtraction:
+    @staticmethod
+    def _build(desc: str):
+        return WeLabProvider()._build_transaction(
+            "CNY",
+            {
+                "date": "5 Jan 2030",
+                "type": "Debit Card spending",
+                "desc": desc,
+                "amt": "-40.00",
+            },
+            Path("s.pdf"),
+            0,
+            None,
+        )
+
+    def test_fx_ref_alone_is_not_an_order_id(self) -> None:
+        txn = self._build("WEIXIN*shop-a CHN Online FX Ref: FX0001")
+        assert txn is not None
+        assert txn.order_id is None
+        assert txn.description == "WEIXIN*shop-a CHN Online FX Ref: FX0001"
+
+    def test_plain_ref_after_fx_ref_is_the_order_id(self) -> None:
+        txn = self._build("WEIXIN*shop-a CHN Online FX Ref: FX0001, Ref: FT01")
+        assert txn is not None
+        assert txn.order_id == "FT01"
+        assert txn.description == "WEIXIN*shop-a CHN Online FX Ref: FX0001,"
+        assert txn.metadata["fx_ref"] == "FX0001"
+
+
 class TestParseIntegration:
     def test_statement_period(self, statement: Path) -> None:
         txns = WeLabProvider().parse(statement)
