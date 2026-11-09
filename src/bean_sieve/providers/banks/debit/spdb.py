@@ -61,7 +61,6 @@ class SPDBDebitProvider(BaseProvider):
     NUM_COLS = 9
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse an SPDB debit card transaction statement PDF."""
         import fitz
 
         transactions: list[Transaction] = []

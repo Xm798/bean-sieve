@@ -67,7 +67,6 @@ class BOCDebitProvider(BaseProvider):
     CURRENCY_ALIASES: dict[str, str] = {"人民币元": "CNY"}
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse BOC debit card CSV statement."""
         lines = read_text_lines(file_path)
         header_idx = find_header_line(lines, self.HEADER_KEYWORDS, 10)
         if header_idx is None:
@@ -111,7 +110,6 @@ class BOCDebitProvider(BaseProvider):
         row_num: int,
         file_path: Path,
     ) -> Transaction | None:
-        """Parse a single data row."""
         tx_date, tx_time = self._parse_datetime(row["tx_time"])
         if tx_date is None:
             return None
@@ -151,7 +149,6 @@ class BOCDebitProvider(BaseProvider):
         if not value or not value[0].isdigit():
             return None, None
         try:
-            # Normalize separators and non-breaking spaces
             normalized = value.replace("\xa0", " ").replace("/", "-")
             parts = normalized.split(" ")
             date_parts = parts[0].split("-")
@@ -169,7 +166,6 @@ class BOCDebitProvider(BaseProvider):
             return None, None
 
     def _parse_amount(self, row: dict[str, str]) -> Decimal | None:
-        """Parse amount. Expense=positive, income=negative."""
         expense = to_decimal(row["expense"])
         income = to_decimal(row["income"])
 
@@ -188,7 +184,6 @@ class BOCDebitProvider(BaseProvider):
 
     @staticmethod
     def _build_description(summary: str, remarks: str) -> str:
-        """Build description from summary and remarks."""
         if remarks.startswith("--"):
             remarks = remarks[2:]
         return join_description(summary, remarks)

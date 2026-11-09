@@ -1,10 +1,4 @@
-"""Shared parsing helpers for tabular (CSV/XLS) bank statement providers.
-
-Plain functions, not a class hierarchy: each helper is a stateless adapter
-over one parsing seam (encoding detection, header search, cell decoding, …),
-so there is no shared state to hang a base class off of, and a hierarchy
-would add an interface layer without adding depth.
-"""
+"""Shared parsing helpers for tabular (CSV/XLS) bank statement providers."""
 
 from __future__ import annotations
 
@@ -27,8 +21,8 @@ from openpyxl import load_workbook
 def to_decimal(value: object) -> Decimal | None:
     """Convert a split-amount cell to Decimal.
 
-    Returns None for an empty, placeholder, zero or unparsable cell, so callers
-    can read "not this column" off the same result as "no usable value".
+    Returns None for an empty, "-", zero or unparsable cell: on a split
+    debit/credit layout each of them means the amount is in the other column.
     """
     cleaned = str(value).replace(",", "").strip()
     if not cleaned or cleaned == "-":
@@ -97,7 +91,7 @@ def row_cells(
     return cells
 
 
-# Ordered widest-first: the BOM variant must win before plain utf-8 swallows it.
+# utf-8-sig precedes utf-8, which decodes a BOM into a leading U+FEFF.
 CJK_ENCODINGS: tuple[str, ...] = ("utf-8-sig", "utf-8", "gbk")
 
 
@@ -175,7 +169,6 @@ def masked_card_last4(text: str) -> str | None:
 
 
 def first_masked_card_last4(lines: Iterable[str]) -> str | None:
-    """Return the card suffix from the first line that carries a masked card number."""
     for line in lines:
         last4 = masked_card_last4(line)
         if last4:
@@ -206,7 +199,6 @@ CURRENCY_CODES: dict[str, str] = {
 
 
 def currency_code(name: str | None) -> str | None:
-    """Return the ISO code of a Chinese currency name, or None if unknown."""
     return CURRENCY_CODES.get(name or "")
 
 

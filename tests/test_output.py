@@ -1,5 +1,3 @@
-"""Tests for BeancountWriter."""
-
 from datetime import date
 from decimal import Decimal
 
@@ -68,7 +66,6 @@ def test_explicit_posting_metadata_does_not_duplicate():
 
 
 def test_posting_metadata_skips_underscore_prefixed_keys():
-    """An internal `_` key in _posting_metadata is dropped; other keys still emit."""
     writer = BeancountWriter(output_metadata=["source"], check_scope=lambda _a: False)
     txn = Transaction(
         date=date(2030, 1, 2),
@@ -127,7 +124,6 @@ def test_format_result_renders_meta_diagnostics_section():
 
 
 def test_format_result_filters_diagnostics_by_check_scope():
-    """Only diagnostics whose account is in scope should be rendered."""
     from bean_sieve.core.types import MatchResult, MetaDiagnostic, ReconcileResult
 
     diagnostics = [
@@ -220,10 +216,9 @@ def test_format_result_sorts_diagnostics():
 
 
 def test_shared_account_card_last4_not_duplicated_at_txn_level():
-    """When account is shared and output_metadata emits all (None), card_last4
-    should appear ONCE at posting level, not at transaction level too."""
+    """With output_metadata left at None (emit every field) on a shared account,
+    card_last4 appears once, at posting level."""
     writer = BeancountWriter(check_scope=lambda a: a == "Liabilities:Credit:HXB")
-    # output_metadata default is None = emit all fields
     txn = Transaction(
         date=date(2025, 3, 15),
         amount=Decimal("28.00"),
@@ -237,7 +232,6 @@ def test_shared_account_card_last4_not_duplicated_at_txn_level():
     )
     output = writer.format_transaction(txn)
     assert output.count('card_last4: "1234"') == 1
-    # And the single occurrence should be at posting level (8-space indent)
     lines = output.split("\n")
     card_lines = [ln for ln in lines if "card_last4" in ln]
     assert len(card_lines) == 1
@@ -245,7 +239,6 @@ def test_shared_account_card_last4_not_duplicated_at_txn_level():
 
 
 def test_non_shared_account_keeps_txn_level_card_last4():
-    """For non-shared accounts, card_last4 is still emitted at txn level if output_metadata allows."""
     writer = BeancountWriter(check_scope=lambda _a: False)
     txn = Transaction(
         date=date(2025, 3, 15),

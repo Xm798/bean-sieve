@@ -1,5 +1,3 @@
-"""Tests for Huaxia Bank (HXB) credit card statement provider."""
-
 import base64
 from datetime import date
 from decimal import Decimal
@@ -12,7 +10,6 @@ from bean_sieve.providers.banks.credit.hxb import HXBCreditProvider
 
 
 def create_hxb_eml(html_content: str) -> str:
-    """Create an EML file content with the given HTML (base64 encoded)."""
     encoded = base64.b64encode(html_content.encode("utf-8")).decode("ascii")
     return f"""From: creditcard@hxb.com.cn
 Subject: =?utf-8?B?5Y2O5aSP5L+h55So5Y2h5a+56LSm5Y2V?=
@@ -81,7 +78,6 @@ def hxb_html_content():
 
 @pytest.fixture
 def hxb_eml_file(tmp_path, hxb_html_content):
-    """Create a temporary HXB EML file."""
     file_path = tmp_path / "华夏信用卡-电子账单2025年11月.eml"
     eml_content = create_hxb_eml(hxb_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
@@ -89,10 +85,7 @@ def hxb_eml_file(tmp_path, hxb_html_content):
 
 
 class TestHXBCreditProvider:
-    """Tests for HXBCreditProvider."""
-
     def test_provider_registration(self):
-        """Test that HXB provider is properly registered."""
         provider = get_provider("hxb_credit")
         assert isinstance(provider, HXBCreditProvider)
         assert provider.provider_id == "hxb_credit"
@@ -100,20 +93,17 @@ class TestHXBCreditProvider:
         assert ".eml" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert HXBCreditProvider.can_handle(Path("华夏信用卡-电子账单2025年11月.eml"))
         assert HXBCreditProvider.can_handle(Path("华夏信用卡账单.eml"))
         assert not HXBCreditProvider.can_handle(Path("hxb_statement.csv"))
         assert not HXBCreditProvider.can_handle(Path("statement.eml"))
 
     def test_parse_transactions(self, hxb_eml_file):
-        """Test parsing transactions from EML file."""
         provider = HXBCreditProvider()
         transactions = provider.parse(hxb_eml_file)
 
         assert len(transactions) == 4
 
-        # Check expense transaction
         txn1 = transactions[0]
         assert txn1.date == date(2025, 11, 5)
         assert txn1.amount == Decimal("45.00")
@@ -128,13 +118,11 @@ class TestHXBCreditProvider:
         assert txn2.amount == Decimal("999.00")
         assert "Apple" in txn2.description
 
-        # Check amount with thousands separator
         txn3 = transactions[2]
         assert txn3.date == date(2025, 11, 15)
         assert txn3.amount == Decimal("1280.00")
         assert "Hilton" in txn3.description
 
-        # Check refund transaction (negative)
         txn4 = transactions[3]
         assert txn4.date == date(2025, 11, 20)
         assert txn4.amount == Decimal("-100.00")
@@ -142,7 +130,6 @@ class TestHXBCreditProvider:
         assert txn4.is_income
 
     def test_statement_period_extraction(self, hxb_eml_file):
-        """Test that statement period is properly extracted."""
         provider = HXBCreditProvider()
         transactions = provider.parse(hxb_eml_file)
 
@@ -230,7 +217,6 @@ class TestHXBCreditProvider:
         )
 
     def test_card_last4_extraction(self, hxb_eml_file):
-        """Test that card_last4 is properly extracted."""
         provider = HXBCreditProvider()
         transactions = provider.parse(hxb_eml_file)
 
@@ -238,7 +224,6 @@ class TestHXBCreditProvider:
             assert txn.card_last4 == "1234"
 
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         html = """<html>
 <body>
 <table><tr><td>交易日</td></tr></table>
@@ -254,10 +239,7 @@ class TestHXBCreditProvider:
 
 
 class TestHXBDateParsing:
-    """Tests for HXB date parsing edge cases."""
-
     def test_mm_dd_format(self, tmp_path):
-        """Test parsing MM/DD date format."""
         html = """<html><body>
 <table><tr><td>交易日</td></tr></table>
 <table>
@@ -279,7 +261,6 @@ class TestHXBDateParsing:
         assert transactions[0].date == date(2025, 1, 15)
 
     def test_cross_year_transaction(self, tmp_path):
-        """Test transactions that cross year boundary."""
         # Statement is for January 2026, but has transactions from Dec 2025
         html = """<html><body>
 <div>账单周期：2025/12/01-2025/12/31</div>
@@ -304,10 +285,7 @@ class TestHXBDateParsing:
 
 
 class TestHXBAmountParsing:
-    """Tests for HXB amount parsing edge cases."""
-
     def test_cny_amount(self, tmp_path):
-        """Test parsing CNY amounts with ￥ symbol."""
         html = """<html><body>
 <table><tr><td>交易日</td></tr></table>
 <table>
@@ -330,7 +308,6 @@ class TestHXBAmountParsing:
         assert transactions[0].currency == "CNY"
 
     def test_usd_amount(self, tmp_path):
-        """Test parsing USD amounts with ＄ symbol."""
         html = """<html><body>
 <table><tr><td>交易日</td></tr></table>
 <table>
@@ -399,7 +376,6 @@ class TestHXBAmountParsing:
         ]
 
     def test_negative_amount_refund(self, tmp_path):
-        """Test parsing negative amounts (refunds)."""
         html = """<html><body>
 <table><tr><td>交易日</td></tr></table>
 <table>
@@ -423,10 +399,7 @@ class TestHXBAmountParsing:
 
 
 class TestHXBStatementPeriod:
-    """Tests for HXB statement period extraction."""
-
     def test_period_from_html_slash_format(self, tmp_path):
-        """Test extracting period from HTML with YYYY/MM/DD format."""
         html = """<html><body>
 <div>账单周期：2025/11/01-2025/11/30</div>
 <table><tr><td>交易日</td></tr></table>
@@ -479,7 +452,6 @@ class TestHXBStatementPeriod:
         )
 
     def test_period_from_filename_fallback(self, tmp_path):
-        """Test fallback to filename when period not in HTML."""
         html = """<html><body>
 <table><tr><td>交易日</td></tr></table>
 <table>
@@ -498,7 +470,7 @@ class TestHXBStatementPeriod:
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 1
-        # Should fall back to full month from filename
+        # The full month from the filename
         assert transactions[0].statement_period == (
             date(2025, 12, 1),
             date(2025, 12, 31),

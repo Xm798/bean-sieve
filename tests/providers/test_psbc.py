@@ -1,5 +1,3 @@
-"""Tests for the PSBC credit-card statement provider."""
-
 import base64
 import logging
 from datetime import date

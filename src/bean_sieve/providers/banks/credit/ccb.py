@@ -51,7 +51,6 @@ class CCBCreditProvider(BaseProvider):
     coverage_priority = ("statement", "reissue")
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse a CCB credit card statement, mailed or reissued."""
         if file_path.suffix.lower() == ".pdf":
             cycle, rows = self._read_pdf(file_path)
         else:
@@ -108,14 +107,9 @@ class CCBCreditProvider(BaseProvider):
         file_path: Path,
         row_idx: int,
     ) -> Transaction | None:
-        """Parse a single transaction row.
-
-        Row format: [交易日, 银行记账日, 卡号后四位, 交易描述, CNY, 金额, CNY, 金额]
-        or: [交易日, 银行记账日, 卡号后四位, 交易描述, 交易币/金额, 结算币/金额]
-        """
         try:
-            trans_date_str = cells[0]  # YYYY-MM-DD
-            post_date_str = cells[1]  # YYYY-MM-DD
+            trans_date_str = cells[0]
+            post_date_str = cells[1]
             card_cell = cells[2]
             card_match = _CARD_RE.match(card_cell)
             card_last4 = card_match[1] if card_match else card_cell
@@ -155,16 +149,13 @@ class CCBCreditProvider(BaseProvider):
             return None
 
     def _parse_date(self, date_str: str) -> date:
-        """Parse date string in YYYY-MM-DD format."""
         year, month, day = map(int, date_str.split("-"))
         return date(year, month, day)
 
     def _amount_pairs(self, cells: list[str]) -> list[tuple[str, Decimal | None]]:
-        """Read the transaction and settlement (currency, amount) pairs.
+        """Read the transaction and settlement (currency, amount) pairs, in that order.
 
-        Handles two formats:
-        1. [CNY, 金额, CNY, 金额] - currency and amount in separate cells
-        2. [CNY金额, CNY金额] - combined currency+amount
+        The cells are either [CNY, 金额, CNY, 金额] or [CNY金额, CNY金额].
         """
         if cells and _CURRENCY_RE.match(cells[0]):
             printed = list(zip(cells[0::2], cells[1::2], strict=False))[:2]
@@ -177,9 +168,7 @@ class CCBCreditProvider(BaseProvider):
         return pairs
 
     def _parse_amount(self, amount_str: str) -> Decimal | None:
-        """Parse amount string, handling commas and negative signs."""
         try:
-            # Remove commas and whitespace
             cleaned = amount_str.replace(",", "").strip()
             return Decimal(cleaned)
         except Exception:

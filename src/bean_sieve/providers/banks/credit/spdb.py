@@ -42,14 +42,11 @@ _PDF_CURRENCY_SYMBOLS = {"￥": "CNY", "$": "USD"}
 @register_provider
 class SPDBCreditProvider(BaseProvider):
     """
-    Provider for SPDB credit card transaction-detail XLS reports and PDF
-    statements.
+    SPDB transaction-detail XLS reports and PDF statements.
 
     XLS file format:
     - Format: XLS (BIFF8)
-    - Header: first 10 rows, normally row 0
-    - Columns: 交易日期, 记账日期, 交易摘要, 卡号末四位, 卡片类型,
-      交易币种, 交易金额, 原始交易金额&币种
+    - Header: ``EXPECTED_HEADERS``, normally row 0, always within the first 10
     - Amount sign: positive = expense, negative = payment/refund
     - Date format: YYYYMMDD
     - One monthly report may contain transactions from multiple cards
@@ -97,10 +94,10 @@ class SPDBCreditProvider(BaseProvider):
 
     @classmethod
     def can_handle(cls, file_path: Path) -> bool:
-        """Detect explicit SPDB filenames or the report's unique XLS header.
+        """Tell an XLS by its exact report header, a PDF by its title.
 
-        PDFs are told by their title alone: the filename keywords also match
-        SPDB debit-card statements.
+        The filename keywords decide only for a path that is not a file; they
+        also match SPDB debit-card statements, so a PDF never uses them.
         """
         suffix = file_path.suffix.lower()
         if suffix == ".pdf":
@@ -126,7 +123,6 @@ class SPDBCreditProvider(BaseProvider):
             return False
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse an SPDB credit card XLS report or PDF statement."""
         if file_path.suffix.lower() == ".pdf":
             return self._parse_pdf(file_path)
         return self._parse_xls(file_path)
@@ -294,7 +290,6 @@ class SPDBCreditProvider(BaseProvider):
 
     @classmethod
     def _find_header_row(cls, sheet: xlrd.sheet.Sheet) -> int | None:
-        """Find the exact report header within the first 10 rows."""
         for row_idx in range(min(10, sheet.nrows)):
             headers = tuple(
                 cls._normalize_cell_str(sheet.cell_value(row_idx, col))
@@ -311,7 +306,7 @@ class SPDBCreditProvider(BaseProvider):
         file_path: Path,
         datemode: int,
     ) -> Transaction | None:
-        """Parse one transaction row, skipping malformed rows with a warning."""
+        """None for a blank row, and for a malformed one after a warning."""
         if not any(self._normalize_cell_str(value) for value in row):
             return None
 
@@ -373,14 +368,13 @@ class SPDBCreditProvider(BaseProvider):
 
     @staticmethod
     def _normalize_cell_str(value: object) -> str:
-        """Convert an XLS cell to a trimmed string without a trailing .0."""
         if isinstance(value, float) and value.is_integer():
             return str(int(value))
         return str(value).strip()
 
     @classmethod
     def _normalize_card_last4(cls, value: object) -> str | None:
-        """Normalize a card suffix, restoring leading zeroes for numeric cells."""
+        """Restore the leading zeroes a numeric cell drops from the card suffix."""
         card_last4 = cls._normalize_cell_str(value)
         if not card_last4 or not card_last4.isdigit() or len(card_last4) > 4:
             return None
@@ -388,7 +382,7 @@ class SPDBCreditProvider(BaseProvider):
 
     @classmethod
     def _parse_date(cls, value: object, datemode: int = 0) -> date:
-        """Parse YYYYMMDD text/numbers or an Excel date cell."""
+        """A float below 10,000,000 is an Excel serial date; any other value is YYYYMMDD."""
         if isinstance(value, float) and value < 10_000_000:
             year, month, day, _, _, _ = xlrd.xldate_as_tuple(
                 value,
@@ -404,7 +398,6 @@ class SPDBCreditProvider(BaseProvider):
 
     @staticmethod
     def _parse_amount(value: object, currency: str) -> Decimal | None:
-        """Parse a signed transaction amount."""
         try:
             return Decimal(amount_cell_str(value, currency).replace(",", ""))
         except (InvalidOperation, ValueError):
@@ -425,5 +418,4 @@ class SPDBCreditProvider(BaseProvider):
 
     @staticmethod
     def _map_currency(value: str) -> str:
-        """Map statement currency labels to ISO currency codes."""
         return currency_code(value) or value.upper()

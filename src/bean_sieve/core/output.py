@@ -29,14 +29,12 @@ from .types import (
 
 
 def _sort_key(t: Transaction) -> tuple:
-    """Sort key for transactions: by date, then by time."""
     return (t.date, t.time or dt.time.min)
 
 
 def _sort_transactions(
     transactions: list[Transaction], sort_by_time: str | None
 ) -> list[Transaction]:
-    """Sort transactions based on sort_by_time config."""
     if not sort_by_time:
         return transactions
     reverse = sort_by_time == "desc"
@@ -44,8 +42,6 @@ def _sort_transactions(
 
 
 class BeancountWriter:
-    """Generate Beancount format output from transactions."""
-
     def __init__(
         self,
         default_expense: str = "Expenses:FIXME",
@@ -61,21 +57,19 @@ class BeancountWriter:
         self.default_income = default_income
         self.default_rebate = default_rebate
         self.default_fee = default_fee
-        # Which metadata fields to include (None = all)
+        # None writes every metadata field.
         self.output_metadata = output_metadata
-        # Sort by datetime: "asc", "desc", or None (no sort)
+        # "asc", "desc", or None to keep the input order.
         self.sort_by_time = sort_by_time
-        # Default transaction flag: "*" (cleared) or "!" (pending)
+        # Flag of rows no rule matched; rule-matched rows keep the rule's flag.
         self.default_flag = default_flag
-        # Predicate answering "does this account need card_last4 posting meta?"
+        # True for accounts in the meta_check scope: their card_last4 goes on
+        # the posting, and only their metadata diagnostics are written.
         self.check_scope: Callable[[str], bool] = check_scope or (lambda _: False)
 
     def format_transaction(self, txn: Transaction) -> str:
-        """Format a single transaction as Beancount entry."""
         lines = []
 
-        # Transaction header: date flag ["payee"] "narration" tags links
-        # Use rule-set flag for rule-matched transactions, otherwise use default_flag
         flag = txn.flag if txn.match_source == MatchSource.RULE else self.default_flag
         narration = txn.description.replace('"', '\\"')
 
@@ -91,12 +85,10 @@ class BeancountWriter:
             header += " " + " ".join(f"^{link}" for link in txn.links)
         lines.append(header)
 
-        # Metadata
         meta_lines = self._format_metadata(txn)
         for meta in meta_lines:
             lines.append(f"    {meta}")
 
-        # Postings
         postings = self._format_postings(txn)
         for posting in postings:
             lines.append(f"    {posting}")
@@ -104,27 +96,25 @@ class BeancountWriter:
         return "\n".join(lines)
 
     def _format_metadata(self, txn: Transaction) -> list[str]:
-        """Format transaction metadata."""
         meta = []
-        # Use per-transaction override if set (from provider config), else global
+        # Rows of a provider with its own output_metadata carry the global list
+        # merged with it.
         allowed = txn.metadata.get(OUTPUT_METADATA, self.output_metadata)
-        # Force output 'method' when account not matched (for manual processing)
+        # An unmapped row always shows its method, so the account can be filled
+        # in by hand.
         force_method = not txn.account
 
         def should_include(key: str) -> bool:
-            """Check if a metadata key should be included in output."""
             if key == "method" and force_method:
                 return True
             return allowed is None or key in allowed
 
         def is_empty_value(value: str) -> bool:
-            """Check if a string value is empty or meaningless."""
             if not value:
                 return True
             stripped = value.strip()
             return stripped == "" or stripped == "/" or stripped == "-"
 
-        # Standard metadata
         if should_include("time") and txn.time:
             meta.append(f'time: "{txn.time.strftime("%H:%M:%S")}"')
 
@@ -143,17 +133,14 @@ class BeancountWriter:
             if ref and not is_empty_value(ref):
                 meta.append(f'reference: "{ref}"')
 
-        # Source: provider name only
         if should_include("source") and txn.provider:
             meta.append(f'source: "{txn.provider}"')
 
-        # Match source for debug (rule pattern)
         if should_include(MATCHED_RULE) and txn.metadata.get(MATCHED_RULE):
             meta.append(f'{MATCHED_RULE}: "{txn.metadata[MATCHED_RULE]}"')
 
-        # Additional metadata from provider (only if allowed)
-        # These already have a fixed slot above, except original_payee, which the
-        # rules engine records purely so the override is auditable in memory.
+        # MATCHED_RULE and REFERENCE have their slots above; ORIGINAL_PAYEE is
+        # kept in memory only, to audit a rule's payee override.
         skip_keys = {MATCHED_RULE, REFERENCE, ORIGINAL_PAYEE}
         for key, value in txn.metadata.items():
             # Beancount metadata keys must start with a lowercase letter, so an
@@ -174,10 +161,8 @@ class BeancountWriter:
         return meta
 
     def _format_postings(self, txn: Transaction) -> list[str]:
-        """Format transaction postings."""
         postings = []
 
-        # Primary account (asset/liability)
         account = txn.account or "Assets:FIXME"
         amount = -txn.amount  # Statement shows outflow as positive
 
@@ -213,17 +198,14 @@ class BeancountWriter:
             if value:
                 postings.append(f'    {key}: "{value}"')
 
-        # Handle rebate if present (e.g., 已优惠¥10.00)
         rebate_str = txn.metadata.get("rebate")
         rebate = Decimal(rebate_str) if rebate_str else Decimal("0")
         rebate_currency = txn.metadata.get("rebate_currency") or txn.currency
 
         if rebate:
-            # Rebate posting (income-like, negative)
-            # Use per-transaction rebate account if set, else fall back to default
             rebate_account = txn.metadata.get(REBATE_ACCOUNT) or self.default_rebate
             postings.append(f"{rebate_account}  -{rebate} {rebate_currency}")
-            # Contra account includes rebate (total expense = paid + rebate)
+            # The contra side books the gross: the amount paid plus the rebate.
             contra_amount = txn.amount + rebate
         else:
             contra_amount = txn.amount
@@ -233,7 +215,6 @@ class BeancountWriter:
             postings.append(f"{fee_account}  {txn.fee} {txn.currency}")
             contra_amount -= txn.fee
 
-        # Contra account (expense/income)
         if exchange:
             contra = account
             foreign_amount, foreign_currency = txn.price_amount, txn.price_currency
@@ -266,10 +247,8 @@ class BeancountWriter:
         transactions: list[Transaction],
         source_info: str | None = None,
     ) -> str:
-        """Format multiple transactions with header."""
         output = StringIO()
 
-        # Header
         output.write("; " + "=" * 60 + "\n")
         output.write("; Generated by Bean-Sieve\n")
         output.write(f"; Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -277,7 +256,6 @@ class BeancountWriter:
             output.write(f"; Source: {source_info}\n")
         output.write("; " + "=" * 60 + "\n\n")
 
-        # Output all transactions sorted by time
         for txn in _sort_transactions(transactions, self.sort_by_time):
             output.write(self.format_transaction(txn) + "\n\n")
 
@@ -295,19 +273,15 @@ class BeancountWriter:
     def format_result(
         self, result: ReconcileResult, source_info: str | None = None
     ) -> str:
-        """Format complete reconcile result."""
         output = StringIO()
 
-        # Main content
         output.write(
             self.format_transactions(result.processed, source_info=source_info)
         )
 
-        # Summary
         output.write("; --- Summary ---\n")
         output.write(f"; {result.match_result.summary}\n")
 
-        # Extra entries (in ledger but not in statement) - output in full
         if result.match_result.extra:
             output.write("\n")
             output.write("; " + "=" * 60 + "\n")
@@ -345,7 +319,6 @@ class BeancountWriter:
         title: str,
         items: list[MetaDiagnostic] | list[MatchDiagnostic],
     ) -> None:
-        """Write a `; ===` banner and one comment line per diagnostic message."""
         if not items:
             return
         output.write("\n")
@@ -356,11 +329,9 @@ class BeancountWriter:
             output.write(f"; {d.message}\n")
 
     def _extract_entry_source(self, filename: str, lineno: int) -> str | None:
-        """Extract the original text of a Beancount entry from its source file.
-
-        Boundary: starts at lineno (1-based); ends at the next non-blank,
-        non-indented line (next top-level directive or comment) or EOF.
-        """
+        """The source text from 1-based ``lineno`` up to the next non-blank line
+        starting in column 0 (the next directive or comment) or EOF; None when
+        the file is unreadable or ``lineno`` lies outside it."""
         src = linecache.getlines(filename)
         if not src or lineno < 1 or lineno > len(src):
             return None
@@ -374,7 +345,7 @@ class BeancountWriter:
         return "".join(src[start:end]).rstrip()
 
     def _format_extra_entry(self, entry) -> str:
-        """Format an extra ledger entry, preferring the original source text."""
+        """The entry's source text, else Beancount's printing of it."""
         txn = entry.txn
         filename = txn.meta.get("filename")
         lineno = txn.meta.get("lineno")
@@ -384,7 +355,7 @@ class BeancountWriter:
             if body is not None:
                 return f"; Source: {filename}:{lineno}\n{body}"
 
-        # Fallback: re-serialize from the parsed entry via Beancount's printer
+        # Without readable source text, print the parsed entry.
         body = printer.format_entry(txn).rstrip()
         if filename and lineno:
             return f"; Source: {filename}:{lineno}\n{body}"
@@ -399,11 +370,6 @@ def write_output(
     default_income: str = "Income:FIXME",
     output_metadata: list[str] | None = None,
 ) -> None:
-    """
-    Write reconcile result to Beancount file.
-
-    Convenience function for common usage.
-    """
     writer = BeancountWriter(
         default_expense=default_expense,
         default_income=default_income,

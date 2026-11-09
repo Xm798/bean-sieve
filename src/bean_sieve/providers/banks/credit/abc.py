@@ -99,8 +99,6 @@ _TEMPLATES: tuple[_MailTemplate, ...] = (
 
 @dataclass
 class StatementSummary:
-    """Summary information extracted from ABC statement."""
-
     card_number: str | None = None  # 卡号 (masked, e.g., 620000******1234)
     statement_period: tuple[date, date] | None = None  # 账单周期
     statement_balance: Decimal | None = None  # 本期应还款额
@@ -130,8 +128,6 @@ class StatementSummary:
 @register_provider
 class ABCCreditProvider(BaseProvider):
     """
-    Provider for Agricultural Bank of China (农业银行) credit card statements.
-
     Two formats carry the same detail rows:
     - .eml: the mailed statement (金穗信用卡电子对账单), HTML in one of the
       layouts in ``_TEMPLATES``, told apart by the detail header
@@ -157,7 +153,6 @@ class ABCCreditProvider(BaseProvider):
         self._summaries: dict[Path, StatementSummary] = {}
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse an ABC credit card statement, mailed or reissued."""
         lines = self._lines(file_path)
         summary = _read_summary(lines)
         self._summaries[file_path] = summary
@@ -317,9 +312,9 @@ class ABCCreditProvider(BaseProvider):
                 self._parse_date(cells[1]) if _ROW_DATE_RE.match(cells[1]) else None
             )
 
-            # Card field may carry a 主/附 suffix (e.g. "5678附"); keep the 4 digits.
-            # Account-level rows (e.g. 约定还款) leave it empty — those belong to
-            # the statement's own card, since each statement covers a single card.
+            # A card cell may carry a 主/附 suffix, as "5678附". Account-level
+            # rows such as 约定还款 leave it empty; each statement covers one
+            # card, so they belong to the statement's own.
             card_last4: str | None
             card_match = _CARD_CELL_RE.match(card_cell)
             if card_match:
@@ -335,12 +330,10 @@ class ABCCreditProvider(BaseProvider):
                 )
                 return None
 
-            # Parse amount and currency (e.g., "-10.00/CNY" or "14.00/CNY")
             amount, currency = self._parse_amount(settle_amount)
             if amount is None:
                 return None
 
-            # Negate: source uses negative for expenses, we use positive
             amount = -amount
 
             return Transaction(
@@ -362,7 +355,6 @@ class ABCCreditProvider(BaseProvider):
             return None
 
     def _parse_date(self, date_str: str) -> date | None:
-        """Parse a YYMMDD or YYYYMMDD date."""
         try:
             if len(date_str) == 8:
                 return date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:]))
@@ -370,16 +362,14 @@ class ABCCreditProvider(BaseProvider):
             mm = int(date_str[2:4])
             dd = int(date_str[4:6])
 
-            # Determine century: if YY > 50, assume 1900s, else 2000s
             full_year = 1900 + yy if yy > 50 else 2000 + yy
             return date(full_year, mm, dd)
         except ValueError:
             return None
 
     def _parse_amount(self, amount_str: str) -> tuple[Decimal | None, str]:
-        """Parse amount string like '-10.00/CNY' or '14.00/CNY'."""
+        """Read '-10.00/CNY'; an unreadable cell gives (None, 'CNY')."""
         try:
-            # Split amount and currency
             match = re.match(r"^([-\d,.]+)/(\w+)$", amount_str)
             if not match:
                 return None, "CNY"
@@ -405,8 +395,8 @@ class ABCCreditProvider(BaseProvider):
     ) -> str:
         """Append statement summary comparison and rebate entries to output.
 
-        Relies on the run calling this on the instance that ran parse(), whose
-        stored summaries it reads instead of reopening each file.
+        Reads the summaries parse() stored on this instance; a file it did not
+        parse is read again.
         """
         source_files = self.own_statement_paths(context)
         # A file statement selection dropped repeats the one adopted for its
@@ -419,7 +409,6 @@ class ABCCreditProvider(BaseProvider):
         if not source_files:
             return content
 
-        # Collect rebate entries and summary lines
         rebate_entries: list[Transaction] = []
         summary_lines = ["\n; " + "=" * 60]
         summary_lines.append(f"; {self.provider_name} 账单核对")
@@ -468,7 +457,6 @@ class ABCCreditProvider(BaseProvider):
 
         summary_lines.append("; " + "=" * 60)
 
-        # Combine: rebate entries first, then summary
         output_parts = [content]
         if rebate_entries:
             # Each entry is a statement item the ledger lacks, so it counts
@@ -643,11 +631,9 @@ class ABCCreditProvider(BaseProvider):
     ) -> TxnPosting | None:
         """Find the Extra ledger posting that already books the rebate entry.
 
-        Matches by:
-        1. Keywords in narration (from rebate_keywords config)
-        2. Income account (from rebate_income_account config)
-        3. Amount matches (within 0.01)
-        4. Account contains card_last4
+        The posting falls in the cycle, sits on an account containing the card
+        suffix and moves exactly the rebate; its payee or narration holds one of
+        rebate_keywords, or its transaction posts to rebate_income_account.
         """
         provider_config = self._provider_config(context)
         card_last4 = entry.card_last4 or ""
@@ -658,30 +644,24 @@ class ABCCreditProvider(BaseProvider):
             keywords = provider_config.rebate_keywords or []
             income_account = provider_config.rebate_income_account
 
-        # If no keywords or income account configured, can't detect existing rebates
         if not keywords and not income_account:
             return None
 
-        # Check extra entries (ledger entries not matched to statement)
         for txn_posting in result.match_result.extra:
             txn, posting = txn_posting
 
-            # Check if within statement period
             if not (period[0] <= txn.date <= period[1]):
                 continue
 
-            # Check if posting matches card (by account containing card_last4)
             if card_last4 not in posting.account:
                 continue
 
-            # Check amount matches (rebate reduces liability, so positive posting)
             posting_amount = Decimal(0)
             if posting.units and posting.units.number is not None:
                 posting_amount = abs(posting.units.number)
             if posting_amount != rebate:
                 continue
 
-            # Check narration for keywords
             narration = txn.narration or ""
             payee = txn.payee or ""
             text = f"{payee} {narration}"
@@ -689,7 +669,6 @@ class ABCCreditProvider(BaseProvider):
             if keywords and any(kw in text for kw in keywords):
                 return txn_posting
 
-            # Check if any posting uses the rebate income account
             if income_account and any(
                 p.account == income_account for p in txn.postings
             ):

@@ -77,7 +77,6 @@ class CCBDebitProvider(BaseProvider):
     COMBINED_COUNTERPARTY = re.compile(r"([^/]+?)\s*/\s*(.+)")
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse CCB debit card XLS statement."""
         wb = xlrd.open_workbook(str(file_path))
         sheet = wb.sheet_by_index(0)
 
@@ -127,7 +126,6 @@ class CCBDebitProvider(BaseProvider):
         return columns
 
     def _extract_card_last4(self, sheet, file_path: Path) -> str | None:
-        """Extract card last 4 digits from account row or filename."""
         for row_idx in range(min(5, sheet.nrows)):
             cell = str(sheet.cell_value(row_idx, 1) if sheet.ncols > 1 else "")
             last4 = masked_card_last4(cell)
@@ -137,7 +135,7 @@ class CCBDebitProvider(BaseProvider):
             if match:
                 return match[1][-4:]
 
-        # Fallback: extract from filename like "交易明细_6789_..."
+        # The default export name starts with 交易明细_<last4>_.
         match = re.search(r"交易明细_(\d{4})", file_path.name)
         if match:
             return match.group(1)
@@ -145,7 +143,6 @@ class CCBDebitProvider(BaseProvider):
         return None
 
     def _is_footer(self, row: list) -> bool:
-        """Check if row is the footer disclaimer."""
         return isinstance(row[0], str) and self.FOOTER_MARKER in row[0]
 
     def _parse_row(
@@ -155,7 +152,6 @@ class CCBDebitProvider(BaseProvider):
         card_last4: str | None,
         file_path: Path,
     ) -> Transaction | None:
-        """Parse a single data row, given its cells keyed by field."""
         match = self.DATE_PATTERN.match(cells["date"])
         if not match:
             return None
@@ -205,7 +201,6 @@ class CCBDebitProvider(BaseProvider):
         return ("" if account == "0" else account, "" if name == "0" else name)
 
     def _parse_time(self, value) -> time | None:
-        """Parse time from HH:MM:SS string."""
         time_str = str(value).strip()
         if not time_str:
             return None
@@ -216,7 +211,6 @@ class CCBDebitProvider(BaseProvider):
             return None
 
     def _parse_amount(self, cells: dict[str, str]) -> Decimal | None:
-        """Parse amount. Expense=positive, income=negative."""
         if cells["signed_amount"]:
             signed = to_decimal(cells["signed_amount"])
             return -signed if signed is not None else None

@@ -1,5 +1,3 @@
-"""Tests for China Merchants Bank (CMB) credit card statement provider."""
-
 import base64
 from datetime import date
 from decimal import Decimal
@@ -14,7 +12,6 @@ from bean_sieve.providers.banks.credit.cmb import CMBCreditProvider
 
 
 def create_cmb_eml(html_content: str, subject: str = "招商银行信用卡电子账单") -> str:
-    """Create an EML file content with the given HTML (base64 encoded)."""
     encoded = base64.b64encode(html_content.encode("utf-8")).decode("ascii")
     return f"""From: creditcard@cmbchina.com
 Subject: {Header(subject, "utf-8").encode()}
@@ -125,7 +122,6 @@ def create_cmb_html_with_transactions(
 
 @pytest.fixture
 def cmb_html_content():
-    """Sample CMB statement HTML content."""
     transactions = [
         # Repayment (no trans_date)
         {
@@ -135,7 +131,6 @@ def cmb_html_content():
             "card_last4": "2468",
             "amount": "-2,993.80",
         },
-        # Expense with trans_date and post_date
         {
             "trans_date": "1210",
             "post_date": "1211",
@@ -143,7 +138,6 @@ def cmb_html_content():
             "card_last4": "2468",
             "amount": "2,993.60",
         },
-        # Expense with different card
         {
             "trans_date": "1217",
             "post_date": "1218",
@@ -151,7 +145,6 @@ def cmb_html_content():
             "card_last4": "1357",
             "amount": "102.30",
         },
-        # Refund
         {
             "trans_date": "1128",
             "post_date": "1129",
@@ -165,7 +158,6 @@ def cmb_html_content():
 
 @pytest.fixture
 def cmb_eml_file(tmp_path, cmb_html_content):
-    """Create a temporary CMB EML file."""
     file_path = tmp_path / "招商银行信用卡电子账单.eml"
     eml_content = create_cmb_eml(cmb_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
@@ -173,10 +165,7 @@ def cmb_eml_file(tmp_path, cmb_html_content):
 
 
 class TestCMBCreditProvider:
-    """Tests for CMBCreditProvider."""
-
     def test_provider_registration(self):
-        """Test that CMB provider is properly registered."""
         provider = get_provider("cmb_credit")
         assert isinstance(provider, CMBCreditProvider)
         assert provider.provider_id == "cmb_credit"
@@ -184,20 +173,18 @@ class TestCMBCreditProvider:
         assert ".eml" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert CMBCreditProvider.can_handle(Path("招商银行信用卡电子账单.eml"))
         assert CMBCreditProvider.can_handle(Path("招行信用卡账单.eml"))
         assert not CMBCreditProvider.can_handle(Path("cmb_statement.csv"))
         assert not CMBCreditProvider.can_handle(Path("statement.eml"))
 
     def test_parse_transactions(self, cmb_eml_file):
-        """Test parsing transactions from EML file."""
         provider = CMBCreditProvider()
         transactions = provider.parse(cmb_eml_file)
 
         assert len(transactions) == 4
 
-        # Check repayment transaction (no trans_date, uses post_date)
+        # A repayment has no trans_date, so it takes the post_date.
         txn1 = transactions[0]
         assert txn1.date == date(2025, 12, 4)
         assert txn1.amount == Decimal("-2993.80")
@@ -207,37 +194,31 @@ class TestCMBCreditProvider:
         assert txn1.provider == "cmb_credit"
         assert txn1.is_income
 
-        # Check expense with trans_date
         txn2 = transactions[1]
         assert txn2.date == date(2025, 12, 10)
         assert txn2.amount == Decimal("2993.60")
         assert "支付宝" in txn2.description
         assert txn2.is_expense
 
-        # Check different card
         txn3 = transactions[2]
         assert txn3.card_last4 == "1357"
         assert txn3.date == date(2025, 12, 17)
 
-        # Check refund
         txn4 = transactions[3]
         assert txn4.amount == Decimal("-11.10")
         assert txn4.is_income
 
     def test_statement_period_extraction(self, cmb_eml_file):
-        """Test that statement period is properly extracted."""
         provider = CMBCreditProvider()
         transactions = provider.parse(cmb_eml_file)
 
         assert len(transactions) > 0
         txn = transactions[0]
-        # CMB statement covers full month
+        # A CMB statement covers the full calendar month.
         assert txn.statement_period == (date(2025, 12, 1), date(2025, 12, 31))
 
 
 class TestCMBDateParsing:
-    """Tests for CMB date parsing edge cases."""
-
     def test_date_after_the_statement_month_is_from_the_previous_year(self, tmp_path):
         """An instalment row keeps the purchase date, months before the cycle."""
         transactions = [
@@ -260,7 +241,6 @@ class TestCMBDateParsing:
         assert txns[0].date == date(2025, 1, 15)
 
     def test_november_transactions_in_december_statement(self, tmp_path):
-        """Test November transactions in December statement."""
         transactions = [
             {
                 "trans_date": "1128",
@@ -281,10 +261,9 @@ class TestCMBDateParsing:
         assert txns[0].date == date(2025, 11, 28)
 
     def test_repayment_uses_post_date(self, tmp_path):
-        """Test that repayments without trans_date use post_date."""
         transactions = [
             {
-                "trans_date": "",  # Empty trans_date
+                "trans_date": "",
                 "post_date": "1215",
                 "description": "支付宝还款",
                 "card_last4": "2468",
@@ -303,10 +282,7 @@ class TestCMBDateParsing:
 
 
 class TestCMBAmountParsing:
-    """Tests for CMB amount parsing edge cases."""
-
     def test_amount_with_thousands_separator(self, tmp_path):
-        """Test parsing amounts with thousands separator."""
         transactions = [
             {
                 "trans_date": "1210",
@@ -380,7 +356,6 @@ class TestCMBAmountParsing:
         assert "country" not in txns[1].metadata
 
     def test_negative_amount(self, tmp_path):
-        """Test parsing negative amounts (refunds/repayments)."""
         transactions = [
             {
                 "trans_date": "1210",
@@ -403,10 +378,7 @@ class TestCMBAmountParsing:
 
 
 class TestCMBMultipleCards:
-    """Tests for CMB multiple card support."""
-
     def test_multiple_cards_in_statement(self, tmp_path):
-        """Test that transactions from different cards are parsed correctly."""
         transactions = [
             {
                 "trans_date": "1210",
@@ -439,16 +411,12 @@ class TestCMBMultipleCards:
 
         assert len(txns) == 3
 
-        # Verify different cards
         cards = {txn.card_last4 for txn in txns}
         assert cards == {"2468", "1357", "3579"}
 
 
 class TestCMBEmptyStatement:
-    """Tests for empty statement handling."""
-
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         html = create_cmb_html_with_transactions([])
         file_path = tmp_path / "招商银行信用卡电子账单.eml"
         file_path.write_text(create_cmb_eml(html), encoding="utf-8")
@@ -460,10 +428,7 @@ class TestCMBEmptyStatement:
 
 
 class TestCMBStatementPeriod:
-    """Tests for per-card statement period assignment."""
-
     def test_cycle_bounds_a_card_dated_outside_it(self, tmp_path):
-        """Test that an out-of-cycle row leaves its card's period at the cycle."""
         transactions = [
             {
                 "trans_date": "0227",
@@ -529,8 +494,6 @@ _TEMPLATE_ROWS = [
 
 
 class TestCMBMailTemplates:
-    """Tests for the two mail layouts of the transaction table."""
-
     def _parse(self, tmp_path: Path, html: str, name: str = "statement.eml"):
         path = tmp_path / name
         path.write_text(create_cmb_eml(html), encoding="utf-8")
@@ -721,8 +684,6 @@ class TestCMBMailTemplates:
 
 
 class TestCMBMailMonth:
-    """Tests for reading the statement month of a mail."""
-
     def _month(
         self,
         tmp_path: Path,
@@ -872,8 +833,6 @@ _RMB = "人民币账户 RMB A/C"
 
 
 class TestCMBPdfReissue:
-    """Tests for the PDF reissue (补发账单)."""
-
     def test_parses_every_row_kind(self, tmp_path):
         pdf = write_cmb_pdf(
             tmp_path / "reissue.pdf",
@@ -936,7 +895,6 @@ class TestCMBPdfReissue:
         assert all(t.provider == "cmb_credit" for t in txns)
 
     def test_matches_the_eml_row_for_row(self, tmp_path):
-        """Both formats of one statement yield the same transactions."""
         rows = [
             ("", "0305", "银联在线网络还款", "-613.00", "4321", "-613.00", ""),
             ("0310", "0311", "payee-b", "73.40", "8765", "73.40", "CN"),
@@ -1024,8 +982,6 @@ class TestCMBPdfReissue:
 
 
 class TestCMBCoverage:
-    """Tests for statement selection between the eml and the PDF reissue."""
-
     def _itemized_html(self) -> str:
         return create_cmb_html_with_transactions(
             [

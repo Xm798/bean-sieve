@@ -9,7 +9,7 @@ from pathlib import Path
 from beancount import loader
 from beancount.core.data import Close, Open
 
-# Bank name keywords for smart sorting
+# Bank name -> keywords that identify it in a payment method or account name.
 BANK_KEYWORDS = {
     "建设银行": ["CCB", "建设", "龙卡"],
     "工商银行": ["ICBC", "工商", "工行"],
@@ -41,38 +41,30 @@ ACCOUNT_TYPE_KEYWORDS = {
 
 @dataclass
 class PaymentMethod:
-    """Represents a unique payment method found in statements."""
-
-    raw: str  # Original text from statement
-    count: int  # Number of occurrences
-    bank_hint: str | None = None  # Extracted bank name
-    card_last4: str | None = None  # Extracted card suffix (last 4 digits)
-    is_credit: bool | None = None  # True if credit card, False if debit
+    raw: str  # First-seen spelling in the statements
+    count: int
+    bank_hint: str | None = None  # A BANK_KEYWORDS key
+    card_last4: str | None = None
+    is_credit: bool | None = None  # None when the method names neither kind
 
 
 def extract_payment_methods(
     transactions: list, existing_patterns: set[str] | None = None
 ) -> list[PaymentMethod]:
     """
-    Extract unique payment methods from transactions.
+    Distinct methods compared case-insensitively, in first-seen order.
 
-    Args:
-        transactions: List of Transaction objects
-        existing_patterns: Set of already-configured patterns (case-insensitive) to skip
-
-    Returns:
-        List of PaymentMethod in first-seen order
+    A method equal to an ``existing_patterns`` entry (ignoring case), ``/``,
+    and the wallets 零钱 and 余额 are skipped.
     """
     existing_lower = {p.lower() for p in (existing_patterns or set())}
 
-    # Use lowercase key for deduplication, but keep first-seen original case
     seen_lower: dict[str, tuple[str, int]] = {}  # lowercase -> (original, count)
 
     for txn in transactions:
         method = txn.metadata.get("method", "")
         if method and method != "/" and method != "零钱" and method != "余额":
             method_lower = method.lower()
-            # Skip if already configured
             if method_lower in existing_lower:
                 continue
             if method_lower not in seen_lower:
@@ -90,19 +82,15 @@ def extract_payment_methods(
 
 
 def _parse_method_info(pm: PaymentMethod) -> None:
-    """Parse bank and card info from payment method string."""
-    # Extract card suffix (last 4 digits in parentheses)
     suffix_match = re.search(r"\((\d{4})\)", pm.raw)
     if suffix_match:
         pm.card_last4 = suffix_match.group(1)
 
-    # Detect if credit card
     if "信用卡" in pm.raw or "贷记卡" in pm.raw:
         pm.is_credit = True
     elif "储蓄卡" in pm.raw or "借记卡" in pm.raw:
         pm.is_credit = False
 
-    # Detect bank (check both bank name and keywords)
     for bank_name, keywords in BANK_KEYWORDS.items():
         if bank_name in pm.raw:
             pm.bank_hint = bank_name
@@ -117,13 +105,10 @@ def _parse_method_info(pm: PaymentMethod) -> None:
 
 def load_accounts_from_ledger(ledger_path: Path) -> tuple[list[str], set[str]]:
     """
-    Load all account names from a Beancount ledger.
+    The opened accounts sorted by name, and the set of closed ones.
 
-    Args:
-        ledger_path: Path to main beancount file
-
-    Returns:
-        Tuple of (list of account names, set of closed account names)
+    A directory loads its main.bean, else its first *.bean; with neither,
+    both are empty.
     """
     if ledger_path.is_dir():
         main_file = ledger_path / "main.bean"
@@ -152,30 +137,18 @@ def smart_sort_accounts(
     accounts: list[str], method: PaymentMethod, closed: set[str] | None = None
 ) -> list[str]:
     """
-    Sort accounts by relevance to the payment method.
-
-    Higher relevance accounts appear first. Closed accounts are sorted to the end.
-
-    Args:
-        accounts: List of account names
-        method: PaymentMethod to match against
-        closed: Set of closed account names
-
-    Returns:
-        Sorted list of accounts
+    Most relevant to ``method`` first, weighing a card suffix in the name over
+    a bank keyword over the credit/debit kind; closed accounts last.
     """
     closed = closed or set()
 
     def score(account: str) -> tuple[int, int, str]:
-        """Returns (is_closed, -relevance, account) for sorting."""
         s = 0
         acc_lower = account.lower()
 
-        # Match card suffix in account name
         if method.card_last4 and method.card_last4 in account:
             s += 100
 
-        # Match bank keywords
         if method.bank_hint:
             keywords = BANK_KEYWORDS.get(method.bank_hint, [])
             for kw in keywords:
@@ -183,7 +156,6 @@ def smart_sort_accounts(
                     s += 50
                     break
 
-        # Match account type (credit vs debit)
         if method.is_credit is True:
             if (
                 "CreditCard" in account
@@ -196,13 +168,11 @@ def smart_sort_accounts(
         ):
             s += 30
 
-        # Prefer specific account hierarchy
         if "Liabilities" in account and method.is_credit:
             s += 10
         if "Assets:Bank" in account and method.is_credit is False:
             s += 10
 
-        # Closed accounts go to the end
         is_closed = 1 if account in closed else 0
 
         return (is_closed, -s, account)
@@ -211,15 +181,6 @@ def smart_sort_accounts(
 
 
 def generate_yaml_config(mappings: list[tuple[str, str]]) -> str:
-    """
-    Generate YAML configuration from mappings.
-
-    Args:
-        mappings: List of (pattern, account) tuples
-
-    Returns:
-        YAML string
-    """
     lines = ["account_mappings:"]
 
     for pattern, account in mappings:

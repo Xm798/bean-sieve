@@ -20,8 +20,9 @@ class JDProvider(BaseProvider):
 
     File format:
     - Encoding: UTF-8 with BOM
-    - Header rows: 21 (9 metadata + 10 tips + 1 blank + 1 column header)
-    - Non-standard delimiter: first column (交易时间) separated by TAB, rest by comma
+    - 20 lines of export info and tips, a blank line, then the column header on
+      line 22
+    - 交易时间 and the two order-ID cells end with a TAB before their comma
     - Columns: 交易时间, 商户名称, 交易说明, 金额, 收/付款方式, 交易状态, 收/支, 交易分类, 交易订单号, 商家订单号, 备注
     """
 
@@ -32,47 +33,31 @@ class JDProvider(BaseProvider):
     content_keywords = ["京东账号名", "交易订单号", "商家订单号"]
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse JD statement file.
-
-        Note: JD CSV uses a non-standard format:
-        - First column (交易时间) is separated by TAB
-        - Remaining columns are separated by comma
-        """
         transactions = []
 
         with open(file_path, encoding="utf-8-sig") as f:
-            # Skip header rows (20 lines of metadata + tips)
             for _ in range(20):
                 next(f, None)
 
-            # Skip blank line
             next(f, None)
 
-            # Read header line to get column names
             header_line = next(f, None)
             if not header_line:
                 return transactions
 
-            # Parse header (comma-separated)
             columns = [col.strip() for col in header_line.strip().split(",")]
 
-            # Read data rows
             for line_num, line in enumerate(f, start=23):
                 try:
-                    # Replace all TABs with empty string to normalize format
-                    # Format: "datetime\t,field,field,...,field\t,field\t,field,"
-                    # After replacing TAB: "datetime,field,field,...,field,field,field,"
+                    # "datetime\t,field,...,field\t,field\t,field,"
                     normalized = line.strip().replace("\t", "")
 
-                    # Split by comma
                     row_data = [field.strip() for field in normalized.split(",")]
 
-                    # Remove empty trailing fields
                     while row_data and row_data[-1] == "":
                         row_data.pop()
 
-                    # Create dict mapping
-                    # Note: "备注" column may be missing (empty)
+                    # An empty 备注 is dropped with the trailing fields above.
                     if len(row_data) < len(columns) - 1:
                         logging.warning(
                             f"Line {line_num}: too few columns "
@@ -80,7 +65,6 @@ class JDProvider(BaseProvider):
                         )
                         continue
 
-                    # Pad with empty strings if needed
                     while len(row_data) < len(columns):
                         row_data.append("")
 
@@ -97,20 +81,17 @@ class JDProvider(BaseProvider):
     def _parse_row(
         self, row: dict[str, str], file_path: Path, line_num: int
     ) -> Transaction | None:
-        """Parse a single transaction row."""
-        # Skip rows with missing critical fields
         if not row.get("交易时间") or not row.get("金额"):
             return None
 
-        # Parse transaction type
         tx_type = row.get("收/支", "").strip()
-        # Skip "不计收支" transactions (refunds, internal transfers)
+        # 不计收支 rows are refunds and internal transfers.
         if tx_type == "不计收支":
             return None
 
-        # Parse amount — handles partial and full refund annotations:
-        #   "1174.41(已退款903.43)" → net 270.98
-        #   "100.00(已全额退款)" → net 0
+        # 金额 may carry a refund note; the row books the net amount:
+        #   "300.00(已退款120.00)" → 180.00
+        #   "100.00(已全额退款)" → 0
         amount_str = row["金额"].strip()
         refund_amount = Decimal(0)
         partial_match = re.search(r"\(已退款([\d,.]+)\)", amount_str)
@@ -125,22 +106,18 @@ class JDProvider(BaseProvider):
             refund_amount = amount
         amount -= refund_amount
 
-        # Skip fully refunded transactions (net amount is 0)
         if amount == 0:
             return None
 
-        # JD uses: 支出=positive, 收入=negative (already matches bean-sieve convention)
+        # 金额 is unsigned; 收入 becomes negative.
         if tx_type == "收入":
             amount = -amount
 
-        # Parse datetime
         dt = datetime.strptime(row["交易时间"].strip(), "%Y-%m-%d %H:%M:%S")
 
-        # Extract card last 4 digits from payment method
         payment_method = row.get("收/付款方式", "")
         card_last4 = self._extract_card_last4(payment_method)
 
-        # Build description
         description = row.get("交易说明", "").strip()
         payee = row.get("商户名称", "").strip()
 
@@ -168,17 +145,16 @@ class JDProvider(BaseProvider):
         )
 
     def _extract_card_last4(self, payment_method: str) -> str | None:
-        """Extract card last 4 digits from payment method string.
+        """Read the card suffix in parentheses.
 
         Examples:
-        - "数字人民币-中国银行钱包(3746)" -> "3746"
-        - "中国银行信用卡(7319)" -> "7319"
+        - "数字人民币-中国银行钱包(1234)" -> "1234"
+        - "中国银行信用卡(5678)" -> "5678"
         - "京东白条" -> None
         """
         if not payment_method:
             return None
 
-        # Match pattern like "(3746)" or "(1234)"
         match = re.search(r"\((\d{4})\)", payment_method)
         if match:
             return match.group(1)

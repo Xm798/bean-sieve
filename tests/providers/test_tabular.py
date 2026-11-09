@@ -1,5 +1,3 @@
-"""Tests for the shared tabular parsing helpers."""
-
 from __future__ import annotations
 
 import re
@@ -32,8 +30,6 @@ from bean_sieve.providers._tabular import (
 
 
 class TestToDecimal:
-    """Tests for to_decimal()."""
-
     @pytest.mark.parametrize(
         "value",
         ["", "   ", "-", "--", "abc", ", ", "1, 000"],
@@ -66,8 +62,6 @@ class TestToDecimal:
 
 
 class TestNormalizeCellStr:
-    """Tests for normalize_cell_str()."""
-
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
@@ -142,8 +136,6 @@ class TestRowCells:
 
 
 class TestReadTextLines:
-    """Tests for read_text_lines()."""
-
     def test_bom_is_stripped(self, tmp_path: Path) -> None:
         path = tmp_path / "bom.csv"
         path.write_bytes("日期,金额\n2030-01-02,10.00\n".encode("utf-8-sig"))
@@ -184,8 +176,6 @@ class TestReadTextLines:
 
 
 class TestFindHeaderLine:
-    """Tests for find_header_line()."""
-
     LINES = ["preamble\n", "交易日期,摘要\n", "交易日期,摘要\n"]
 
     def test_every_keyword_must_be_present(self) -> None:
@@ -209,8 +199,6 @@ class TestFindHeaderLine:
 
 
 class TestReadCsvRows:
-    """Tests for read_csv_rows()."""
-
     def test_cells_are_stripped_by_default(self, tmp_path: Path) -> None:
         path = tmp_path / "padded.csv"
         path.write_text("a ,\tb\n", encoding="utf-8")
@@ -256,8 +244,6 @@ class TestReadCsvRows:
 
 
 class TestMaskedCardLast4:
-    """Tests for masked_card_last4() and first_masked_card_last4()."""
-
     @pytest.mark.parametrize(
         ("text", "expected"),
         [
@@ -288,8 +274,6 @@ class TestMaskedCardLast4:
 
 
 class TestJoinDescription:
-    """Tests for join_description()."""
-
     def test_order_is_kept(self) -> None:
         assert join_description("one", "two", "three") == "one | two | three"
 
@@ -307,8 +291,6 @@ class TestJoinDescription:
 
 
 class TestLoadOpenpyxlWorkbook:
-    """Tests for load_openpyxl_workbook()."""
-
     @staticmethod
     def _write(path: Path) -> Path:
         wb = Workbook()
@@ -337,8 +319,6 @@ class TestLoadOpenpyxlWorkbook:
 
 
 class TestSheetHeadContains:
-    """Tests for sheet_head_contains()."""
-
     ROWS = [["title-a"], [], ["col-a", "col-b"], ["later-a"]]
 
     def _write_xlsx(self, path: Path) -> Path:

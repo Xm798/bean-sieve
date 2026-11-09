@@ -32,8 +32,7 @@ class HSBCHKDebitProvider(BaseProvider):
       Balance, Balance currency
     - Date format: DD/MM/YYYY
     - Amount sign in source: positive = inflow (credit / deposit),
-      negative = outflow (debit / withdrawal). Sieve convention is
-      expense=positive, income=negative, so amounts are negated.
+      negative = outflow (debit / withdrawal)
     """
 
     provider_id = "hsbchk_debit"
@@ -70,7 +69,10 @@ class HSBCHKDebitProvider(BaseProvider):
 
     @classmethod
     def _find_columns(cls, header_row: list[str]) -> dict[str, int] | None:
-        """Map every header cell to its index, after verifying required columns exist."""
+        """None unless every required column is present, compared case-insensitively.
+
+        Keys keep the header's own spelling.
+        """
         normalized = [c.strip().lower() for c in header_row]
         if not all(col.lower() in normalized for col in cls.REQUIRED_COLUMNS):
             return None

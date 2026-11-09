@@ -25,19 +25,12 @@ logger = logging.getLogger(__name__)
 @register_provider
 class CNCBCreditProvider(BaseProvider):
     """
-    Provider for China CITIC Bank (中信银行) credit card XLS statements.
+    China CITIC Bank XLS (BIFF8) statement export, one file per card.
 
     Downloaded from: https://e.creditcard.ecitic.com/citiccard/ebank-ocp/ebankpc/bill.html
 
-    File format:
-    - Format: XLS (BIFF8)
-    - Row 0: Title "本期账单明细(人民币)" (merged cells)
-    - Row 1: Column headers
-    - Row 2+: Data rows
-    - Columns: 交易日期, 入账日期, 交易描述, 卡末四位, 交易币种, 结算币种, 交易金额, 结算金额
-    - Amount sign: Positive = expense, Negative = income (e.g., payments)
-    - Date format: YYYY-MM-DD
-    - One file per card (per-card statement)
+    A merged "本期账单明细(人民币)" title row precedes the header row. Amounts
+    are positive for expenses and negative for payments and refunds.
     """
 
     provider_id = "cncb_credit"
@@ -51,14 +44,14 @@ class CNCBCreditProvider(BaseProvider):
     # The 已出账单明细 export lists one billed cycle without printing it.
     uncycled_export_is_statement = True
 
-    COL_TRANS_DATE = 0  # 交易日期
-    COL_POST_DATE = 1  # 入账日期
-    COL_DESCRIPTION = 2  # 交易描述
-    COL_CARD_LAST4 = 3  # 卡末四位
-    COL_TRANS_CURRENCY = 4  # 交易币种
-    COL_SETTLE_CURRENCY = 5  # 结算币种
-    COL_TRANS_AMOUNT = 6  # 交易金额
-    COL_SETTLE_AMOUNT = 7  # 结算金额
+    COL_TRANS_DATE = 0
+    COL_POST_DATE = 1
+    COL_DESCRIPTION = 2
+    COL_CARD_LAST4 = 3
+    COL_TRANS_CURRENCY = 4
+    COL_SETTLE_CURRENCY = 5
+    COL_TRANS_AMOUNT = 6
+    COL_SETTLE_AMOUNT = 7
 
     EXPECTED_HEADERS = (
         "交易日期",
@@ -77,7 +70,6 @@ class CNCBCreditProvider(BaseProvider):
         return sheet_head_contains(file_path, cls.EXPECTED_HEADERS, nrows=10)
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse CNCB credit card XLS statement."""
         wb = xlrd.open_workbook(str(file_path))
         sheet = wb.sheet_by_index(0)
 
@@ -104,7 +96,6 @@ class CNCBCreditProvider(BaseProvider):
         return transactions
 
     def _find_header_row(self, sheet: xlrd.sheet.Sheet) -> int | None:
-        """Find the header row by matching keywords."""
         for row_idx in range(min(10, sheet.nrows)):
             cell_value = str(sheet.cell_value(row_idx, 0))
             if any(kw in cell_value for kw in self.HEADER_KEYWORDS):
@@ -118,10 +109,8 @@ class CNCBCreditProvider(BaseProvider):
         file_path: Path,
         datemode: int,
     ) -> Transaction | None:
-        """Parse a single data row into a Transaction."""
         try:
             raw_date = row[self.COL_TRANS_DATE]
-            # Skip non-data rows
             date_str = normalize_cell_str(raw_date)
             if not date_str or not date_str[0].isdigit():
                 return None
@@ -132,7 +121,6 @@ class CNCBCreditProvider(BaseProvider):
             card_last4 = normalize_cell_str(row[self.COL_CARD_LAST4])
             currency = self._map_currency(str(row[self.COL_SETTLE_CURRENCY]).strip())
 
-            # Use settlement amount (结算金额)
             amount = self._parse_amount(row[self.COL_SETTLE_AMOUNT], currency)
             if amount is None:
                 logger.warning("Invalid amount at row %d in %s", row_idx, file_path)
@@ -164,7 +152,6 @@ class CNCBCreditProvider(BaseProvider):
         return date(int(parts[0]), int(parts[1]), int(parts[2]))
 
     def _parse_amount(self, value, currency: str) -> Decimal | None:
-        """Parse amount value from cell."""
         try:
             return Decimal(amount_cell_str(value, currency).replace(",", ""))
         except (InvalidOperation, ValueError):
@@ -172,5 +159,4 @@ class CNCBCreditProvider(BaseProvider):
 
     @staticmethod
     def _map_currency(currency_str: str) -> str:
-        """Map Chinese currency name to ISO code."""
         return currency_code(currency_str) or currency_str

@@ -15,10 +15,9 @@ from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
 
-# HSBC HK exports the credit-card history with a fixed default filename
-# (TransactionHistory.csv). The CSV itself does not contain the card number,
-# so we extract it from the filename when the user has appended a "_<last4>"
-# suffix, e.g. "TransactionHistory_8888.csv" or "TransactionHistory_8888 (1).csv".
+# The export is always named TransactionHistory.csv and holds no card number;
+# a "_<last4>" suffix the user appends names the card, also when a browser adds
+# " (1)" to a repeated download.
 CARD_LAST4_PATTERN = re.compile(r"_(\d{4})(?:\s*\(\d+\))?\.csv$", re.IGNORECASE)
 DATE_PATTERN = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 
@@ -26,18 +25,13 @@ DATE_PATTERN = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
 @register_provider
 class HSBCHKCreditProvider(BaseProvider):
     """
-    Provider for HSBC Hong Kong credit card CSV statements.
+    HSBC Hong Kong credit card transaction history CSV.
 
-    File format:
-    - 10 columns: Transaction date, Post date, Description, Billing amount,
-      Billing currency, Transaction status, Merchant name, Country / region,
-      Area / district, Credit / Debit
-    - Date format: DD/MM/YYYY
-    - Amount sign in source: DEBIT rows are negative (expense), CREDIT rows
-      are positive (refund / payment). Sieve convention is the opposite
-      (expense=positive, income=negative), so amounts are negated.
-    - Card number is not present in the CSV; rename downloaded files to
-      TransactionHistory_<last4>.csv to disambiguate when multiple cards exist.
+    Columns: Transaction date, Post date, Description, Billing amount,
+    Billing currency, Transaction status, Merchant name, Country / region,
+    Area / district, Credit / Debit. Dates are DD/MM/YYYY. DEBIT rows are
+    negative and CREDIT rows positive, the opposite of the internal sign.
+    With several cards, rename each download to TransactionHistory_<last4>.csv.
     """
 
     provider_id = "hsbchk_credit"
@@ -45,8 +39,8 @@ class HSBCHKCreditProvider(BaseProvider):
     supported_formats = [".csv"]
     # Only a renamed file names its card; the CSV itself never does.
     unkeyed_rows_share_account = True
-    # Use content_keywords (not filename_pattern) — credit and debit exports
-    # share the same default filename, so we differentiate by header columns.
+    # Credit and debit exports share the default filename, so detection reads
+    # the header.
     content_keywords = [
         "Transaction date,Post date,Description,Billing amount",
     ]

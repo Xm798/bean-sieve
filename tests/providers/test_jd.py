@@ -1,5 +1,3 @@
-"""Tests for JD.com payment provider."""
-
 from decimal import Decimal
 from pathlib import Path
 
@@ -7,11 +5,7 @@ from bean_sieve.providers.payment.jd import JDProvider
 
 
 class TestJDProvider:
-    """Tests for JDProvider."""
-
     def test_parse_basic(self, tmp_path: Path) -> None:
-        """Test basic parsing functionality."""
-        # Create sample JD statement file
         sample_file = tmp_path / "jd_statement.csv"
         sample_content = """导出信息：
 京东账号名：jd_test
@@ -44,10 +38,9 @@ class TestJDProvider:
         provider = JDProvider()
         transactions = provider.parse(sample_file)
 
-        # Should parse 2 transactions (2 支出), skip 1 不计收支
+        # 2 支出 rows parse; the 不计收支 row is skipped
         assert len(transactions) == 2
 
-        # Check first transaction
         tx1 = transactions[0]
         assert tx1.amount == Decimal("128.82")
         assert tx1.currency == "CNY"
@@ -62,18 +55,15 @@ class TestJDProvider:
         assert tx1.time.hour == 16
         assert tx1.time.minute == 8
 
-        # Check metadata
         assert tx1.metadata["method"] == "数字人民币-银行A钱包(1234)"
         assert tx1.metadata["transaction_type"] == "支出"
         assert tx1.metadata["transaction_status"] == "交易成功"
 
-        # Check second transaction
         tx2 = transactions[1]
         assert tx2.amount == Decimal("71.18")
         assert tx2.card_last4 == "5678"
 
     def test_skip_non_payment_transactions(self, tmp_path: Path) -> None:
-        """Test that 不计收支 transactions are skipped."""
         sample_file = tmp_path / "jd_refund.csv"
         sample_content = """导出信息：
 京东账号名：jd_test
@@ -104,27 +94,20 @@ class TestJDProvider:
         provider = JDProvider()
         transactions = provider.parse(sample_file)
 
-        # Should skip all 不计收支 transactions
         assert len(transactions) == 0
 
     def test_extract_card_last4(self) -> None:
-        """Test card last 4 digits extraction."""
         provider = JDProvider()
 
-        # Test with e-CNY wallet
         assert provider._extract_card_last4("数字人民币-某银行钱包(1234)") == "1234"
 
-        # Test with credit card
         assert provider._extract_card_last4("某银行信用卡(5678)") == "5678"
 
-        # Test with JD Baitiao (no card number)
         assert provider._extract_card_last4("京东白条") is None
 
-        # Test with empty string
         assert provider._extract_card_last4("") is None
 
     def test_income_transaction(self, tmp_path: Path) -> None:
-        """Test parsing income transactions (negative amount)."""
         sample_file = tmp_path / "jd_income.csv"
         sample_content = """导出信息：
 京东账号名：jd_test
@@ -156,11 +139,9 @@ class TestJDProvider:
         transactions = provider.parse(sample_file)
 
         assert len(transactions) == 1
-        # Income should be negative in bean-sieve convention
         assert transactions[0].amount == Decimal("-50.00")
 
     def test_partial_refund(self, tmp_path: Path) -> None:
-        """Test parsing transactions with partial refund annotations."""
         sample_file = tmp_path / "jd_partial_refund.csv"
         sample_content = """导出信息：
 京东账号名：jd_test
@@ -193,32 +174,28 @@ class TestJDProvider:
         provider = JDProvider()
         transactions = provider.parse(sample_file)
 
-        # Should parse 2 partial refunds, skip 1 full refund (net 0)
+        # 2 partial refunds parse; the full refund (net 0) is skipped
         assert len(transactions) == 2
 
-        # Partial refund: 1174.41 - 903.43 = 270.98
+        # Partial refund: the net charge is the order amount minus the refunded part.
         tx1 = transactions[0]
         assert tx1.amount == Decimal("270.98")
         assert tx1.metadata["refund_amount"] == "903.43"
 
-        # Partial refund: 976.76 - 735.45 = 241.31
+        # Partial refund: the net charge is the order amount minus the refunded part.
         tx2 = transactions[1]
         assert tx2.amount == Decimal("241.31")
         assert tx2.metadata["refund_amount"] == "735.45"
 
     def test_can_handle(self, tmp_path: Path) -> None:
-        """Test file detection."""
-        # Test with matching filename
         jd_file = tmp_path / "京东交易流水(申请时间2026年01月01日00时00分00秒).csv"
         jd_file.write_text("", encoding="utf-8")
         assert JDProvider.can_handle(jd_file)
 
-        # Test with non-matching filename
         other_file = tmp_path / "other.csv"
         other_file.write_text("", encoding="utf-8")
         assert not JDProvider.can_handle(other_file)
 
-        # Test with wrong extension
         wrong_ext = tmp_path / "京东交易流水.txt"
         wrong_ext.write_text("", encoding="utf-8")
         assert not JDProvider.can_handle(wrong_ext)

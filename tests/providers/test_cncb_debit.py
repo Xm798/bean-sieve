@@ -1,5 +1,3 @@
-"""Tests for China CITIC Bank (中信银行) debit card statement provider."""
-
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path

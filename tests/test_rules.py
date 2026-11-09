@@ -1,5 +1,3 @@
-"""Tests for rules engine."""
-
 from datetime import date, time
 from decimal import Decimal
 
@@ -26,10 +24,7 @@ from bean_sieve.providers.payment.wechat import WechatProvider
 
 
 class TestRulesEngine:
-    """Tests for RulesEngine."""
-
     def test_apply_account_mapping_by_method(self, sample_config):
-        """Test account mapping by payment method."""
         engine = RulesEngine(sample_config)
         txn = Transaction(
             date=date(2025, 1, 4),
@@ -43,7 +38,6 @@ class TestRulesEngine:
         assert result.account == "Assets:Current:Alipay"
 
     def test_apply_account_mapping_contains_match(self, sample_config):
-        """Test account mapping with contains match."""
         engine = RulesEngine(sample_config)
         txn = Transaction(
             date=date(2025, 1, 4),
@@ -57,7 +51,6 @@ class TestRulesEngine:
         assert result.account == "Liabilities:CreditCard:HXB"
 
     def test_no_account_mapping_when_no_method(self, sample_config):
-        """Test no account mapped when method is missing."""
         engine = RulesEngine(sample_config)
         txn = Transaction(
             date=date(2025, 1, 4),
@@ -70,7 +63,6 @@ class TestRulesEngine:
         assert result.account is None
 
     def test_apply_rule_regex_match(self, sample_config):
-        """Test rule matching by description regex."""
         engine = RulesEngine(sample_config)
         txn = Transaction(
             date=date(2025, 1, 4),
@@ -86,7 +78,6 @@ class TestRulesEngine:
         assert result.confidence == 1.0
 
     def test_apply_rule_payee_regex_condition(self):
-        """Test rule matching by payee regex condition."""
         config = Config(
             rules=[
                 Rule(
@@ -132,7 +123,6 @@ class TestRulesEngine:
         assert result.metadata["original_payee"] == "payee-a"
 
     def test_unset_target_payee_keeps_payee(self):
-        """A rule without target_payee leaves the payee untouched."""
         config = Config(
             rules=[
                 Rule(
@@ -154,7 +144,6 @@ class TestRulesEngine:
         assert "original_payee" not in result.metadata
 
     def test_rule_priority(self):
-        """Test that higher priority rules are applied first."""
         config = Config(
             rules=[
                 Rule(
@@ -165,7 +154,7 @@ class TestRulesEngine:
                 Rule(
                     condition=RuleCondition(description=".*瑞幸.*"),
                     action=RuleAction(contra_account="Expenses:Food:Coffee"),
-                    priority=100,  # Higher priority
+                    priority=100,
                 ),
             ]
         )
@@ -178,11 +167,9 @@ class TestRulesEngine:
             provider="test",
         )
         result = engine.apply(txn)
-        # Higher priority rule should win
         assert result.contra_account == "Expenses:Food:Coffee"
 
     def test_ignore_rule(self):
-        """Test that ignore rule removes transaction."""
         config = Config(
             rules=[
                 Rule(
@@ -200,10 +187,9 @@ class TestRulesEngine:
             provider="test",
         )
         result = apply_rules([txn], config)
-        assert len(result) == 0  # Transaction should be filtered out
+        assert len(result) == 0
 
     def test_time_range_condition(self):
-        """Test time range matching."""
         config = Config(
             rules=[
                 Rule(
@@ -218,7 +204,6 @@ class TestRulesEngine:
         )
         engine = RulesEngine(config)
 
-        # Transaction within time range
         txn_lunch = Transaction(
             date=date(2025, 1, 4),
             time=time(12, 30, 0),
@@ -230,7 +215,6 @@ class TestRulesEngine:
         result = engine.apply(txn_lunch)
         assert result.contra_account == "Expenses:Food:Lunch"
 
-        # Transaction outside time range
         txn_dinner = Transaction(
             date=date(2025, 1, 4),
             time=time(18, 30, 0),
@@ -240,10 +224,9 @@ class TestRulesEngine:
             provider="test",
         )
         result = engine.apply(txn_dinner)
-        assert result.contra_account is None  # Rule should not match
+        assert result.contra_account is None
 
     def test_amount_range_condition(self):
-        """Test amount range matching."""
         config = Config(
             rules=[
                 Rule(
@@ -261,7 +244,6 @@ class TestRulesEngine:
         )
         engine = RulesEngine(config)
 
-        # Large transfer
         txn_large = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("50000.00"),
@@ -273,7 +255,6 @@ class TestRulesEngine:
         assert result.contra_account == "Assets:Transfer"
         assert "large-transfer" in result.tags
 
-        # Small transfer
         txn_small = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("100.00"),
@@ -285,7 +266,6 @@ class TestRulesEngine:
         assert result.contra_account is None
 
     def test_direction_expense_condition(self):
-        """Test direction condition matches only expense transactions."""
         config = Config(
             rules=[
                 Rule(
@@ -308,7 +288,6 @@ class TestRulesEngine:
         )
         engine = RulesEngine(config)
 
-        # Expense (positive amount) — should match expense rule
         txn_send = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("8.88"),
@@ -319,7 +298,6 @@ class TestRulesEngine:
         result = engine.apply(txn_send)
         assert result.contra_account == "Expenses:Social:RedEnvelope"
 
-        # Income (negative amount) — should match income rule
         txn_recv = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("-1.91"),
@@ -331,7 +309,6 @@ class TestRulesEngine:
         assert result.contra_account == "Income:Social:RedEnvelope"
 
     def test_direction_without_other_conditions(self):
-        """Test direction condition works as sole condition."""
         config = Config(
             rules=[
                 Rule(
@@ -367,7 +344,6 @@ class TestRulesEngine:
         assert engine.apply(txn_income).contra_account == "Income:FIXME"
 
     def test_flag_override(self):
-        """Test flag override in rule action."""
         config = Config(
             rules=[
                 Rule(
@@ -393,10 +369,7 @@ class TestRulesEngine:
 
 
 class TestPresetRules:
-    """Tests for preset rules in RulesEngine."""
-
     def test_contra_account_metadata_key_resolves(self):
-        """Test that contra_account_metadata_key resolves via account_mappings."""
         config = Config(
             account_mappings=[
                 AccountMapping(pattern="零钱", account="Assets:Wallet:WeChat:Balance"),
@@ -434,7 +407,6 @@ class TestPresetRules:
         assert result.match_source == MatchSource.RULE
 
     def test_contra_account_metadata_key_missing_value(self):
-        """Test that missing metadata value doesn't set contra_account."""
         config = Config(
             account_mappings=[
                 AccountMapping(pattern="零钱", account="Assets:Wallet:WeChat:Balance"),
@@ -469,7 +441,6 @@ class TestPresetRules:
         assert result.contra_account is None
 
     def test_contra_account_metadata_key_no_mapping_match(self):
-        """Test that unresolvable keyword doesn't set contra_account."""
         config = Config(
             account_mappings=[
                 AccountMapping(pattern="零钱", account="Assets:Wallet:WeChat:Balance"),
@@ -506,8 +477,6 @@ class TestPresetRules:
 
 
 class TestWechatWalletTransferPresets:
-    """WeChat preset rules resolve both legs of wallet-to-wallet/bank transfers."""
-
     @staticmethod
     def _config() -> Config:
         # 零钱 is listed before 零钱通 so a substring match on "零钱" would
@@ -615,9 +584,6 @@ class TestWechatWalletTransferPresets:
 
 
 class TestWalletKeywordWithLongerWalletListedFirst:
-    """A generic wallet keyword resolves to its own mapping even when a longer
-    wallet name containing it is listed earlier."""
-
     @staticmethod
     def _wechat_config() -> Config:
         return Config(

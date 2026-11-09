@@ -90,7 +90,6 @@ class CNCBDebitProvider(BaseProvider):
         return sheet_head_contains(file_path, cls.CONTENT_MARKERS, nrows=_HEAD_ROWS)
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse a CNCB debit card XLS statement."""
         sheet = xlrd.open_workbook(str(file_path)).sheet_by_index(0)
         header_row, columns = self._find_columns(sheet, file_path)
         title = " ".join(
@@ -190,7 +189,6 @@ class CNCBDebitProvider(BaseProvider):
 
     @staticmethod
     def _amount(cells: dict[str, str]) -> Decimal | None:
-        """Expense positive, income negative; None when neither column holds one."""
         if (expense := to_decimal(cells["expense"])) is not None:
             return expense
         if (income := to_decimal(cells["income"])) is not None:

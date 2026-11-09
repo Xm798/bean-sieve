@@ -1,5 +1,3 @@
-"""Tests for HSBC Hong Kong credit card provider."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -93,9 +91,7 @@ class TestHSBCHKCreditProvider:
         # CREDIT refund (+50) → -50 income in sieve
         assert txns[1].amount == Decimal("-50.00")
         assert txns[1].is_income
-        # CREDIT payment (+1000) → -1000 income
         assert txns[2].amount == Decimal("-1000.00")
-        # DEBIT (-25.50) → +25.50 expense
         assert txns[3].amount == Decimal("25.50")
 
     def test_dates_parsed_dd_mm_yyyy(
@@ -127,7 +123,6 @@ class TestHSBCHKCreditProvider:
     ) -> None:
         f = write_csv(tmp_path, sample_rows)
         txns = HSBCHKCreditProvider().parse(f)
-        # No long runs of whitespace remain
         assert "  " not in txns[0].description
         assert "merchant-a" in txns[0].description
 
@@ -168,7 +163,7 @@ class TestHSBCHKCreditProvider:
         assert txns[0].metadata["transaction_status"] == "POSTED"
         assert txns[0].metadata["country"] == "CHINA"
         assert txns[0].metadata["direction"] == "DEBIT"
-        # PAYMENT row has empty merchant/country/district — they should not appear
+        # The PAYMENT row has empty merchant/country/district
         assert "country" not in txns[2].metadata
 
     def test_thousand_separator(self, tmp_path: Path) -> None:

@@ -43,7 +43,7 @@ class BOCOMDebitProvider(BaseProvider):
     provider_name = "交通银行借记卡"
     supported_formats = [".xls"]
     filename_keywords = ["交通银行"]
-    content_keywords = []  # Overridden by _match_content for XLS binary detection
+    content_keywords = []  # _match_content reads the XLS title cell instead
     per_card_statement = True  # BOCOM exports one statement per card
 
     COL_DATE = 0  # 记账日期
@@ -64,7 +64,6 @@ class BOCOMDebitProvider(BaseProvider):
     EXPECTED_COLS = 11
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse BOCOM debit card XLS statement."""
         wb = xlrd.open_workbook(str(file_path))
         sheet = wb.sheet_by_index(0)
 
@@ -77,7 +76,6 @@ class BOCOMDebitProvider(BaseProvider):
             )
             return []
 
-        # Validate this is a BOCOM statement
         if not self._is_bocom_statement(sheet):
             logger.warning("Not a BOCOM debit statement: %s", file_path)
             return []
@@ -97,7 +95,6 @@ class BOCOMDebitProvider(BaseProvider):
 
     @classmethod
     def _match_content(cls, file_path: Path) -> bool:
-        """Check if XLS first cell contains BOCOM title marker."""
         try:
             wb = xlrd.open_workbook(str(file_path))
             sheet = wb.sheet_by_index(0)
@@ -109,32 +106,28 @@ class BOCOMDebitProvider(BaseProvider):
             return False
 
     def _is_bocom_statement(self, sheet: xlrd.sheet.Sheet) -> bool:
-        """Verify this is a BOCOM statement by checking the title row."""
         if sheet.nrows < 1:
             return False
         title = str(sheet.cell_value(0, 0)).strip()
         return self.TITLE_MARKER in title
 
     def _find_header_row(self, sheet: xlrd.sheet.Sheet) -> int:
-        """Find header row by scanning for column header keywords."""
         for row_idx in range(min(10, sheet.nrows)):
             if all(kw in self._row_text(sheet, row_idx) for kw in self.HEADER_KEYWORDS):
                 return row_idx
-        return 2  # fallback
+        return 2
 
     def _row_text(self, sheet: xlrd.sheet.Sheet, row_idx: int) -> str:
-        """Get concatenated text of a row for keyword matching."""
         return " ".join(
             str(sheet.cell_value(row_idx, col)) for col in range(sheet.ncols)
         )
 
     def _extract_card_last4(self, sheet: xlrd.sheet.Sheet) -> str | None:
-        """Extract card last 4 digits from metadata row."""
         for row_idx in range(min(5, sheet.nrows)):
             for col_idx in range(sheet.ncols):
                 cell = str(sheet.cell_value(row_idx, col_idx))
                 if "银行卡号" in cell:
-                    # Extract all digits, take last 4
+                    # The cell continues with 姓名 and the rest of the account metadata.
                     digits = re.sub(r"\D", "", cell.split("姓名")[0])
                     if len(digits) >= 4:
                         return digits[-4:]
@@ -147,7 +140,6 @@ class BOCOMDebitProvider(BaseProvider):
         card_last4: str | None,
         file_path: Path,
     ) -> Transaction | None:
-        """Parse a single data row into a Transaction."""
         date_str = str(row[self.COL_DATE]).strip()
         if not date_str or not date_str[0].isdigit():
             return None
@@ -204,7 +196,6 @@ class BOCOMDebitProvider(BaseProvider):
 
     @staticmethod
     def _parse_date(value: str) -> date | None:
-        """Parse date from YYYY-MM-DD string."""
         try:
             parts = value.split("-")
             return date(int(parts[0]), int(parts[1]), int(parts[2]))
@@ -217,14 +208,12 @@ class BOCOMDebitProvider(BaseProvider):
         time_str = str(value).strip()
         if not time_str:
             return None
-        # Extract HH:MM:SS from datetime string
         match = re.search(r"(\d{2}):(\d{2}):(\d{2})", time_str)
         if match:
             return time(int(match.group(1)), int(match.group(2)), int(match.group(3)))
         return None
 
     def _parse_amount(self, row: list) -> Decimal | None:
-        """Parse amount from expense/income columns. Expense=positive, income=negative."""
         expense = to_decimal(amount_cell_str(row[self.COL_EXPENSE]))
         income = to_decimal(amount_cell_str(row[self.COL_INCOME]))
 
@@ -243,8 +232,7 @@ class BOCOMDebitProvider(BaseProvider):
 
     @staticmethod
     def _build_description(method: str, location: str, summary: str) -> str:
-        """Build description from transaction method, location, and summary."""
-        # For structured summaries (pipe-delimited), extract key info
+        # A pipe-delimited summary contributes only its 交易说明 field.
         if summary.startswith("|") and "交易说明:" in summary:
             match = re.search(r"交易说明:([^|]*)", summary)
             if match:
@@ -255,14 +243,12 @@ class BOCOMDebitProvider(BaseProvider):
 
     @staticmethod
     def _extract_order_id(summary: str) -> str | None:
-        """Extract order ID from structured summary field."""
         if not summary:
             return None
-        # Pattern: 订单编号:XXXXX or 流水号:XXXXX
         match = re.search(r"(?:订单编号|流水号):([^|]+)", summary)
         if match:
             return match.group(1).strip()
-        # Pattern: 交易流水号XXXXX (e.g., WeChat transfers)
+        # WeChat transfers print 交易流水号 directly followed by the id.
         match = re.search(r"交易流水号(\S+)", summary)
         if match:
             return match.group(1).strip()

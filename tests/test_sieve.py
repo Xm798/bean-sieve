@@ -1,5 +1,3 @@
-"""Tests for Sieve matching engine."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -9,42 +7,32 @@ from bean_sieve.core.types import Transaction
 
 
 class TestSieveConfig:
-    """Tests for SieveConfig."""
-
     def test_default_config(self):
-        """Test default configuration values."""
         config = SieveConfig()
         assert config.date_tolerance == 2
         assert config.amount_tolerance == Decimal("0.01")
 
     def test_custom_config(self):
-        """Test custom configuration."""
         config = SieveConfig(date_tolerance=5, amount_tolerance=Decimal("0.10"))
         assert config.date_tolerance == 5
         assert config.amount_tolerance == Decimal("0.10")
 
 
 class TestSieve:
-    """Tests for Sieve engine."""
-
     def test_create_sieve(self):
-        """Test creating a Sieve instance."""
         sieve = Sieve()
         assert sieve.config is not None
         assert sieve._ledger_entries == []
 
     def test_match_empty_ledger(self, sample_transactions):
-        """Test matching against empty ledger."""
         sieve = Sieve()
         result = sieve.match(sample_transactions)
 
-        # All transactions should be missing (no ledger entries)
         assert len(result.matched) == 0
         assert len(result.missing) == len(sample_transactions)
         assert len(result.extra) == 0
 
     def test_summary(self, sample_transactions):
-        """Test result summary generation."""
         sieve = Sieve()
         result = sieve.match(sample_transactions)
 
@@ -201,7 +189,7 @@ def test_matched_ledger_with_identical_card_last4_no_diagnostic(tmp_path):
 
 
 def test_soft_check_recognizes_posting_level_card_last4(tmp_path):
-    """card_last4 emitted at posting level (writer's format) should clear the diagnostic."""
+    """card_last4 at posting level (the writer's format) clears the diagnostic."""
     ledger = _write_ledger(
         tmp_path,
         """
@@ -234,7 +222,7 @@ def test_soft_check_recognizes_posting_level_card_last4(tmp_path):
 
 
 def test_soft_check_warn_for_posting_level_conflict(tmp_path):
-    """Conflicting card_last4 at posting level should produce warn, not hint."""
+    """A conflicting card_last4 at posting level produces a warn, not a hint."""
     ledger = _write_ledger(
         tmp_path,
         """
@@ -298,7 +286,7 @@ def _stmt_txn(account: str | None) -> Transaction:
 
 
 def test_ambiguous_match_without_account_constraint(tmp_path):
-    """No target account -> the greedy pick grabs the clearing leg and warns."""
+    """No target account: the greedy pick grabs the clearing leg and warns."""
     sieve = Sieve(SieveConfig(date_tolerance=0))
     sieve.load_ledger(_write_ledger(tmp_path, _AMBIGUOUS_LEDGER))
 
@@ -313,7 +301,6 @@ def test_ambiguous_match_without_account_constraint(tmp_path):
 
 
 def test_account_constraint_disambiguates(tmp_path):
-    """A target account constrains matching, so there is no ambiguity."""
     sieve = Sieve(SieveConfig(date_tolerance=0))
     sieve.load_ledger(_write_ledger(tmp_path, _AMBIGUOUS_LEDGER))
 
@@ -325,8 +312,8 @@ def test_account_constraint_disambiguates(tmp_path):
 
 
 def test_constrained_same_account_collision_not_ambiguous(tmp_path):
-    """Multiple same-amount postings on the constrained account pair up 1:1
-    and must not warn (benign interchangeable duplicates)."""
+    """Same-amount postings on the constrained account pair up 1:1 without a
+    warning: they are interchangeable duplicates."""
     ledger = _write_ledger(
         tmp_path,
         """
@@ -372,7 +359,6 @@ def test_ambiguous_check_can_be_disabled(tmp_path):
 
 
 def test_same_entry_multiple_legs_not_ambiguous(tmp_path):
-    """Multiple same-amount legs within one ledger entry are not a conflict."""
     ledger = _write_ledger(
         tmp_path,
         """

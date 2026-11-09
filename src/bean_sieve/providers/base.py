@@ -70,13 +70,10 @@ class ClosingStatement:
 
 class BaseProvider(ABC):
     """
-    Base class for statement data source parsers.
+    Base class for statement parsers.
 
-    Subclasses must implement:
-    - provider_id: Unique identifier (e.g., "hxb_credit")
-    - provider_name: Display name (e.g., "Huaxia Bank Credit Card")
-    - supported_formats: List of file extensions (e.g., [".eml", ".html"])
-    - parse(): Parse file and return transactions
+    Subclasses set provider_id, provider_name and supported_formats (lowercase
+    extensions with the dot) and implement parse().
     """
 
     provider_id: str
@@ -90,18 +87,10 @@ class BaseProvider(ABC):
 
     @abstractmethod
     def parse(self, file_path: Path) -> list[Transaction]:
-        """
-        Parse a statement file and return standardized transactions.
-
-        Args:
-            file_path: Path to the statement file
-
-        Returns:
-            List of Transaction objects
-        """
+        """Return the file's rows in booking order, oldest first."""
         pass
 
-    # Keywords for file detection (override in subclasses)
+    # File detection rules; see can_handle().
     filename_pattern: re.Pattern | None = None  # e.g., re.compile(r"平安.*借记")
     filename_keywords: list[str] = []  # e.g., ["微信", "wechat"]
     content_keywords: list[str] = []  # e.g., ["微信支付账单明细"]
@@ -135,14 +124,12 @@ class BaseProvider(ABC):
     @classmethod
     def can_handle(cls, file_path: Path) -> bool:
         """
-        Check if this provider can handle the given file.
+        Accept a file with a supported extension that matches the filename rule
+        or, when that misses, the content rule.
 
-        Detection priority:
-        1. Filename keywords (fast, no file read)
-        2. Content keywords, or an overridden ``_match_content`` (reads the file)
-        3. Fall back to extension check only if no rule is defined
+        A provider with no filename or content rule (keywords, pattern or an
+        overridden ``_match_content``) accepts every file with its extension.
         """
-        # Check extension first
         if file_path.suffix.lower() not in cls.supported_formats:
             return False
 
@@ -154,13 +141,11 @@ class BaseProvider(ABC):
         ):
             return cls._match_filename(file_path) or cls._match_content(file_path)
 
-        # No keywords defined, extension match is enough
         return True
 
     @classmethod
     def _match_filename(cls, file_path: Path) -> bool:
-        """Check if filename matches pattern or contains any keyword."""
-        # Pattern takes priority over keywords
+        # A filename_pattern replaces filename_keywords.
         if cls.filename_pattern:
             return bool(cls.filename_pattern.search(file_path.name))
         if not cls.filename_keywords:
@@ -170,7 +155,6 @@ class BaseProvider(ABC):
 
     @classmethod
     def _match_content(cls, file_path: Path) -> bool:
-        """Check if file content contains any keyword."""
         if not cls.content_keywords:
             return False
         try:
@@ -204,7 +188,6 @@ class BaseProvider(ABC):
 
     @classmethod
     def _read_file_header(cls, file_path: Path, size: int) -> str:
-        """Read file header with encoding detection."""
         encodings = ("utf-8", "gbk", "gb2312", "utf-16")
         for encoding in with_bom_encoding(file_path, encodings):
             try:
@@ -222,25 +205,15 @@ class BaseProvider(ABC):
             if context.provider_ids.get(path) == self.provider_id
         ]
 
-    # === Lifecycle Hooks (override in subclasses as needed) ===
-
     def pre_reconcile(
         self,
         transactions: list[Transaction],
         context: ReconcileContext,  # noqa: ARG002
     ) -> list[Transaction]:
         """
-        Hook: Called before reconciliation.
+        Transform this provider's rows before they are matched against the ledger.
 
-        Use this to transform transactions before they are matched
-        against the ledger. Default implementation returns unchanged.
-
-        Args:
-            transactions: Parsed transactions from this provider
-            context: Reconciliation context with config, paths, etc.
-
-        Returns:
-            Transformed list of transactions
+        A provider named explicitly receives every row of the run.
         """
         return transactions
 
@@ -251,26 +224,14 @@ class BaseProvider(ABC):
         context: ReconcileContext,  # noqa: ARG002
     ) -> str:
         """
-        Hook: Called after output generation.
+        Return ``content``, the whole output so far, with this provider's
+        additions such as settlement entries or reconciliation summaries.
 
-        Use this to append additional content to the generated output,
-        such as settlement entries or reconciliation summaries. An entry
-        appended for a statement item the ledger lacks also goes into
+        An entry appended for a statement item the ledger lacks also goes into
         ``result.match_result.missing``, and an Extra posting the hook recognises
         as such an item moves to ``matched``; the CLI counts both after every hook.
-        Default implementation returns unchanged.
-
-        Args:
-            content: Generated Beancount output content
-            result: Reconciliation result
-            context: Reconciliation context with config, paths, etc.
-
-        Returns:
-            Modified output content
         """
         return content
-
-    # === Statement Selection ===
 
     def coverage(
         self,
@@ -283,13 +244,6 @@ class BaseProvider(ABC):
         Files of the same provider whose coverages overlap compete, and only
         one is adopted for the overlap (see core/coverage.py). A provider
         returning none keeps every row of every file.
-
-        Args:
-            file_path: The statement file
-            transactions: The file's parse output
-
-        Returns:
-            One Coverage per account the file speaks for
         """
         return []
 
@@ -322,8 +276,6 @@ class BaseProvider(ABC):
             )
             for card, rows in by_card.items()
         ]
-
-    # === Statement Period ===
 
     @classmethod
     def stamp_cycle(
@@ -412,11 +364,6 @@ class BaseProvider(ABC):
         Without a cycle the period is the card's span of booked dates when
         ``uncycled_export_is_statement`` holds, else of trade dates. Each card
         gets its own, since a file-wide span would cover another card's tail.
-
-        Args:
-            transactions: Transactions to annotate, modified in place
-            cycle: Billing cycle read from the statement, or None when the
-                statement prints none
         """
         by_card: dict[str | None, list[Transaction]] = defaultdict(list)
         for txn in transactions:
@@ -445,8 +392,6 @@ class BaseProvider(ABC):
             return None
         return accounts.pop()
 
-    # === Coverage Scope ===
-
     def get_covered_accounts(
         self,
         transactions: list[Transaction],
@@ -454,25 +399,12 @@ class BaseProvider(ABC):
         coverages: Sequence[Coverage] = (),
     ) -> list[str]:
         """
-        Return list of accounts covered by this provider's statement.
+        Return the accounts whose ledger entries can be reported as Extra.
 
-        Used to calculate Extra entries during reconciliation - only ledger
-        entries in these accounts are considered as potential "extra" entries.
-
-        The accounts get_covered_ranges attributes a period to. Without a single
-        period the statement says nothing about dates, so a statement-wide
-        provider falls back to all configured accounts while a per-card one
-        claims none.
-
-        Override in subclasses for custom logic.
-
-        Args:
-            transactions: Parsed transactions from this provider
-            config: Bean-Sieve configuration
-            coverages: Adopted coverages of this provider's files
-
-        Returns:
-            List of account names (e.g., ["Assets:Bank:PAB:1029"])
+        These are the accounts get_covered_ranges attributes a period to.
+        Without any period the statement says nothing about dates, so a
+        statement-wide provider falls back to all configured accounts while a
+        per-card one claims none.
         """
         # Sieve leaves a covered account without a range unfiltered by date, so
         # the two answers have to agree on which accounts are covered.
@@ -490,31 +422,20 @@ class BaseProvider(ABC):
         coverages: Sequence[Coverage] = (),
     ) -> dict[str, list[tuple[date, date]]] | None:
         """
-        Return covered date ranges per account for Extra calculation.
-
-        Used to filter Extra entries - only ledger entries where
-        (account, date) falls within a covered range are reported as Extra.
+        Return per account the date ranges inside which a ledger entry is
+        reported as Extra, or None to apply no date filter.
 
         Each period lands on the account of the row's card. What the file says
-        beyond that is left to per_card_statement: a statement-wide file speaks
-        for the whole set of accounts - a household statement, or a
-        multi-currency one keyed on currency - so a row it cannot place covers
-        every configured account, and an account the file never names is covered
-        by the union of the file's periods, its ledger entries there really
-        being Extra. A per-card file claims neither.
+        beyond that is left to per_card_statement: a statement-wide file (a
+        household statement, or a multi-currency one keyed on currency) speaks
+        for the whole set of accounts, so a row it cannot place covers every
+        configured account, and an account the file never names is covered by
+        the union of the file's periods, its ledger entries there really being
+        Extra. A per-card file claims neither.
 
         A coverage stands for its period the way a row of its account key
         stands for the row's, so a statement without rows still covers its
         account.
-
-        Args:
-            transactions: Parsed transactions from this provider
-            config: Bean-Sieve configuration
-            coverages: Adopted coverages of this provider's files
-
-        Returns:
-            Dict mapping account name to list of (start, end) date ranges,
-            or None if no range filtering should be applied
         """
         card_to_account = config.get_provider_config(self.provider_id).accounts
         sole_account = self.sole_account(config)
@@ -560,45 +481,27 @@ class BaseProvider(ABC):
 
         return periods_by_account or None
 
-    # === Preset Rules ===
-
     @classmethod
     def get_preset_rules(cls) -> list[PresetRule]:
-        """
-        Return preset rules specific to this provider.
-
-        Override in subclasses to define rules that automatically
-        identify transaction types and lookup accounts from account_mappings.
-
-        Returns:
-            List of PresetRule objects
-        """
+        """Rules that identify this provider's transaction types and their accounts."""
         return []
 
-    # === Utility methods for subclasses ===
-
     def extract_html_from_eml(self, file_path: Path) -> str:
-        """
-        Extract HTML content from an EML file.
-
-        Automatically detects and handles different encodings:
-        - Base64
-        - Quoted-printable
-        - Plain text
-        """
         with open(file_path, "rb") as f:
             msg = email.message_from_binary_file(f)
 
         return self._extract_html_from_message(msg)
 
     def _extract_html_from_message(self, msg: Message) -> str:
-        """Extract HTML from email message object."""
+        """Decode a multipart mail's first text/html part, else its first text/plain.
+
+        A single-part mail decodes its only body.
+        """
         if msg.is_multipart():
             for part in msg.walk():
                 content_type = part.get_content_type()
                 if content_type == "text/html":
                     return self._decode_payload(part)
-            # Fallback to text/plain if no HTML
             for part in msg.walk():
                 content_type = part.get_content_type()
                 if content_type == "text/plain":
@@ -609,7 +512,10 @@ class BaseProvider(ABC):
         return ""
 
     def _decode_payload(self, part: Message) -> str:
-        """Decode email payload with proper encoding handling."""
+        """Undo the transfer encoding, then decode the charset as _decode_body does.
+
+        A body that fails to decode is returned in its transfer-encoded form.
+        """
         payload = part.get_payload(decode=False)
         encoding = part.get("Content-Transfer-Encoding", "").lower()
 
@@ -637,7 +543,7 @@ class BaseProvider(ABC):
         return _decode_body(part, body) if isinstance(body, bytes) else payload
 
     def decode_subject(self, msg: Message) -> str:
-        """Decode email subject with proper encoding handling."""
+        """Decode the RFC 2047 encoded words of the Subject header."""
         subject = msg.get("Subject", "")
         if not subject:
             return ""
@@ -652,14 +558,11 @@ class BaseProvider(ABC):
         return "".join(result)
 
     def parse_html(self, html: str) -> BeautifulSoup:
-        """Parse HTML content using BeautifulSoup."""
         return BeautifulSoup(html, "html.parser")
 
     def clean_text(self, text: str) -> str:
-        """Clean and normalize text content."""
         if not text:
             return ""
-        # Remove excessive whitespace
         return " ".join(text.split())
 
 

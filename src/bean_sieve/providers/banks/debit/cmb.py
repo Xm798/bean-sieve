@@ -48,7 +48,6 @@ class CMBDebitProvider(BaseProvider):
     COL_REMARK = 6  # 交易备注
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse CMB debit card CSV statement."""
         lines = read_text_lines(file_path)
         card_last4 = first_masked_card_last4(lines[:6])
         header_idx = find_header_line(lines, ("交易日期", "交易时间"))
@@ -58,7 +57,7 @@ class CMBDebitProvider(BaseProvider):
         transactions = []
         data_lines = lines[header_idx:]
         reader = csv.reader(data_lines)
-        next(reader)  # skip header row
+        next(reader)
 
         for row_num, row in enumerate(reader, header_idx + 2):
             stripped = [c.strip() for c in row]
@@ -76,7 +75,6 @@ class CMBDebitProvider(BaseProvider):
         card_last4: str | None,
         file_path: Path,
     ) -> Transaction | None:
-        """Parse a single data row."""
         if len(row) < 7:
             return None
 
@@ -84,13 +82,11 @@ class CMBDebitProvider(BaseProvider):
         if not date_str or date_str.startswith("#"):
             return None
 
-        # Parse date (format: YYYYMMDD)
         try:
             tx_date = date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
         except (ValueError, IndexError):
             return None
 
-        # Parse time (format: HH:MM:SS)
         tx_time = None
         time_str = row[self.COL_TIME]
         if time_str:
@@ -100,7 +96,6 @@ class CMBDebitProvider(BaseProvider):
             except (ValueError, IndexError):
                 pass
 
-        # Parse amount: expense=positive, income=negative
         amount = self._parse_amount(row)
         if amount is None:
             return None
@@ -125,7 +120,6 @@ class CMBDebitProvider(BaseProvider):
         )
 
     def _parse_amount(self, row: list[str]) -> Decimal | None:
-        """Parse amount from income/expense columns. Expense=positive, income=negative."""
         expense = to_decimal(row[self.COL_EXPENSE])
         income = to_decimal(row[self.COL_INCOME])
 

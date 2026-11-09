@@ -25,12 +25,6 @@ from .types import MatchSource, Transaction
 
 
 class RulesEngine:
-    """
-    Rules engine for matching transactions to accounts.
-
-    Applies preset rules first, then user-defined rules in priority order.
-    """
-
     def __init__(
         self,
         config: Config,
@@ -38,19 +32,17 @@ class RulesEngine:
     ):
         self.config = config
 
-        # Preset rules (sorted by priority, higher first)
         self._preset_rules = sorted(
             preset_rules or [],
             key=lambda r: r.priority,
             reverse=True,
         )
-        # Compile preset rule patterns
         for rule in self._preset_rules:
             rule.compile_patterns()
 
-        # User-defined rules (sorted by priority, higher first)
         self._rules = sorted(config.rules, key=lambda r: r.priority, reverse=True)
-        # Compile regex patterns for performance
+        # A condition that is not a valid regex has no entry here and matches
+        # as a case-insensitive substring in _matches_condition.
         self._desc_patterns: dict[int, re.Pattern] = {}
         self._payee_patterns: dict[int, re.Pattern] = {}
         for i, rule in enumerate(self._rules):
@@ -67,23 +59,17 @@ class RulesEngine:
 
     def apply(self, txn: Transaction) -> Transaction:
         """
-        Apply rules to a transaction to fill account mapping.
+        Fill the row's accounts in three steps:
 
-        Order of application:
-        1. Preset rules (code-defined, keyword-based account lookup) - highest priority
-        2. Account mappings (based on payment method) - fallback
-        3. User-defined rules (YAML config)
-
-        Returns the transaction with account fields populated.
+        1. The first matching preset rule.
+        2. When no account is set yet, the account mapping of its method.
+        3. The first matching user rule.
         """
-        # 1. Apply preset rules first (keyword-based account lookup)
         txn = self._apply_preset_rules(txn)
 
-        # 2. Fallback to account mapping if preset rules didn't set account
         if not txn.account:
             txn = self._apply_account_mapping(txn)
 
-        # 3. Apply user-defined rules for contra account
         for i, rule in enumerate(self._rules):
             if self._matches_condition(txn, rule, i):
                 txn = self._apply_action(txn, rule)
@@ -92,22 +78,19 @@ class RulesEngine:
         return txn
 
     def _apply_preset_rules(self, txn: Transaction) -> Transaction:
-        """Apply preset rules to set account from keyword lookup."""
         for preset in self._preset_rules:
             if preset.matches(txn):
                 txn = self._apply_preset_action(txn, preset)
-                break  # First match wins
+                break
         return txn
 
     def _apply_preset_action(self, txn: Transaction, preset: PresetRule) -> Transaction:
-        """Apply preset rule action to transaction."""
         action = preset.action
 
         if action.ignore:
             txn.metadata[IGNORED] = True
             return txn
 
-        # Keyword-based account lookup
         if action.account_keyword:
             account = resolve_by_keyword_substring(
                 self.config.account_mappings, action.account_keyword
@@ -131,14 +114,14 @@ class RulesEngine:
                     txn.match_source = MatchSource.RULE
                     txn.metadata[MATCHED_PRESET_RULE] = preset.rule_id
 
-        # Negate amount if specified (only if positive, to avoid double-negation)
+        # A row api._apply_negate_rules already flipped before matching is no
+        # longer positive and keeps its sign.
         if action.negate and txn.amount > 0:
             txn.amount = -txn.amount
 
         return txn
 
     def _apply_account_mapping(self, txn: Transaction) -> Transaction:
-        """Apply account mapping based on payment method."""
         if txn.account:
             return txn
 
@@ -154,21 +137,17 @@ class RulesEngine:
         return txn
 
     def _matches_condition(self, txn: Transaction, rule: Rule, rule_idx: int) -> bool:
-        """Check if transaction matches rule condition."""
         cond = rule.condition
 
-        # Description regex match
         if cond.description:
             pattern = self._desc_patterns.get(rule_idx)
             if pattern:
                 if not pattern.search(txn.description):
                     return False
             else:
-                # Fallback to simple substring match
                 if cond.description.lower() not in txn.description.lower():
                     return False
 
-        # Payee regex match
         if cond.payee:
             if not txn.payee:
                 return False
@@ -177,19 +156,15 @@ class RulesEngine:
                 if not pattern.search(txn.payee):
                     return False
             else:
-                # Fallback to simple substring match
                 if cond.payee.lower() not in txn.payee.lower():
                     return False
 
-        # Card suffix match
         if cond.card_last4 and txn.card_last4 != cond.card_last4:
             return False
 
-        # Provider match
         if cond.provider and txn.provider != cond.provider:
             return False
 
-        # Time range match
         if (
             cond.time_range
             and txn.time
@@ -197,21 +172,19 @@ class RulesEngine:
         ):
             return False
 
-        # Direction match
         if cond.direction is not None:
             if cond.direction == "expense" and not txn.is_expense:
                 return False
             if cond.direction == "income" and not txn.is_income:
                 return False
 
-        # Amount range match
         abs_amount = abs(float(txn.amount))
         if cond.min_amount is not None and abs_amount < cond.min_amount:
             return False
         return not (cond.max_amount is not None and abs_amount > cond.max_amount)
 
     def _matches_time_range(self, txn_time: time, time_range: str) -> bool:
-        """Check if transaction time falls within range."""
+        """A malformed range matches nothing."""
         try:
             start_str, end_str = time_range.split("-")
             start = time.fromisoformat(start_str.strip())
@@ -220,17 +193,15 @@ class RulesEngine:
             if start <= end:
                 return start <= txn_time <= end
             else:
-                # Handle overnight range (e.g., 22:00-06:00)
+                # An overnight range such as 22:00-06:00.
                 return txn_time >= start or txn_time <= end
         except (ValueError, AttributeError):
             return False
 
     def _apply_action(self, txn: Transaction, rule: Rule) -> Transaction:
-        """Apply rule action to transaction."""
         action = rule.action
 
         if action.ignore:
-            # Mark as ignored (will be filtered out later)
             txn.metadata[IGNORED] = True
             return txn
 
@@ -238,7 +209,6 @@ class RulesEngine:
             txn.contra_account = action.contra_account
             txn.confidence = 1.0
             txn.match_source = MatchSource.RULE
-            # Store which rule matched for debugging
             if rule.condition.description:
                 txn.metadata[MATCHED_RULE] = rule.condition.description
 
@@ -250,7 +220,6 @@ class RulesEngine:
             txn.payee = new_payee
 
         if action.description:
-            # Store original description before overriding
             if txn.description and txn.description != action.description:
                 txn.metadata[ORIGINAL_DESCRIPTION] = txn.description
             txn.description = action.description
@@ -269,24 +238,11 @@ def apply_rules(
     config: Config,
     preset_rules: list[PresetRule] | None = None,
 ) -> list[Transaction]:
-    """
-    Apply rules to a list of transactions.
-
-    Convenience function for common usage.
-
-    Args:
-        transactions: List of transactions to process
-        config: Configuration with user-defined rules and account mappings
-        preset_rules: Optional list of preset rules from provider
-
-    Returns:
-        List of processed transactions (with ignored ones filtered out)
-    """
+    """Run a RulesEngine over the rows, dropping those a rule ignores."""
     engine = RulesEngine(config, preset_rules=preset_rules)
     result = []
     for txn in transactions:
         processed = engine.apply(txn)
-        # Filter out ignored transactions
         if not processed.metadata.get(IGNORED):
             result.append(processed)
     return result

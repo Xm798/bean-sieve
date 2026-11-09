@@ -21,44 +21,41 @@ if TYPE_CHECKING:
 
 
 class MatchSource(StrEnum):
-    """Source of account matching."""
-
     RULE = "rule"
     FIXME = "fixme"
 
 
 class Transaction(BaseModel):
-    """Standardized transaction record from statement parsing."""
+    """One statement row; `amount` is positive for an outflow (expense) and
+    negative for an inflow (income)."""
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
         validate_assignment=True,
     )
 
-    # Required fields
     date: date
     amount: Decimal
     currency: str
     description: str
 
-    # Optional time information
     time: dt.time | None = None
     post_date: date | None = None
 
-    # Transaction identifiers
     payee: str | None = None
     card_last4: str | None = None
     order_id: str | None = None
 
-    # Source information
     provider: str = ""
     source_file: Path | None = None
     source_line: int | None = None
 
-    # Statement scope (for per-card statement providers)
+    # The card's printed cycle joined with its booked dates; see
+    # BaseProvider.assign_statement_periods.
     statement_period: tuple[date, date] | None = None
 
-    # Price annotation for multi-currency transactions (e.g., currency exchange)
+    # An exchange within the account: `amount` of `currency` buys
+    # `price_amount` of `price_currency`.
     price_amount: Decimal | None = None
     price_currency: str | None = None
 
@@ -66,7 +63,7 @@ class Transaction(BaseModel):
     # the contra side receives amount minus fee, and the fee posts separately.
     fee: Decimal | None = None
 
-    # Matching results (filled by rules engine)
+    # Filled by api target-account resolution and the rules engine.
     account: str | None = None
     contra_account: str | None = None
     confidence: float = 0.0
@@ -75,7 +72,7 @@ class Transaction(BaseModel):
     links: list[str] = Field(default_factory=list)
     flag: str = "*"
 
-    # Extended metadata (for Beancount metadata)
+    # Keys starting with `_` are internal and never written (metadata_keys).
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
@@ -86,7 +83,6 @@ class Transaction(BaseModel):
     @computed_field
     @property
     def match_key(self) -> tuple:
-        """Key for deduplication matching (prefers order_id)."""
         if self.order_id:
             return (self.order_id,)
         return (self.date, abs(self.amount), self.card_last4)
@@ -94,7 +90,6 @@ class Transaction(BaseModel):
     @computed_field
     @property
     def tx_datetime(self) -> dt.datetime | None:
-        """Complete datetime if time is available."""
         if self.time:
             return dt.datetime.combine(self.date, self.time)
         return None
@@ -102,13 +97,11 @@ class Transaction(BaseModel):
     @computed_field
     @property
     def is_expense(self) -> bool:
-        """True if this is an expense (positive amount)."""
         return self.amount > 0
 
     @computed_field
     @property
     def is_income(self) -> bool:
-        """True if this is income (negative amount)."""
         return self.amount < 0
 
     @property
@@ -123,7 +116,6 @@ class Transaction(BaseModel):
         return self.metadata.get(ORIGINAL_CURRENCY) or None
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for JSON serialization / GUI communication."""
         return {
             "date": self.date.isoformat(),
             "time": self.time.isoformat() if self.time else None,
@@ -157,7 +149,6 @@ class Transaction(BaseModel):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Transaction:
-        """Create from dict for JSON deserialization / GUI communication."""
         match_source = None
         if data.get("match_source"):
             match_source = MatchSource(data["match_source"])
@@ -210,13 +201,9 @@ class MetaDiagnostic(BaseModel):
 
 
 class MatchDiagnostic(BaseModel):
-    """Ambiguous-match diagnostic emitted during reconciliation.
-
-    Raised when an *unconstrained* statement transaction (no target account)
-    matched a ledger posting, but other postings from different ledger
-    transactions were equally valid candidates (same date/amount/sign). The
-    greedy pick may be wrong.
-    """
+    """A statement row without a target account matched a ledger posting
+    while postings of other ledger transactions were equally valid
+    candidates, so the greedy pick may be wrong."""
 
     file: str
     line: int
@@ -226,7 +213,8 @@ class MatchDiagnostic(BaseModel):
 
 
 class MatchResult(BaseModel):
-    """Reconciliation result from Sieve engine."""
+    """`missing` holds statement rows the ledger lacks; `extra` holds ledger
+    postings in the covered scope that no row settles."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -239,7 +227,6 @@ class MatchResult(BaseModel):
     @computed_field
     @property
     def summary(self) -> str:
-        """Human-readable summary."""
         return (
             f"Matched: {len(self.matched)}, "
             f"Missing: {len(self.missing)}, "
@@ -247,7 +234,6 @@ class MatchResult(BaseModel):
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dict for GUI communication."""
         return {
             "matched_count": len(self.matched),
             "missing": [t.to_dict() for t in self.missing],
@@ -257,7 +243,7 @@ class MatchResult(BaseModel):
 
 
 class ReconcileResult(BaseModel):
-    """Full reconciliation result with processed transactions."""
+    """`processed` holds the missing rows after rules, ready for output."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -271,7 +257,6 @@ class ReconcileResult(BaseModel):
     @computed_field
     @property
     def summary(self) -> str:
-        """Human-readable summary."""
         categorized = sum(
             1 for t in self.processed if t.match_source != MatchSource.FIXME
         )
@@ -283,12 +268,7 @@ class ReconcileResult(BaseModel):
 
 @dataclass
 class ReconcileContext:
-    """
-    Context passed to provider lifecycle hooks.
-
-    Contains all information a provider might need during
-    pre/post reconciliation processing.
-    """
+    """Context passed to provider lifecycle hooks."""
 
     statement_paths: list[Path]
     ledger_path: Path | None = None

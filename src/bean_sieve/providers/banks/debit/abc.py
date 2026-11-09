@@ -65,7 +65,6 @@ class ABCDebitProvider(BaseProvider):
     CONTENT_MARKERS = (TITLE_MARKER, "本次余额", "交易用途")
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse ABC debit card XLSX statement."""
         wb = load_openpyxl_workbook(file_path)
         sheet = wb.active
         if sheet is None:
@@ -75,7 +74,6 @@ class ABCDebitProvider(BaseProvider):
         if not rows:
             return []
 
-        # Validate title
         if not rows[0][0] or self.TITLE_MARKER not in str(rows[0][0]):
             logger.warning(
                 "Row 1 does not contain '%s' in %s, skipping",
@@ -102,18 +100,17 @@ class ABCDebitProvider(BaseProvider):
 
     @staticmethod
     def _extract_card_last4(rows: list) -> str | None:
-        """Extract card last 4 digits from row 2 account info."""
+        """Card suffix from the account cell in row 2."""
         if len(rows) < 2 or not rows[1][0]:
             return None
         return masked_card_last4(str(rows[1][0]))
 
     def _find_header_row(self, rows: list) -> int:
-        """Find header row by scanning for column header keywords."""
         for idx in range(min(10, len(rows))):
             cell = str(rows[idx][0] or "").strip()
             if any(kw in cell for kw in self.HEADER_KEYWORDS):
                 return idx
-        return 2  # fallback: row 3 (0-indexed = 2)
+        return 2
 
     def _parse_row(
         self,
@@ -122,7 +119,6 @@ class ABCDebitProvider(BaseProvider):
         card_last4: str | None,
         file_path: Path,
     ) -> Transaction | None:
-        """Parse a single data row."""
         date_str = str(row[self.COL_TX_DATE] or "").strip()
         if not date_str or not date_str[0].isdigit():
             return None
@@ -176,7 +172,6 @@ class ABCDebitProvider(BaseProvider):
 
     @staticmethod
     def _parse_date(value: str) -> date | None:
-        """Parse date from 'YYYY-MM-DD' string."""
         try:
             parts = value.split("-")
             return date(int(parts[0]), int(parts[1]), int(parts[2]))
@@ -185,7 +180,6 @@ class ABCDebitProvider(BaseProvider):
 
     @staticmethod
     def _parse_time(value) -> time | None:
-        """Parse time from 'HH:MM:SS' string."""
         time_str = str(value or "").strip()
         if not time_str:
             return None
@@ -196,7 +190,6 @@ class ABCDebitProvider(BaseProvider):
             return None
 
     def _parse_amount(self, value) -> Decimal | None:
-        """Parse signed amount string. Negate: source -=expense → positive, source +=income → negative."""
         try:
             cleaned = amount_cell_str(value or "").replace(",", "")
             if not cleaned:
@@ -204,6 +197,6 @@ class ABCDebitProvider(BaseProvider):
             d = Decimal(cleaned)
             if d == 0:
                 return None
-            return -d  # negate: source uses opposite sign convention
+            return -d  # the export signs expenses negative
         except (ValueError, InvalidOperation):
             return None

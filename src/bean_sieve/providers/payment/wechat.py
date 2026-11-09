@@ -56,19 +56,16 @@ class WechatTxType(StrEnum):
 LINGQIANTONG_OUT_PREFIX = "^零钱通转出-到"
 LINGQIANTONG_OUT_REGEX = re.compile(LINGQIANTONG_OUT_PREFIX + "(.+)$")
 
-# Number of header lines to skip in WeChat CSV/XLSX
 WECHAT_HEADER_LINES = 17
 
 _COL_AMOUNT = 5
 
-# Regex to extract commission from remarks
 COMMISSION_REGEX = re.compile(r"\d+\.\d{2}")
 
-# Regex to extract rebate from remarks (已优惠¥10.00)
+# Remarks such as 已优惠¥10.00
 REBATE_REGEX = re.compile(r"已优惠¥?(\d+\.?\d*)")
 
-# Regex to extract statement period from header
-# Format: 起始时间：[2025-01-01 00:00:00] 终止时间：[2025-01-31 23:59:59]
+# 起始时间：[2025-01-01 00:00:00] 终止时间：[2025-01-31 23:59:59]
 STATEMENT_PERIOD_REGEX = re.compile(
     r"起始时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?\s*"
     r"终止时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?"
@@ -105,7 +102,6 @@ class WechatProvider(BaseProvider):
     _extract_card_last4 = staticmethod(extract_card_last4)
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse WeChat statement file (CSV or XLSX)."""
         suffix = file_path.suffix.lower()
 
         if suffix == ".xlsx":
@@ -114,7 +110,6 @@ class WechatProvider(BaseProvider):
             return self._parse_csv(file_path)
 
     def _parse_xlsx(self, file_path: Path) -> list[Transaction]:
-        """Parse WeChat XLSX statement file."""
         transactions = []
 
         wb = load_workbook(file_path, read_only=True, data_only=True)
@@ -122,7 +117,6 @@ class WechatProvider(BaseProvider):
         if ws is None:
             raise ValueError(f"No active sheet in {file_path}")
 
-        # Extract statement period from header rows
         statement_period: tuple[date, date] | None = None
         header_text = ""
         for line_num, row in enumerate(ws.iter_rows(values_only=True)):
@@ -134,7 +128,6 @@ class WechatProvider(BaseProvider):
         statement_period = self._extract_statement_period(header_text)
 
         for line_num, row in enumerate(ws.iter_rows(values_only=True)):
-            # Skip header lines
             if line_num < WECHAT_HEADER_LINES:
                 continue
 
@@ -147,7 +140,6 @@ class WechatProvider(BaseProvider):
                 for col, cell in enumerate(row)
             ]
 
-            # Skip empty rows
             if not row_data or all(not cell for cell in row_data):
                 continue
 
@@ -169,10 +161,8 @@ class WechatProvider(BaseProvider):
         return transactions
 
     def _parse_csv(self, file_path: Path) -> list[Transaction]:
-        """Parse WeChat CSV statement file."""
         transactions = []
 
-        # Try UTF-8 first, then GBK
         for encoding in ["utf-8", "gbk"]:
             try:
                 with open(file_path, encoding=encoding, newline="") as f:
@@ -183,10 +173,9 @@ class WechatProvider(BaseProvider):
         else:
             raise ValueError(f"Cannot decode file {file_path}")
 
-        # Remove tabs that WeChat adds to CSV
+        # WeChat ends its ID cells with a tab.
         content = content.replace("\t", "")
 
-        # Extract statement period from header
         lines = content.splitlines()
         header_text = "\n".join(lines[:WECHAT_HEADER_LINES])
         statement_period = self._extract_statement_period(header_text)
@@ -194,11 +183,9 @@ class WechatProvider(BaseProvider):
         reader = csv.reader(lines)
 
         for line_num, row in enumerate(reader):
-            # Skip header lines
             if line_num < WECHAT_HEADER_LINES:
                 continue
 
-            # Skip empty rows
             if not row or len(row) < 10:
                 continue
 
@@ -223,11 +210,8 @@ class WechatProvider(BaseProvider):
         line_num: int,
         statement_period: tuple[date, date] | None = None,
     ) -> Transaction | None:
-        """Parse a single row into a Transaction."""
-        # Clean whitespace
         row = [field.strip() for field in row]
 
-        # Extract fields
         tx_time_str = row[0]
         tx_type_str = row[1]
         peer = row[2]
@@ -240,19 +224,19 @@ class WechatProvider(BaseProvider):
         merchant_id = row[9] if len(row) > 9 else ""
         remarks = row[10] if len(row) > 10 else ""
 
-        # Parse order type
         order_type = self._get_order_type(order_type_str)
         withdrawal_target: str | None = None
         if order_type == WechatOrderType.NEUTRAL:
-            # For withdrawals, treat as expense (money leaving the account)
+            # A withdrawal leaves the wallet, so it books as an expense.
             if tx_type_str in (
                 WechatTxType.CASH_WITHDRAW.value,
                 WechatTxType.MERCHANT_WITHDRAW.value,
             ):
                 order_type = WechatOrderType.EXPENSE
-                # method shows destination bank, but source is the wallet;
-                # store destination for contra_account resolution, then
-                # override method so txn.account resolves to the wallet asset
+                # method names the destination bank while the money leaves the
+                # wallet: the bank becomes the withdrawal target for
+                # contra_account resolution and method becomes the wallet, so
+                # txn.account resolves to the wallet asset.
                 source = (
                     "经营账户"
                     if tx_type_str == WechatTxType.MERCHANT_WITHDRAW.value
@@ -273,10 +257,8 @@ class WechatProvider(BaseProvider):
             else:
                 return None
 
-        # Parse datetime
         tx_datetime = datetime.strptime(tx_time_str, "%Y-%m-%d %H:%M:%S")
 
-        # Parse amount (remove ¥ prefix)
         amount_str = amount_str.lstrip("¥").strip()
         amount = Decimal(amount_str)
 
@@ -290,8 +272,7 @@ class WechatProvider(BaseProvider):
                 if order_type == WechatOrderType.INCOME:
                     amount = amount - commission
 
-        # Handle rebate in remarks (已优惠¥10.00)
-        # ¥ symbol indicates CNY rebate
+        # The ¥ sign marks a CNY rebate.
         rebate = Decimal("0")
         rebate_currency: str | None = None
         if "已优惠" in remarks and "¥" in remarks:
@@ -300,12 +281,10 @@ class WechatProvider(BaseProvider):
                 rebate = Decimal(match.group(1))
                 rebate_currency = "CNY"
 
-        # Determine sign based on order type
-        # Convention: expense is positive, income is negative
+        # Expenses are positive, income negative.
         if order_type == WechatOrderType.INCOME:
             amount = -amount
 
-        # Build description
         description = item if item and item != "/" else tx_type_str
 
         return Transaction(
@@ -340,7 +319,6 @@ class WechatProvider(BaseProvider):
         )
 
     def _get_order_type(self, order_type_str: str) -> WechatOrderType:
-        """Convert order type string to enum."""
         order_type_str = order_type_str.strip()
         try:
             return WechatOrderType(order_type_str)
@@ -348,10 +326,6 @@ class WechatProvider(BaseProvider):
             return WechatOrderType.NEUTRAL
 
     def _extract_statement_period(self, header_text: str) -> tuple[date, date] | None:
-        """Extract statement period from header text.
-
-        WeChat format: 起始时间：[2025-01-01 00:00:00] 终止时间：[2025-01-31 23:59:59]
-        """
         match = STATEMENT_PERIOD_REGEX.search(header_text)
         if match:
             start_date = date.fromisoformat(match.group(1))
@@ -361,9 +335,7 @@ class WechatProvider(BaseProvider):
 
     @classmethod
     def get_preset_rules(cls) -> list[PresetRule]:
-        """Return preset rules for WeChat transactions."""
         return [
-            # 已存入零钱
             PresetRule(
                 rule_id="wechat_to_balance",
                 name="零钱收款",
@@ -374,7 +346,6 @@ class WechatProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="零钱"),
                 priority=90,
             ),
-            # 已存入经营账户
             PresetRule(
                 rule_id="wechat_to_merchant",
                 name="经营账户收款",
@@ -385,7 +356,6 @@ class WechatProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="经营账户"),
                 priority=90,
             ),
-            # 零钱提现
             PresetRule(
                 rule_id="wechat_cash_withdraw",
                 name="零钱提现",
@@ -399,7 +369,6 @@ class WechatProvider(BaseProvider):
                 ),
                 priority=90,
             ),
-            # 经营账户提现
             PresetRule(
                 rule_id="wechat_merchant_withdraw",
                 name="经营账户提现",

@@ -1,5 +1,3 @@
-"""Pytest fixtures for Bean-Sieve tests."""
-
 from datetime import date
 from decimal import Decimal
 
@@ -26,7 +24,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 @pytest.fixture
 def sample_transaction():
-    """Create a sample transaction for testing."""
     return Transaction(
         date=date(2025, 1, 4),
         amount=Decimal("99.00"),
@@ -40,7 +37,6 @@ def sample_transaction():
 
 @pytest.fixture
 def sample_transactions():
-    """Create a list of sample transactions."""
     return [
         Transaction(
             date=date(2025, 1, 4),
@@ -72,7 +68,6 @@ def sample_transactions():
 
 @pytest.fixture
 def sample_config():
-    """Create a sample configuration."""
     return Config(
         defaults=DefaultsConfig(
             currency="CNY",
@@ -108,5 +103,4 @@ def sample_config():
 
 @pytest.fixture
 def temp_dir(tmp_path):
-    """Create a temporary directory for test files."""
     return tmp_path

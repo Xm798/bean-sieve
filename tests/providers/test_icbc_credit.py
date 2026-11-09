@@ -1,5 +1,3 @@
-"""Tests for ICBC (工商银行) credit card statement provider."""
-
 from datetime import date, time
 from decimal import Decimal
 from email.header import Header

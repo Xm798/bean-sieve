@@ -1,5 +1,3 @@
-"""Tests for Bank of Communications (BOCOM) credit card statement provider."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -13,7 +11,6 @@ from tests.helpers import create_bocom_eml
 
 @pytest.fixture
 def bocom_html_content():
-    """Sample BOCOM statement HTML content."""
     return """<html>
 <head><title>交通银行信用卡电子账单</title></head>
 <body>
@@ -97,7 +94,6 @@ def bocom_html_content():
 
 @pytest.fixture
 def bocom_eml_file(tmp_path, bocom_html_content):
-    """Create a temporary BOCOM EML file."""
     file_path = tmp_path / "交通银行个人信用卡2025年11月电子账单.eml"
     eml_content = create_bocom_eml(bocom_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
@@ -105,10 +101,7 @@ def bocom_eml_file(tmp_path, bocom_html_content):
 
 
 class TestBOCOMCreditProvider:
-    """Tests for BOCOMCreditProvider."""
-
     def test_provider_registration(self):
-        """Test that BOCOM provider is properly registered."""
         provider = get_provider("bocom_credit")
         assert isinstance(provider, BOCOMCreditProvider)
         assert provider.provider_id == "bocom_credit"
@@ -116,7 +109,6 @@ class TestBOCOMCreditProvider:
         assert ".eml" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert BOCOMCreditProvider.can_handle(
             Path("交通银行个人信用卡2025年11月电子账单.eml")
         )
@@ -127,13 +119,11 @@ class TestBOCOMCreditProvider:
         assert not BOCOMCreditProvider.can_handle(Path("statement.eml"))
 
     def test_parse_transactions(self, bocom_eml_file):
-        """Test parsing transactions from EML file."""
         provider = BOCOMCreditProvider()
         transactions = provider.parse(bocom_eml_file)
 
         assert len(transactions) == 4
 
-        # Check payment transactions (should be negative)
         payment1 = transactions[0]
         assert payment1.date == date(2025, 11, 4)
         assert payment1.amount == Decimal("-20000.00")
@@ -148,7 +138,6 @@ class TestBOCOMCreditProvider:
         assert payment2.amount == Decimal("-100.00")
         assert "返还" in payment2.description
 
-        # Check spending transactions (should be positive)
         spending1 = transactions[2]
         assert spending1.date == date(2025, 10, 22)
         assert spending1.amount == Decimal("1234.56")
@@ -162,7 +151,6 @@ class TestBOCOMCreditProvider:
         assert "财付通" in spending2.description
 
     def test_metadata_extraction(self, bocom_eml_file):
-        """Test that metadata is properly extracted."""
         provider = BOCOMCreditProvider()
         transactions = provider.parse(bocom_eml_file)
 
@@ -176,7 +164,6 @@ class TestBOCOMCreditProvider:
         assert "original_currency" not in spending_txn.metadata
 
     def test_year_extraction_from_statement_cycle(self, tmp_path):
-        """Test year extraction from statement cycle date."""
         html = """<html>
 <body>
 <table><tr><td>账单周期 2026/01/14-2026/02/13</td></tr></table>
@@ -252,7 +239,6 @@ class TestBOCOMCreditProvider:
         assert transactions[0].post_date == date(2029, 12, 20)
 
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         html = """<html>
 <body>
 <table><tr><td>账单周期 2025/10/14-2025/11/13</td></tr></table>
@@ -268,10 +254,7 @@ class TestBOCOMCreditProvider:
 
 
 class TestBOCOMAmountParsing:
-    """Tests for BOCOM amount parsing edge cases."""
-
     def test_amount_with_thousands_separator(self, tmp_path):
-        """Test parsing amounts with comma separators."""
         html = """<html>
 <body>
 <table><tr><td>账单周期 2025/10/14-2025/11/13</td></tr></table>
@@ -324,10 +307,7 @@ class TestBOCOMAmountParsing:
 
 
 class TestBOCOMStatementPeriod:
-    """Tests for statement period stamping."""
-
     def test_statement_period(self, bocom_eml_file):
-        """Test that the header billing cycle is stamped on every transaction."""
         provider = BOCOMCreditProvider()
         transactions = provider.parse(bocom_eml_file)
 
@@ -367,7 +347,7 @@ DETAIL_LAYOUT_HTML = """<html>
 
 
 class TestBOCOMDetailLayout:
-    """Tests for the layout with YYYY-MM-DD dates and 卡号末四位 card rows."""
+    """The layout with YYYY-MM-DD dates and 卡号末四位 card rows."""
 
     @pytest.fixture
     def transactions(self, tmp_path):
@@ -487,7 +467,7 @@ NO_CARD_COLUMN_LAYOUT_HTML = f"""<html>
 
 
 class TestBOCOMSlashDateLayouts:
-    """Tests for the 2017–2021 layouts with YYYY/MM/DD row dates."""
+    """The 2017–2021 layouts with YYYY/MM/DD row dates."""
 
     @staticmethod
     def path(tmp_path):

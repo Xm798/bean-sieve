@@ -1,5 +1,3 @@
-"""Tests for App Store purchase history provider."""
-
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -13,7 +11,6 @@ def _make_har(
     purchases: list[dict],
     url: str = "https://reportaproblem.apple.com/api/purchase/search",
 ) -> dict:
-    """Build a minimal HAR structure with given purchases."""
     return {
         "log": {
             "version": "1.2",
@@ -44,7 +41,6 @@ def _make_purchase(
     item_id: str = "900000000000001",
     adam_id: str = "9000000001",
 ) -> dict:
-    """Build a single purchase record."""
     return {
         "purchaseId": "900000000000099",
         "invoiceAmount": amount,
@@ -75,10 +71,7 @@ def _make_purchase(
 
 
 class TestAppStoreProvider:
-    """Tests for AppStoreProvider."""
-
     def test_parse_basic(self, tmp_path: Path) -> None:
-        """Test basic parsing of a paid purchase."""
         har = _make_har([_make_purchase()])
         har_file = tmp_path / "reportaproblem.apple.com.har"
         har_file.write_text(json.dumps(har), encoding="utf-8")
@@ -97,7 +90,6 @@ class TestAppStoreProvider:
         assert txn.metadata["media_type"] == "App 内购买项目"
 
     def test_skip_free_purchases(self, tmp_path: Path) -> None:
-        """Test that free purchases are skipped."""
         har = _make_har(
             [
                 _make_purchase(is_free=True, amount="¥0.00", item_id="free1"),
@@ -114,7 +106,6 @@ class TestAppStoreProvider:
         assert txns[0].amount == Decimal("30.00")
 
     def test_credit_is_negative(self, tmp_path: Path) -> None:
-        """Test that credit/refund purchases have negative amount."""
         har = _make_har([_make_purchase(is_credit=True, amount="¥10.00")])
         har_file = tmp_path / "reportaproblem.apple.com.har"
         har_file.write_text(json.dumps(har), encoding="utf-8")
@@ -126,7 +117,6 @@ class TestAppStoreProvider:
         assert txns[0].amount == Decimal("-10.00")
 
     def test_multiple_batches(self, tmp_path: Path) -> None:
-        """Test parsing HAR with multiple paginated responses."""
         har = {
             "log": {
                 "version": "1.2",
@@ -184,7 +174,6 @@ class TestAppStoreProvider:
         assert txns[1].amount == Decimal("50.00")
 
     def test_multi_pli_purchase(self, tmp_path: Path) -> None:
-        """Test a purchase with multiple line items."""
         purchase = {
             "purchaseId": "900000000000050",
             "invoiceAmount": "¥60.00",
@@ -244,7 +233,6 @@ class TestAppStoreProvider:
         assert txns[0].match_key != txns[1].match_key
 
     def test_dedup_across_batches(self, tmp_path: Path) -> None:
-        """Test that duplicate item_ids across batches are deduplicated."""
         purchase = _make_purchase(item_id="dup1")
         har = {
             "log": {
@@ -278,7 +266,6 @@ class TestAppStoreProvider:
         assert len(txns) == 1
 
     def test_empty_har(self, tmp_path: Path) -> None:
-        """Test parsing an empty HAR file."""
         har = {"log": {"version": "1.2", "entries": []}}
         har_file = tmp_path / "apple.har"
         har_file.write_text(json.dumps(har), encoding="utf-8")
@@ -289,7 +276,6 @@ class TestAppStoreProvider:
         assert txns == []
 
     def test_skip_non_search_entries(self, tmp_path: Path) -> None:
-        """Test that non-search API entries are ignored."""
         har = _make_har(
             [_make_purchase()],
             url="https://reportaproblem.apple.com/api/other/endpoint",
@@ -303,7 +289,6 @@ class TestAppStoreProvider:
         assert txns == []
 
     def test_date_with_milliseconds(self, tmp_path: Path) -> None:
-        """Test parsing dates with millisecond precision."""
         har = _make_har([_make_purchase(pli_date="2026-03-21T15:48:21.264Z")])
         har_file = tmp_path / "apple.har"
         har_file.write_text(json.dumps(har), encoding="utf-8")
@@ -315,7 +300,6 @@ class TestAppStoreProvider:
         assert txns[0].date.isoformat() == "2026-03-21"
 
     def test_subscription_metadata(self, tmp_path: Path) -> None:
-        """Test that media_type is captured for subscriptions."""
         har = _make_har([_make_purchase(media_type="订阅续期")])
         har_file = tmp_path / "apple.har"
         har_file.write_text(json.dumps(har), encoding="utf-8")
@@ -326,7 +310,6 @@ class TestAppStoreProvider:
         assert txns[0].metadata["media_type"] == "订阅续期"
 
     def test_amount_with_comma(self, tmp_path: Path) -> None:
-        """Test parsing amount with thousand separators."""
         har = _make_har([_make_purchase(amount="¥1,280.00")])
         har_file = tmp_path / "apple.har"
         har_file.write_text(json.dumps(har), encoding="utf-8")
@@ -338,14 +321,12 @@ class TestAppStoreProvider:
         assert txns[0].amount == Decimal("1280.00")
 
     def test_can_handle_detection(self, tmp_path: Path) -> None:
-        """Test file detection by filename keywords."""
         har_file = tmp_path / "reportaproblem.apple.com.har"
         har_file.write_text("{}", encoding="utf-8")
 
         assert AppStoreProvider.can_handle(har_file) is True
 
     def test_can_handle_rejects_csv(self, tmp_path: Path) -> None:
-        """Test that non-HAR files are rejected."""
         csv_file = tmp_path / "apple.csv"
         csv_file.write_text("", encoding="utf-8")
 
@@ -369,7 +350,6 @@ class TestAppStoreProvider:
         expected_amount: Decimal,
         expected_currency: str,
     ) -> None:
-        """Test amount parsing with different currency symbols."""
         amount, currency = AppStoreProvider._parse_amount(amount_str)
         assert amount == expected_amount
         assert currency == expected_currency
@@ -377,7 +357,6 @@ class TestAppStoreProvider:
     def test_unknown_currency_symbol_skipped(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test that an unrecognised currency symbol skips the row with a warning."""
         har = _make_har([_make_purchase(amount="ZZ$10.00")])
         har_file = tmp_path / "apple.har"
         har_file.write_text(json.dumps(har), encoding="utf-8")
@@ -389,7 +368,6 @@ class TestAppStoreProvider:
         assert "ZZ$" in caplog.text
 
     def test_utc_date_converted_to_beijing(self, tmp_path: Path) -> None:
-        """Test that a UTC pliDate after 16:00 lands on the next Beijing day."""
         har = _make_har([_make_purchase(pli_date="2030-01-02T17:00:00Z")])
         har_file = tmp_path / "apple.har"
         har_file.write_text(json.dumps(har), encoding="utf-8")
@@ -402,7 +380,6 @@ class TestAppStoreProvider:
         assert txns[0].time.isoformat() == "01:00:00"
 
     def test_malformed_response_json(self, tmp_path: Path) -> None:
-        """Test that malformed JSON in response is skipped gracefully."""
         har = {
             "log": {
                 "version": "1.2",
@@ -425,7 +402,6 @@ class TestAppStoreProvider:
         assert txns == []
 
     def test_empty_plis(self, tmp_path: Path) -> None:
-        """Test that a purchase with empty plis produces no transactions."""
         purchase = _make_purchase()
         purchase["plis"] = []
         har = _make_har([purchase])
@@ -438,7 +414,6 @@ class TestAppStoreProvider:
         assert txns == []
 
     def test_missing_amount_skipped(self, tmp_path: Path) -> None:
-        """Test that PLI with missing amountPaid is skipped."""
         purchase = _make_purchase()
         purchase["plis"][0]["amountPaid"] = None
         har = _make_har([purchase])
@@ -451,7 +426,6 @@ class TestAppStoreProvider:
         assert txns == []
 
     def test_missing_pli_date_skipped(self, tmp_path: Path) -> None:
-        """Test that PLI with missing pliDate is skipped."""
         purchase = _make_purchase()
         purchase["plis"][0]["pliDate"] = ""
         har = _make_har([purchase])
@@ -464,7 +438,6 @@ class TestAppStoreProvider:
         assert txns == []
 
     def test_null_localized_content(self, tmp_path: Path) -> None:
-        """Test that PLI with null localizedContent doesn't crash."""
         purchase = _make_purchase()
         purchase["plis"][0]["localizedContent"] = None
         har = _make_har([purchase])

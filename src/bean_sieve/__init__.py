@@ -26,15 +26,12 @@ from .providers import BaseProvider, get_provider, list_providers
 __all__ = [
     "__version__",
     "api",
-    # Config
     "Config",
     "load_config",
-    # Core types
     "Transaction",
     "MatchResult",
     "ReconcileResult",
     "MatchSource",
-    # Providers
     "BaseProvider",
     "get_provider",
     "list_providers",

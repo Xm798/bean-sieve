@@ -1,5 +1,3 @@
-"""Tests for Bank of Communications (交通银行) debit card statement provider."""
-
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -31,7 +29,6 @@ def create_bocom_xls(
     card_number: str = "6222 6000 1234 5678",
     filename: str = "交通银行_交易明细.xls",
 ) -> Path:
-    """Create a BOCOM debit card XLS file with mock data."""
     wb = xlwt.Workbook()
     ws = wb.add_sheet("Sheet0")
 
@@ -50,7 +47,6 @@ def create_bocom_xls(
     for col, header in enumerate(HEADERS):
         ws.write(2, col, header)
 
-    # Data rows
     for i, txn in enumerate(transactions):
         row = 3 + i
         ws.write(row, 0, txn.get("date", "2026-01-15"))
@@ -72,7 +68,6 @@ def create_bocom_xls(
 
 @pytest.fixture
 def bocom_xls_file(tmp_path: Path) -> Path:
-    """Create a sample BOCOM debit card XLS file."""
     transactions = [
         {
             "date": "2026-03-28",
@@ -127,8 +122,6 @@ def bocom_xls_file(tmp_path: Path) -> Path:
 
 
 class TestBOCOMDebitProvider:
-    """Tests for BOCOMDebitProvider."""
-
     @pytest.mark.parametrize(
         ("value", "expected"), [(2468.0, "2468.00"), (1357.07 + 0.1, "1357.17")]
     )
@@ -149,7 +142,6 @@ class TestBOCOMDebitProvider:
         assert txn.metadata["balance"] == expected
 
     def test_provider_registration(self) -> None:
-        """Test that BOCOM debit provider is properly registered."""
         provider = get_provider("bocom_debit")
         assert isinstance(provider, BOCOMDebitProvider)
         assert provider.provider_id == "bocom_debit"
@@ -157,20 +149,17 @@ class TestBOCOMDebitProvider:
         assert ".xls" in provider.supported_formats
 
     def test_can_handle(self) -> None:
-        """Test file format detection."""
         assert BOCOMDebitProvider.can_handle(Path("交通银行_交易明细.xls"))
         assert not BOCOMDebitProvider.can_handle(Path("交易明细列表.xls"))
         assert not BOCOMDebitProvider.can_handle(Path("交通银行.csv"))
         assert not BOCOMDebitProvider.can_handle(Path("建设银行交易明细.xls"))
 
     def test_parse_basic(self, bocom_xls_file: Path) -> None:
-        """Test basic parsing functionality."""
         provider = BOCOMDebitProvider()
         transactions = provider.parse(bocom_xls_file)
 
         assert len(transactions) == 4
 
-        # Expense: ATM withdrawal
         txn1 = transactions[0]
         assert txn1.date == date(2026, 3, 28)
         assert txn1.time == time(21, 23, 33)
@@ -180,41 +169,35 @@ class TestBOCOMDebitProvider:
         assert txn1.provider == "bocom_debit"
         assert txn1.is_expense
 
-        # Income: interest
         txn2 = transactions[1]
         assert txn2.date == date(2026, 3, 21)
         assert txn2.amount == Decimal("-0.04")
         assert txn2.is_income
         assert txn2.payee == "应付个人活期储蓄存款利息"
 
-        # Expense with order_id from structured summary
         txn3 = transactions[2]
         assert txn3.amount == Decimal("19.15")
         assert txn3.order_id == "2030010100000001"
         assert "生活服务消费" in txn3.description
 
-        # Income: WeChat withdrawal with order_id
         txn4 = transactions[3]
         assert txn4.amount == Decimal("-540")
         assert txn4.order_id == "4200000000203001010000000001"
         assert txn4.is_income
 
     def test_card_last4_extraction(self, bocom_xls_file: Path) -> None:
-        """Test card_last4 extracted from metadata row."""
         provider = BOCOMDebitProvider()
         transactions = provider.parse(bocom_xls_file)
         for txn in transactions:
             assert txn.card_last4 == "5678"
 
     def test_empty_statement(self, tmp_path: Path) -> None:
-        """Test handling of statement with no transactions."""
         file_path = create_bocom_xls(tmp_path, [])
         provider = BOCOMDebitProvider()
         transactions = provider.parse(file_path)
         assert transactions == []
 
     def test_amounts_with_thousand_separators(self, tmp_path: Path) -> None:
-        """Test parsing amounts with comma separators."""
         transactions = [
             {
                 "date": "2026-01-15",
@@ -230,7 +213,6 @@ class TestBOCOMDebitProvider:
         assert parsed[0].amount == Decimal("12345.67")
 
     def test_dash_amounts_skipped(self, tmp_path: Path) -> None:
-        """Test that rows with '--' in both expense and income are skipped."""
         transactions = [
             {
                 "date": "2026-01-15",
@@ -245,7 +227,6 @@ class TestBOCOMDebitProvider:
         assert len(parsed) == 0
 
     def test_non_bocom_statement_rejected(self, tmp_path: Path) -> None:
-        """Test that XLS files without BOCOM title are rejected."""
         wb = xlwt.Workbook()
         ws = wb.add_sheet("Sheet0")
         ws.write(0, 0, "其他银行交易明细")
@@ -262,7 +243,6 @@ class TestBOCOMDebitProvider:
         assert transactions == []
 
     def test_fewer_columns_rejected(self, tmp_path: Path) -> None:
-        """Test that files with too few columns return empty."""
         wb = xlwt.Workbook()
         ws = wb.add_sheet("Sheet0")
         ws.write(0, 0, "交通银行银行卡交易明细查询表")
@@ -276,22 +256,18 @@ class TestBOCOMDebitProvider:
         assert transactions == []
 
     def test_description_building(self, bocom_xls_file: Path) -> None:
-        """Test description is built from method, location, and summary."""
         provider = BOCOMDebitProvider()
         transactions = provider.parse(bocom_xls_file)
 
-        # ATM withdrawal: method + location + summary
         txn1 = transactions[0]
         assert "异地跨行取现" in txn1.description
         assert "他行自助设备" in txn1.description
 
-        # Interest: method + location (no summary)
         txn2 = transactions[1]
         assert "存款利息" in txn2.description
         assert "批处理" in txn2.description
 
     def test_structured_summary_description(self, tmp_path: Path) -> None:
-        """Test that structured pipe-delimited summaries extract 交易说明."""
         transactions = [
             {
                 "date": "2026-01-15",
@@ -310,7 +286,7 @@ class TestBOCOMDebitProvider:
         assert parsed[0].order_id == "test123"
 
     def test_order_id_from_liushui(self, tmp_path: Path) -> None:
-        """Test order_id extraction from 流水号: pattern (without 订单编号)."""
+        """The summary carries 流水号: without 订单编号."""
         transactions = [
             {
                 "date": "2026-01-15",
@@ -326,7 +302,6 @@ class TestBOCOMDebitProvider:
         assert parsed[0].order_id == "ABC123456"
 
     def test_zero_amount_skipped(self, tmp_path: Path) -> None:
-        """Test that rows with zero expense amount are skipped."""
         transactions = [
             {
                 "date": "2026-01-15",
@@ -341,7 +316,6 @@ class TestBOCOMDebitProvider:
         assert len(parsed) == 0
 
     def test_card_last4_no_match(self, tmp_path: Path) -> None:
-        """Test card_last4 is None when metadata doesn't contain card number."""
         wb = xlwt.Workbook()
         ws = wb.add_sheet("Sheet0")
         ws.write(0, 0, "交通银行银行卡交易明细查询表")
@@ -360,7 +334,6 @@ class TestBOCOMDebitProvider:
         assert transactions[0].card_last4 is None
 
     def test_invalid_date_rows_skipped(self, tmp_path: Path) -> None:
-        """Test that rows with invalid dates are skipped."""
         transactions = [
             {"date": "invalid-date", "expense": "100.00"},
             {"date": "", "expense": "200.00"},

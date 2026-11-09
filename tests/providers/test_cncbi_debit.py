@@ -1,5 +1,3 @@
-"""Tests for CITIC Bank International (中信银行国际) debit account provider."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -91,15 +89,11 @@ class TestCNCBIDebitProvider:
     def test_amount_signs(self, tmp_path: Path, sample_rows: list[str]) -> None:
         f = write_csv(tmp_path, HEADER_SIMPLIFIED, sample_rows)
         txns = CNCBIDebitProvider().parse(f)
-        # Income (汇入)
         assert txns[0].amount == Decimal("-500.00")
         assert txns[0].is_income
-        # Expense (汇出)
         assert txns[1].amount == Decimal("200.00")
         assert txns[1].is_expense
-        # Internal transfer expense
         assert txns[2].amount == Decimal("100.00")
-        # Interest income
         assert txns[3].amount == Decimal("-1.50")
 
     def test_date_parsing(self, tmp_path: Path, sample_rows: list[str]) -> None:

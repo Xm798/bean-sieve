@@ -1,5 +1,3 @@
-"""Tests for Industrial Bank (CIB) credit card statement provider."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -11,7 +9,6 @@ from bean_sieve.providers.banks.credit.cib import CIBCreditProvider
 
 
 def create_cib_eml(html_content: str) -> str:
-    """Create an EML file content with the given HTML."""
     return f"""From: creditcard@message.cib.com.cn
 Subject: =?utf-8?B?5YW05Lia6ZO26KGM5L+h55So5Y2hMjAyNuW5tDAxJeaciOeUteWtkOi0puWNlQ==?=
 To: test@example.com
@@ -23,7 +20,6 @@ Content-Type: text/html; charset="utf-8"
 
 @pytest.fixture
 def cib_html_content():
-    """Sample CIB statement HTML content."""
     return """<html>
 <head><title>兴业银行信用卡对账单</title></head>
 <body>
@@ -78,7 +74,6 @@ def cib_html_content():
 
 @pytest.fixture
 def cib_eml_file(tmp_path, cib_html_content):
-    """Create a temporary CIB EML file."""
     file_path = tmp_path / "兴业银行信用卡2026年01月电子账单.eml"
     eml_content = create_cib_eml(cib_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
@@ -86,10 +81,7 @@ def cib_eml_file(tmp_path, cib_html_content):
 
 
 class TestCIBCreditProvider:
-    """Tests for CIBCreditProvider."""
-
     def test_provider_registration(self):
-        """Test that CIB provider is properly registered."""
         provider = get_provider("cib_credit")
         assert isinstance(provider, CIBCreditProvider)
         assert provider.provider_id == "cib_credit"
@@ -97,7 +89,6 @@ class TestCIBCreditProvider:
         assert ".eml" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert CIBCreditProvider.can_handle(
             Path("兴业银行信用卡2026年01月电子账单.eml")
         )
@@ -106,13 +97,11 @@ class TestCIBCreditProvider:
         assert not CIBCreditProvider.can_handle(Path("statement.eml"))
 
     def test_parse_transactions(self, cib_eml_file):
-        """Test parsing transactions from EML file."""
         provider = CIBCreditProvider()
         transactions = provider.parse(cib_eml_file)
 
         assert len(transactions) == 4
 
-        # Check expense transaction
         expense1 = transactions[0]
         assert expense1.date == date(2025, 12, 18)
         assert expense1.amount == Decimal("15.84")
@@ -122,28 +111,24 @@ class TestCIBCreditProvider:
         assert expense1.provider == "cib_credit"
         assert expense1.is_expense
 
-        # Check payment transaction (negative amount)
         payment = transactions[1]
         assert payment.date == date(2025, 12, 20)
         assert payment.amount == Decimal("-599.73")
         assert "还款" in payment.description
         assert payment.is_income
 
-        # Check rebate transaction (negative small amount)
         rebate = transactions[2]
         assert rebate.date == date(2025, 12, 22)
         assert rebate.amount == Decimal("-0.01")
         assert "刷卡金" in rebate.description
         assert rebate.is_income
 
-        # Check cross-year transaction
         expense2 = transactions[3]
         assert expense2.date == date(2026, 1, 16)
         assert expense2.amount == Decimal("24.50")
         assert "抖音" in expense2.description
 
     def test_card_last4_extraction(self, cib_eml_file):
-        """Test that card_last4 is properly extracted."""
         provider = CIBCreditProvider()
         transactions = provider.parse(cib_eml_file)
 
@@ -151,7 +136,6 @@ class TestCIBCreditProvider:
             assert txn.card_last4 == "7531"
 
     def test_post_date_extraction(self, cib_eml_file):
-        """Test that post_date is properly extracted."""
         provider = CIBCreditProvider()
         transactions = provider.parse(cib_eml_file)
 
@@ -159,7 +143,6 @@ class TestCIBCreditProvider:
         assert txn.post_date == date(2025, 12, 18)
 
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         html = """<html>
 <body>
 <table id="detail_table_156">
@@ -179,7 +162,6 @@ class TestCIBCreditProvider:
         assert transactions == []
 
     def test_per_card_statement_flag(self):
-        """Test that per_card_statement is set correctly."""
         provider = CIBCreditProvider()
         assert provider.per_card_statement is True
 
@@ -216,10 +198,7 @@ class TestCIBCreditProvider:
 
 
 class TestCIBAmountParsing:
-    """Tests for CIB amount parsing edge cases."""
-
     def test_amount_with_thousands_separator(self, tmp_path):
-        """Test parsing amounts with comma separators."""
         html = """<html>
 <body>
 <table id="detail_table_156">
@@ -245,7 +224,6 @@ class TestCIBAmountParsing:
         assert transactions[0].amount == Decimal("12345.67")
 
     def test_negative_amount(self, tmp_path):
-        """Test parsing negative amounts (payments/refunds)."""
         html = """<html>
 <body>
 <table id="detail_table_156">
@@ -273,10 +251,7 @@ class TestCIBAmountParsing:
 
 
 class TestCIBMultipleCards:
-    """Tests for statements with multiple cards."""
-
     def test_multiple_card_sections(self, tmp_path):
-        """Test parsing statement with transactions from multiple cards."""
         html = """<html>
 <body>
 <table id="detail_table_156">
@@ -318,10 +293,7 @@ class TestCIBMultipleCards:
 
 
 class TestCIBStatementPeriod:
-    """Tests for statement period stamping."""
-
     def test_statement_period(self, tmp_path):
-        """Test that the header billing cycle is stamped on every transaction."""
         html = """<html>
 <body>
 <table><tr><td>账单周期 2030/01/08-2030/02/07</td></tr></table>

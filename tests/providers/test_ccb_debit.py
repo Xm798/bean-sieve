@@ -1,5 +1,3 @@
-"""Tests for China Construction Bank (CCB) debit card statement provider."""
-
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -32,7 +30,6 @@ def create_ccb_xls(
     transactions: list[dict],
     card_suffix: str = "6789",
 ) -> Path:
-    """Create a CCB debit card XLS file."""
     wb = xlwt.Workbook()
     ws = wb.add_sheet("Sheet1")
 
@@ -50,7 +47,6 @@ def create_ccb_xls(
     for col, header in enumerate(HEADERS):
         ws.write(5, col, header)
 
-    # Data rows
     for i, txn in enumerate(transactions):
         row = 6 + i
         ws.write(row, 0, txn.get("posting_date", txn.get("date", "20250115")))
@@ -76,7 +72,6 @@ def create_ccb_xls(
 
 @pytest.fixture
 def ccb_xls_file(tmp_path):
-    """Create a sample CCB debit card XLS file."""
     transactions = [
         {
             "date": "20250110",
@@ -123,10 +118,7 @@ def ccb_xls_file(tmp_path):
 
 
 class TestCCBDebitProvider:
-    """Tests for CCBDebitProvider."""
-
     def test_provider_registration(self):
-        """Test that CCB debit provider is properly registered."""
         provider = get_provider("ccb_debit")
         assert isinstance(provider, CCBDebitProvider)
         assert provider.provider_id == "ccb_debit"
@@ -134,20 +126,16 @@ class TestCCBDebitProvider:
         assert ".xls" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert CCBDebitProvider.can_handle(Path("交易明细_6789_20250101_20250331.xls"))
         assert not CCBDebitProvider.can_handle(Path("交易明细.csv"))
         assert not CCBDebitProvider.can_handle(Path("random.xls"))
-        # Should not match files without the CCB naming pattern
         assert not CCBDebitProvider.can_handle(Path("平安银行交易明细.xls"))
 
     def test_renamed_file_detected_by_content(self, ccb_xls_file):
-        """A file renamed away from the bank's default name is recognised by its header."""
         renamed = ccb_xls_file.rename(ccb_xls_file.with_name("export.xls"))
         assert isinstance(auto_detect_provider(renamed), CCBDebitProvider)
 
     def test_header_without_ccb_title_not_detected(self, tmp_path):
-        """Another bank's statement sharing the column names is not claimed."""
         wb = xlwt.Workbook()
         ws = wb.add_sheet("Sheet1")
         ws.write(0, 0, "Other Bank")
@@ -158,13 +146,11 @@ class TestCCBDebitProvider:
         assert not CCBDebitProvider.can_handle(f)
 
     def test_parse_transactions(self, ccb_xls_file):
-        """Test parsing transactions from XLS file."""
         provider = CCBDebitProvider()
         transactions = provider.parse(ccb_xls_file)
 
         assert len(transactions) == 4
 
-        # Expense transaction
         txn1 = transactions[0]
         assert txn1.date == date(2025, 1, 10)
         assert txn1.time == time(9, 30, 15)
@@ -174,30 +160,25 @@ class TestCCBDebitProvider:
         assert txn1.provider == "ccb_debit"
         assert txn1.is_expense
 
-        # Small expense
         txn2 = transactions[1]
         assert txn2.amount == Decimal("25")
         assert "测试商户" in (txn2.payee or "")
 
-        # Income transaction (negative)
         txn3 = transactions[2]
         assert txn3.amount == Decimal("-5000")
         assert txn3.is_income
 
-        # Interest income
         txn4 = transactions[3]
         assert txn4.amount == Decimal("-1.25")
         assert txn4.is_income
 
     def test_card_last4_from_account_row(self, ccb_xls_file):
-        """Test card_last4 extraction from account metadata."""
         provider = CCBDebitProvider()
         transactions = provider.parse(ccb_xls_file)
         for txn in transactions:
             assert txn.card_last4 == "6789"
 
     def test_card_last4_from_filename(self, tmp_path):
-        """Test card_last4 extraction fallback to filename."""
         wb = xlwt.Workbook()
         ws = wb.add_sheet("Sheet1")
         # No account row with card number
@@ -223,14 +204,12 @@ class TestCCBDebitProvider:
         assert transactions[0].card_last4 == "5678"
 
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         file_path = create_ccb_xls(tmp_path, [])
         provider = CCBDebitProvider()
         transactions = provider.parse(file_path)
         assert transactions == []
 
     def test_description_building(self, ccb_xls_file):
-        """Test description combines summary and location."""
         provider = CCBDebitProvider()
         transactions = provider.parse(ccb_xls_file)
 
@@ -238,12 +217,10 @@ class TestCCBDebitProvider:
         assert "无卡自助交易" in txn1.description
         assert "测试银行信用卡中心还款" in txn1.description
 
-        # Interest with no location
         txn4 = transactions[3]
         assert "利息存入" in txn4.description
 
     def test_metadata_includes_summary(self, ccb_xls_file):
-        """Test that metadata includes summary field."""
         provider = CCBDebitProvider()
         transactions = provider.parse(ccb_xls_file)
 
@@ -251,7 +228,6 @@ class TestCCBDebitProvider:
         assert transactions[1].metadata["summary"] == "消费"
 
     def test_footer_row_excluded(self, tmp_path):
-        """Test that footer disclaimer row is not parsed."""
         transactions = [
             {
                 "date": "20250101",
@@ -268,7 +244,6 @@ class TestCCBDebitProvider:
         assert len(parsed) == 1
 
     def test_zero_amount_rows_skipped(self, tmp_path):
-        """Test that rows with zero expense and zero income are skipped."""
         transactions = [
             {
                 "date": "20250101",
@@ -285,10 +260,8 @@ class TestCCBDebitProvider:
 
 
 class TestCCBNumericCellHandling:
-    """Tests for xlrd numeric cell value handling."""
-
     def test_numeric_date_cells(self, tmp_path):
-        """Test parsing when dates are stored as numbers (xlrd returns float)."""
+        """Dates stored as numbers, which xlrd returns as floats."""
         wb = xlwt.Workbook()
         ws = wb.add_sheet("Sheet1")
         ws.write(0, 0, "China Construction Bank")
@@ -337,7 +310,7 @@ class TestCCBNumericCellHandling:
         assert txn.metadata["balance"] == balance_text
 
     def test_zero_counterparty_not_leaked_as_payee(self, tmp_path):
-        """Test that numeric zero counterparty does not become '0.0' payee."""
+        """A numeric zero counterparty cell reads as 0.0, which must not become the payee."""
         wb = xlwt.Workbook()
         ws = wb.add_sheet("Sheet1")
         ws.write(0, 0, "China Construction Bank")
@@ -366,7 +339,6 @@ class TestCCBNumericCellHandling:
         assert transactions[0].payee is None
 
     def test_malformed_date_skipped(self, tmp_path):
-        """Test that rows with malformed dates are skipped."""
         wb = xlwt.Workbook()
         ws = wb.add_sheet("Sheet1")
         ws.write(0, 0, "China Construction Bank")
@@ -395,7 +367,6 @@ class TestCCBNumericCellHandling:
         assert transactions[0].amount == Decimal("300")
 
     def test_dynamic_header_detection(self, tmp_path):
-        """Test that header row is found dynamically, not by fixed position."""
         wb = xlwt.Workbook()
         ws = wb.add_sheet("Sheet1")
         ws.write(0, 0, "China Construction Bank")
@@ -459,7 +430,7 @@ def create_ccb_signed_xls(
 
 
 class TestCCBSignedAmountLayout:
-    """Tests for the 9-column export with one signed 交易金额 column."""
+    """The 9-column export with one signed 交易金额 column."""
 
     @pytest.fixture
     def signed_xls(self, tmp_path):

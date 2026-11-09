@@ -278,7 +278,7 @@ class TestParseIntegration:
         txns = WeLabProvider().parse(statement)
         recv = next(t for t in txns if t.order_id == "FT30A1")
         assert recv.currency == "HKD"
-        assert recv.amount == Decimal("-200.00")  # income
+        assert recv.amount == Decimal("-200.00")
         assert recv.payee == "测试用户"
         assert recv.card_last4 == "HKD"
 
@@ -286,7 +286,7 @@ class TestParseIntegration:
         txns = WeLabProvider().parse(statement)
         spend = next(t for t in txns if t.order_id == "FT30C3")
         assert spend.currency == "CNY"
-        assert spend.amount == Decimal("50.00")  # expense
+        assert spend.amount == Decimal("50.00")
         assert spend.payee == "WEIXIN*测试商户"
         assert spend.metadata.get("transaction_type") == "Debit Card spending"
         # The wrapped detail tail goes to metadata; description stays clean.
@@ -304,22 +304,20 @@ class TestParseIntegration:
     def test_refund_is_income(self, statement: Path) -> None:
         txns = WeLabProvider().parse(statement)
         refund = next(t for t in txns if t.order_id == "FT30D4")
-        assert refund.amount == Decimal("-30.00")  # income
+        assert refund.amount == Decimal("-30.00")
 
     def test_refund_tagged_and_linked(self, statement: Path) -> None:
-        # Refunds get a #refund tag and a ^<order_id> link.
         txns = WeLabProvider().parse(statement)
         refund = next(t for t in txns if t.order_id == "FT30D4")
         assert refund.tags == ["refund"]
         assert refund.links == ["FT30D4"]
-        # Non-refund rows carry neither.
         spend = next(t for t in txns if t.order_id == "FT30C3")
         assert spend.tags == []
         assert spend.links == []
 
     def test_exchange_legs_kept_separate(self, statement: Path) -> None:
         # Both legs of a cross-currency exchange are kept (not merged), so each
-        # can match its corresponding posting in a same-account ledger entry.
+        # can match its posting in a same-account ledger entry.
         txns = WeLabProvider().parse(statement)
         legs = [t for t in txns if t.order_id == "FX30000001"]
         assert len(legs) == 2  # one per currency section, same Ref
@@ -329,11 +327,11 @@ class TestParseIntegration:
         # inflow (income, negative).
         assert by_ccy["HKD"].amount == Decimal("110.00")
         assert by_ccy["CNY"].amount == Decimal("-100.00")
-        assert by_ccy["HKD"].price_amount is None  # no @@ merging
+        assert by_ccy["HKD"].price_amount is None
 
     def test_only_exchange_typed_rows_are_exchanges(self, statement: Path) -> None:
         # Exchange classification is driven by the Type column, not by
-        # description text — a refund is never treated as an exchange leg.
+        # description text: a refund is never treated as an exchange leg.
         txns = WeLabProvider().parse(statement)
         refund = next(t for t in txns if t.order_id == "FT30D4")
         assert refund.description != "Foreign currency exchange"

@@ -1,5 +1,3 @@
-"""Tests for Ping An Bank (PAB) debit card statement provider."""
-
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -75,7 +73,6 @@ def create_pab_xlsx(
 
 @pytest.fixture
 def pab_xlsx_file(tmp_path):
-    """Create a sample PAB debit card Excel file."""
     transactions = [
         {
             "time": "2025-12-30 09:15:30",
@@ -134,10 +131,7 @@ def pab_xlsx_file(tmp_path):
 
 
 class TestPABDebitProvider:
-    """Tests for PABDebitProvider."""
-
     def test_provider_registration(self):
-        """Test that PAB provider is properly registered."""
         provider = get_provider("pab_debit")
         assert isinstance(provider, PABDebitProvider)
         assert provider.provider_id == "pab_debit"
@@ -146,7 +140,6 @@ class TestPABDebitProvider:
         assert ".xls" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert PABDebitProvider.can_handle(Path("平安银行借记卡流水.xlsx"))
         assert PABDebitProvider.can_handle(Path("平安借记卡明细.xls"))
         assert PABDebitProvider.can_handle(Path("借记卡平安银行.xlsx"))
@@ -155,13 +148,11 @@ class TestPABDebitProvider:
 
     @pytest.mark.parametrize("ext", [".xlsx", ".xls"])
     def test_renamed_file_detected_by_content(self, tmp_path, ext):
-        """A file renamed away from the bank's default name is recognised by its header."""
         f = create_pab_xlsx(tmp_path, [])
         renamed = f.rename(tmp_path / f"export{ext}")
         assert isinstance(auto_detect_provider(renamed), PABDebitProvider)
 
     def test_partial_header_not_detected(self, tmp_path):
-        """A sheet carrying only some of PAB's column names is not claimed."""
         wb = Workbook()
         ws = wb.active
         assert ws is not None
@@ -172,13 +163,11 @@ class TestPABDebitProvider:
         assert not PABDebitProvider.can_handle(f)
 
     def test_parse_transactions(self, pab_xlsx_file):
-        """Test parsing transactions from Excel file."""
         provider = PABDebitProvider()
         transactions = provider.parse(pab_xlsx_file)
 
         assert len(transactions) == 4
 
-        # Check expense transaction
         txn1 = transactions[0]
         assert txn1.date == date(2025, 12, 30)
         assert txn1.time == time(9, 15, 30)
@@ -195,7 +184,6 @@ class TestPABDebitProvider:
         assert txn2.amount == Decimal("999.00")
         assert "Apple" in txn2.description or "Apple" in (txn2.payee or "")
 
-        # Check income transaction (should be negative)
         txn3 = transactions[2]
         assert txn3.date == date(2025, 12, 31)
         assert txn3.amount == Decimal("-5000.00")
@@ -208,7 +196,6 @@ class TestPABDebitProvider:
         assert "Hilton" in txn4.description or "Hilton" in (txn4.payee or "")
 
     def test_card_last4_extraction(self, pab_xlsx_file):
-        """Test that card_last4 is properly extracted from account info."""
         provider = PABDebitProvider()
         transactions = provider.parse(pab_xlsx_file)
 
@@ -216,7 +203,6 @@ class TestPABDebitProvider:
             assert txn.card_last4 == "1029"
 
     def test_order_id_extraction(self, pab_xlsx_file):
-        """Test that order_id is properly extracted."""
         provider = PABDebitProvider()
         transactions = provider.parse(pab_xlsx_file)
 
@@ -226,7 +212,6 @@ class TestPABDebitProvider:
         assert transactions[3].order_id == "PAB202512310002"
 
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         file_path = create_pab_xlsx(tmp_path, [])
 
         provider = PABDebitProvider()
@@ -236,10 +221,7 @@ class TestPABDebitProvider:
 
 
 class TestPABTransactionTypes:
-    """Tests for PAB transaction type handling."""
-
     def test_transfer_out(self, tmp_path):
-        """Test '转出' transactions are positive (expense)."""
         transactions = [
             {
                 "time": "2025-12-30 10:00:00",
@@ -259,7 +241,6 @@ class TestPABTransactionTypes:
         assert parsed[0].is_expense
 
     def test_transfer_in(self, tmp_path):
-        """Test '转入' transactions are negative (income)."""
         transactions = [
             {
                 "time": "2025-12-30 10:00:00",
@@ -311,10 +292,7 @@ class TestPABNumericCells:
 
 
 class TestPABDateTimeParsing:
-    """Tests for PAB datetime parsing."""
-
     def test_datetime_parsing(self, tmp_path):
-        """Test parsing datetime string."""
         transactions = [
             {
                 "time": "2025-01-15 23:59:59",
@@ -334,7 +312,6 @@ class TestPABDateTimeParsing:
         assert parsed[0].time == time(23, 59, 59)
 
     def test_date_only(self, tmp_path):
-        """Test parsing date without time (edge case)."""
         # Some statements might have date only
         wb = Workbook()
         ws = wb.active
@@ -368,17 +345,12 @@ class TestPABDateTimeParsing:
         provider = PABDebitProvider()
         parsed = provider.parse(file_path)
 
-        # Should handle gracefully - either parse successfully or skip the row
-        # Based on the provider code, it will return None, None for time
         if parsed:
             assert parsed[0].date == date(2025, 12, 30)
 
 
 class TestPABDescriptionBuilding:
-    """Tests for PAB description building."""
-
     def test_description_with_all_fields(self, tmp_path):
-        """Test description includes summary, counterparty, and note."""
         transactions = [
             {
                 "time": "2025-12-30 10:00:00",
@@ -396,12 +368,10 @@ class TestPABDescriptionBuilding:
 
         assert len(parsed) == 1
         desc = parsed[0].description
-        # Description should contain summary, counterparty, and note
         assert "消费" in desc
         assert "Google" in desc or "Google" in (parsed[0].payee or "")
 
     def test_description_truncates_long_note(self, tmp_path):
-        """Test that long notes are truncated."""
         long_note = "A" * 100  # Very long note
         transactions = [
             {
@@ -419,15 +389,12 @@ class TestPABDescriptionBuilding:
         parsed = provider.parse(file_path)
 
         assert len(parsed) == 1
-        # Note should be truncated to 50 chars + "..."
+        # The note is truncated to 50 chars + "..."
         assert len(parsed[0].description) < len(long_note) + 50
 
 
 class TestPABMetadata:
-    """Tests for PAB metadata extraction."""
-
     def test_metadata_includes_tx_type(self, tmp_path):
-        """Test that metadata includes transaction type."""
         transactions = [
             {
                 "time": "2025-12-30 10:00:00",

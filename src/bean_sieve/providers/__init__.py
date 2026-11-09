@@ -11,38 +11,16 @@ from .base import BaseProvider
 
 _P = TypeVar("_P", bound=BaseProvider)
 
-# Provider registry: provider_id -> provider class
-# Providers are registered when their modules are imported
+# Filled by @register_provider as the provider modules imported below load.
 PROVIDERS: dict[str, type[BaseProvider]] = {}
 
 
 def register_provider(provider_cls: type[_P]) -> type[_P]:
-    """
-    Decorator to register a provider class.
-
-    Usage:
-        @register_provider
-        class MyProvider(BaseProvider):
-            provider_id = "my_provider"
-            ...
-    """
     PROVIDERS[provider_cls.provider_id] = provider_cls
     return provider_cls
 
 
 def get_provider(provider_id: str) -> BaseProvider:
-    """
-    Get a provider instance by ID.
-
-    Args:
-        provider_id: The provider identifier (e.g., "hxb_credit")
-
-    Returns:
-        Provider instance
-
-    Raises:
-        ValueError: If provider is not found
-    """
     if provider_id not in PROVIDERS:
         available = ", ".join(sorted(PROVIDERS.keys()))
         raise ValueError(
@@ -52,18 +30,9 @@ def get_provider(provider_id: str) -> BaseProvider:
 
 
 def auto_detect_provider(file_path: Path) -> BaseProvider | None:
-    """
-    Auto-detect the appropriate provider for a file.
-
-    Args:
-        file_path: Path to the statement file
-
-    Returns:
-        Provider instance if detected, None otherwise
-    """
+    """Return the first provider, in registration order, whose ``can_handle`` accepts the file."""
     for provider_cls in PROVIDERS.values():
         if provider_cls.can_handle(file_path):
-            # Could add content-based detection here
             return provider_cls()
     return None
 
@@ -124,12 +93,8 @@ def resolve_providers(
     """
     Decide which provider handles each statement path.
 
-    Args:
-        paths: Statement files, in the order the caller gave them
-        provider_id: Provider ID to use for every path, or None to detect
-
-    Returns:
-        ProviderSet for the run
+    ``provider_id`` applies to every path; without it each path is detected,
+    and paths detected as one provider share its instance.
 
     Raises:
         ValueError: If the provider ID is unknown, or a path is undetectable
@@ -150,12 +115,6 @@ def resolve_providers(
 
 
 def list_providers() -> list[dict[str, str]]:
-    """
-    List all registered providers.
-
-    Returns:
-        List of dicts with provider info
-    """
     return [
         {
             "id": cls.provider_id,
@@ -201,12 +160,7 @@ from .banks.debit import (  # noqa: E402, F401
     zabank,  # noqa: E402, F401
 )
 from .banks.debit import spdb as spdb_debit  # noqa: E402, F401
-
-# from .banks.credit import ccb, abc, cib, cmb, bosc, cgb, cmbc
-# from .banks.debit import abc, cmb, bocom
 from .payment import alipay, app_store, jd, meituan, wechat  # noqa: E402, F401
-
-# from .crypto import binance, okx
 
 __all__ = [
     "BaseProvider",

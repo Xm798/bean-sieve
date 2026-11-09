@@ -1,5 +1,3 @@
-"""Tests for Alipay statement provider."""
-
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -14,9 +12,6 @@ from tests.helpers import write_alipay_csv
 
 @pytest.fixture
 def alipay_csv_content():
-    """Sample Alipay CSV content (GBK encoding simulation)."""
-    # This is a minimal representation of Alipay CSV structure
-    # In real tests, we'd use actual GBK-encoded files
     header_lines = "\n".join(
         [
             "------------------------------------------------------------------------------------",
@@ -59,17 +54,13 @@ def alipay_csv_content():
 
 @pytest.fixture
 def alipay_csv_file(tmp_path, alipay_csv_content):
-    """Create a temporary Alipay CSV file."""
     file_path = tmp_path / "alipay_test.csv"
     file_path.write_text(alipay_csv_content, encoding="gbk")
     return file_path
 
 
 class TestAlipayProvider:
-    """Tests for AlipayProvider."""
-
     def test_provider_registration(self):
-        """Test that Alipay provider is properly registered."""
         provider = get_provider("alipay")
         assert isinstance(provider, AlipayProvider)
         assert provider.provider_id == "alipay"
@@ -77,24 +68,21 @@ class TestAlipayProvider:
         assert ".csv" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert AlipayProvider.can_handle(Path("alipay_statement.csv"))
         assert AlipayProvider.can_handle(Path("支付宝账单.csv"))
         assert not AlipayProvider.can_handle(Path("alipay_statement.xlsx"))
-        assert not AlipayProvider.can_handle(Path("statement.csv"))  # no keyword
+        assert not AlipayProvider.can_handle(Path("statement.csv"))
 
     def test_parse_transactions(self, alipay_csv_file):
-        """Test parsing transactions from CSV file."""
         provider = AlipayProvider()
         transactions = provider.parse(alipay_csv_file)
 
         assert len(transactions) == 3
 
-        # Check expense transaction
         expense = transactions[0]
         assert expense.date == date(2025, 1, 15)
         assert expense.time == time(14, 30, 0)
-        assert expense.amount == Decimal("9.90")  # expense is positive
+        assert expense.amount == Decimal("9.90")
         assert expense.currency == "CNY"
         assert expense.payee == "瑞幸咖啡"
         assert expense.description == "生椰拿铁"
@@ -102,15 +90,13 @@ class TestAlipayProvider:
         assert expense.provider == "alipay"
         assert expense.is_expense
 
-        # Check income transaction
         income = transactions[2]
         assert income.date == date(2025, 1, 14)
-        assert income.amount == Decimal("-100.00")  # income is negative
+        assert income.amount == Decimal("-100.00")
         assert income.payee == "张三"
         assert income.is_income
 
     def test_metadata_extraction(self, alipay_csv_file):
-        """Test that metadata is properly extracted."""
         provider = AlipayProvider()
         transactions = provider.parse(alipay_csv_file)
 
@@ -121,18 +107,14 @@ class TestAlipayProvider:
         assert txn.metadata["tx_type"] == "支出"
 
     def test_statement_period_extraction(self, alipay_csv_file):
-        """Test that statement period is extracted from header and set on transactions."""
         provider = AlipayProvider()
         transactions = provider.parse(alipay_csv_file)
 
-        # All transactions should have the statement period set
         for txn in transactions:
             assert txn.statement_period is not None
             assert txn.statement_period == (date(2025, 1, 1), date(2025, 1, 31))
 
     def test_empty_file(self, tmp_path):
-        """Test handling of file with no transactions."""
-        # Create file with only headers
         header = "\n".join(["---"] * 24)  # 24 header lines
         file_path = tmp_path / "empty.csv"
         file_path.write_text(header, encoding="gbk")
@@ -143,20 +125,15 @@ class TestAlipayProvider:
 
 
 class TestAlipayRefundHandling:
-    """Tests for Alipay refund post-processing."""
-
     @pytest.fixture
     def alipay_with_refund(self, tmp_path):
-        """Create Alipay CSV with a purchase and matching refund."""
         header_lines = "\n".join(["---"] * 23)
         header_lines += "\n------------------------分隔线------------------------"
 
         data_header = "交易时间,交易分类,交易对方,对方账号,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号,商家订单号,备注,"
 
         data_rows = [
-            # Original purchase
             "2025-01-15 10:00:00,日用百货,商家A,merchant@example.com,商品,支出,50.00,余额,交易成功,ORDER001,M001,",
-            # Refund for the same purchase
             "2025-01-16 10:00:00,退款,商家A,merchant@example.com,退款-商品,不计收支,50.00,,退款成功,ORDER001_REFUND,M001,",
         ]
 
@@ -166,8 +143,7 @@ class TestAlipayRefundHandling:
         return file_path
 
     def test_refund_links_old_format(self, alipay_with_refund):
-        """Old refund order ID format ``{original}_{suffix}``: both sides link
-        to the clean original order ID."""
+        """Refund order ID shaped ``{original}_{suffix}``."""
         provider = AlipayProvider()
         transactions = provider.parse(alipay_with_refund)
 
@@ -178,10 +154,10 @@ class TestAlipayRefundHandling:
         assert refund.links == ["ORDER001"]
 
     def test_refund_links_new_star_refund_format(self, tmp_path):
-        """New refund order ID format ``{original}*REFUND_{suffix}`` (rolled out
-        by Alipay in 2026): the ``*REFUND`` marker must be stripped, otherwise
-        the link becomes ``^ORDER001*REFUND`` (invalid Beancount link) and the
-        original transaction never gets back-linked."""
+        """Refund order ID shaped ``{original}*REFUND_{suffix}`` (rolled out by
+        Alipay in 2026): a ``*REFUND`` left in the link would give
+        ``^ORDER001*REFUND``, which is not a valid Beancount link, and the original
+        transaction would never get back-linked."""
         header_lines = "\n".join(["---"] * 23)
         header_lines += "\n------------------------分隔线------------------------"
 
@@ -206,7 +182,6 @@ class TestAlipayRefundHandling:
         assert refund.links == ["ORDER001"]
 
     def test_closed_transaction_filtered(self, tmp_path):
-        """Test that closed transactions with '不计收支' are filtered."""
         header_lines = "\n".join(["---"] * 23)
         header_lines += "\n------------------------分隔线------------------------"
 
@@ -224,13 +199,12 @@ class TestAlipayRefundHandling:
         provider = AlipayProvider()
         transactions = provider.parse(file_path)
 
-        # Closed transaction should be filtered
         assert len(transactions) == 1
         assert transactions[0].order_id == "ORDER001"
 
     def test_closed_income_without_refund_filtered(self, tmp_path):
-        """闲鱼-style 收入+交易关闭 order (buyer cancelled, no money received and
-        no paired 退款成功 line) must be filtered, not kept as phantom income."""
+        """闲鱼-style 收入+交易关闭 order: buyer cancelled, no money received and no
+        paired 退款成功 line, so keeping it would book phantom income."""
         header_lines = "\n".join(["---"] * 23)
         header_lines += "\n------------------------分隔线------------------------"
 
@@ -251,8 +225,8 @@ class TestAlipayRefundHandling:
         assert transactions[0].order_id == "ORDER001"
 
     def test_closed_with_paired_refund_kept(self, tmp_path):
-        """A closed expense that has a paired 退款成功 line (money moved then was
-        refunded) must be kept so both sides link into a net-zero pair."""
+        """A closed expense with a paired 退款成功 line (money moved, then was
+        refunded) is kept so both sides link into a net-zero pair."""
         header_lines = "\n".join(["---"] * 23)
         header_lines += "\n------------------------分隔线------------------------"
 
@@ -269,14 +243,13 @@ class TestAlipayRefundHandling:
 
         transactions = AlipayProvider().parse(file_path)
 
-        # Both kept and linked via the original order id.
         assert len(transactions) == 2
         assert all(t.links == ["ORDER001"] for t in transactions)
 
     def test_huabei_repayment_maps_to_huabei_and_flips_sign(self):
-        """花呗主动还款 (信用借还) must map to the 花呗 account with a flipped sign
-        so it matches the liability (花呗) leg of the ledger repayment entry,
-        instead of the bank leg — otherwise the 花呗 leg surfaces as Extra."""
+        """花呗主动还款 (信用借还) maps to the 花呗 account with a flipped sign so it
+        matches the liability (花呗) leg of the ledger repayment entry instead of the
+        bank leg, which would leave the 花呗 leg Extra."""
         from bean_sieve.config.schema import AccountMapping, Config
         from bean_sieve.core.rules import RulesEngine
         from bean_sieve.core.types import Transaction
@@ -308,9 +281,9 @@ class TestAlipayRefundHandling:
         assert result.amount == Decimal("-36.00")
 
     def test_user_initiated_refund_keeps_expense_sign(self):
-        """User-initiated refund (paying back to someone) is recorded by Alipay as
-        tx_type=支出. The alipay_refund preset rule must NOT flip its sign — that
-        would turn an outflow into a phantom inflow and break reconciliation."""
+        """Alipay records a refund paid back to someone as tx_type=支出. Flipping its
+        sign in the alipay_refund preset would turn the outflow into a phantom
+        inflow and break reconciliation."""
         from bean_sieve.config.schema import Config
         from bean_sieve.core.rules import RulesEngine
         from bean_sieve.core.types import Transaction
@@ -334,9 +307,9 @@ class TestAlipayRefundHandling:
         )
 
     def test_received_refund_still_flipped_to_income(self):
-        """Regression guard: refunds received from a merchant (tx_type=不计收支
-        with description starting with 退款) must still be flipped to negative
-        so they reconcile against the original purchase as income."""
+        """Regression guard: a refund received from a merchant (tx_type=不计收支,
+        description starting with 退款) is still flipped to negative so it
+        reconciles against the original purchase as income."""
         from bean_sieve.config.schema import Config
         from bean_sieve.core.rules import RulesEngine
         from bean_sieve.core.types import Transaction
@@ -358,7 +331,6 @@ class TestAlipayRefundHandling:
 
 
 def test_card_last4_extracted_from_method_with_suffix():
-    """Alipay method like '华夏银行信用卡(1234)' should populate card_last4."""
     from bean_sieve.providers.payment.alipay import AlipayProvider
 
     provider = AlipayProvider()
@@ -386,7 +358,6 @@ def test_card_last4_ignores_non_trailing_digits():
 
 
 def test_merge_transactions_preserves_card_last4():
-    """Merged transactions must carry card_last4 forward from the group."""
     from datetime import date
     from decimal import Decimal
 
@@ -424,8 +395,6 @@ def _parse_rows(tmp_path: Path, rows: list[str]):
 
 
 class TestAlipayCombinedMethod:
-    """Combined payment methods such as "card&红包"."""
-
     def test_repayment_with_combined_method_is_flagged(self, tmp_path):
         (txn,) = _parse_rows(
             tmp_path,

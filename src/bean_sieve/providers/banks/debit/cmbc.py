@@ -169,7 +169,6 @@ class CMBCDebitProvider(BaseProvider):
         return all(marker in text for marker in _MARKERS)
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse a CMBC debit card statement PDF."""
         import fitz
 
         self._coverages[file_path] = None

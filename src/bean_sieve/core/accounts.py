@@ -45,10 +45,7 @@ _CARD_LAST4_REGEX = re.compile(r"\((\d{4})\)$")
 
 
 def extract_card_last4(method: str | None) -> str | None:
-    """Extract the trailing 4-digit card suffix from a payment method string.
-
-    Returns the 4 digits if ``method`` ends with ``(XXXX)``, else ``None``.
-    """
+    """The four digits of a trailing ``(XXXX)`` in ``method``, else ``None``."""
     if not method:
         return None
     m = _CARD_LAST4_REGEX.search(method)

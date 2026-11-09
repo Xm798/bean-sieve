@@ -107,8 +107,6 @@ class _Row(NamedTuple):
 @register_provider
 class CGBCreditProvider(BaseProvider):
     """
-    Provider for CGB credit card statements.
-
     Two formats print the same text:
     - .eml: the mailed statement, base64-encoded GBK HTML
     - .pdf: the reissued statement, a text PDF whose issuer name is only in
@@ -144,7 +142,6 @@ class CGBCreditProvider(BaseProvider):
     coverage_priority = ("statement", "reissue")
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse a CGB credit card statement, mailed or reissued."""
         if file_path.suffix.lower() == ".pdf":
             # Joining a line's cells with spaces gives the mail's text:
             # "date date (type)summary amount currency ...".
@@ -361,12 +358,10 @@ class CGBCreditProvider(BaseProvider):
         )
 
     def _parse_date(self, date_str: str) -> date:
-        """Parse date from YYYY/MM/DD format."""
         parts = date_str.split("/")
         return date(int(parts[0]), int(parts[1]), int(parts[2]))
 
     def _parse_amount(self, amount_str: str) -> Decimal | None:
-        """Parse amount string, handling commas and negative values."""
         try:
             cleaned = amount_str.replace(",", "")
             return Decimal(cleaned)

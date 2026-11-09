@@ -1,5 +1,3 @@
-"""Tests for HSBC Hong Kong debit / savings account provider."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -80,9 +78,7 @@ class TestHSBCHKDebitProvider:
         # Source -500 (outflow) → +500 (expense in sieve)
         assert txns[1].amount == Decimal("500.00")
         assert txns[1].is_expense
-        # Interest inflow
         assert txns[2].amount == Decimal("-5.00")
-        # ATM withdrawal outflow
         assert txns[3].amount == Decimal("200.00")
 
     def test_dates_parsed_dd_mm_yyyy(
@@ -118,7 +114,7 @@ class TestHSBCHKDebitProvider:
     ) -> None:
         f = write_csv(tmp_path, sample_rows)
         txns = HSBCHKDebitProvider().parse(f)
-        # Both currencies are HKD → balance_currency should not appear
+        # Both currencies are HKD, so balance_currency is omitted
         assert "balance_currency" not in txns[0].metadata
 
     def test_balance_currency_kept_when_different(self, tmp_path: Path) -> None:

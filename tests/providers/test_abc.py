@@ -1,5 +1,3 @@
-"""Tests for Agricultural Bank of China (ABC) credit card statement provider."""
-
 import base64
 import logging
 from datetime import date
@@ -27,7 +25,6 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
 
 def create_abc_eml(html_content: str) -> str:
-    """Create an EML file content with the given HTML."""
     encoded = base64.b64encode(html_content.encode("utf-8")).decode("ascii")
     return f"""From: creditcard@abchina.com
 Subject: =?utf-8?B?6YeR56mX5L+h55So5Y2h55S15a2Q5a+56LSm5Y2V?=
@@ -113,7 +110,6 @@ def abc_html_content():
 
 @pytest.fixture
 def abc_eml_file(tmp_path, abc_html_content):
-    """Create a temporary ABC EML file."""
     file_path = tmp_path / "农业银行金穗信用卡2030年11月电子账单.eml"
     eml_content = create_abc_eml(abc_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
@@ -121,10 +117,7 @@ def abc_eml_file(tmp_path, abc_html_content):
 
 
 class TestABCCreditProvider:
-    """Tests for ABCCreditProvider."""
-
     def test_provider_registration(self):
-        """Test that ABC provider is properly registered."""
         provider = get_provider("abc_credit")
         assert isinstance(provider, ABCCreditProvider)
         assert provider.provider_id == "abc_credit"
@@ -132,7 +125,6 @@ class TestABCCreditProvider:
         assert ".eml" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert ABCCreditProvider.can_handle(
             Path("农业银行金穗信用卡2030年11月电子账单.eml")
         )
@@ -141,20 +133,17 @@ class TestABCCreditProvider:
         assert not ABCCreditProvider.can_handle(Path("statement.eml"))
 
     def test_can_handle_detects_encoded_eml_content(self, tmp_path, abc_html_content):
-        """A renamed statement is detected from its base64-encoded body."""
         file_path = tmp_path / "statement.eml"
         file_path.write_text(create_abc_eml(abc_html_content), encoding="utf-8")
 
         assert ABCCreditProvider.can_handle(file_path)
 
     def test_parse_transactions(self, abc_eml_file):
-        """Test parsing transactions from EML file."""
         provider = ABCCreditProvider()
         transactions = provider.parse(abc_eml_file)
 
         assert len(transactions) == 4
 
-        # Check expense transactions (should be positive after negation)
         txn1 = transactions[0]
         assert txn1.date == date(2030, 11, 3)
         assert txn1.amount == Decimal("48.00")
@@ -169,13 +158,11 @@ class TestABCCreditProvider:
         assert txn2.amount == Decimal("913.00")
         assert "payee-b" in txn2.description
 
-        # Check amount with thousands separator
         txn3 = transactions[2]
         assert txn3.date == date(2030, 11, 15)
         assert txn3.amount == Decimal("1284.00")
         assert "payee-c" in txn3.description
 
-        # Check refund transaction (should be negative after negation)
         txn4 = transactions[3]
         assert txn4.date == date(2030, 11, 20)
         assert txn4.amount == Decimal("-105.00")
@@ -183,7 +170,6 @@ class TestABCCreditProvider:
         assert txn4.is_income
 
     def test_statement_period_extraction(self, abc_eml_file):
-        """Test that statement period is properly extracted."""
         provider = ABCCreditProvider()
         transactions = provider.parse(abc_eml_file)
 
@@ -192,7 +178,6 @@ class TestABCCreditProvider:
         assert txn.statement_period == (date(2030, 10, 24), date(2030, 11, 23))
 
     def test_card_last4_extraction(self, abc_eml_file):
-        """Test that card_last4 is properly extracted."""
         provider = ABCCreditProvider()
         transactions = provider.parse(abc_eml_file)
 
@@ -200,15 +185,11 @@ class TestABCCreditProvider:
             assert txn.card_last4 == "1234"
 
     def test_per_card_statement_flag(self):
-        """Test that per_card_statement is set correctly."""
         provider = ABCCreditProvider()
         assert provider.per_card_statement is True
 
     def test_supplementary_card_row(self, tmp_path):
-        """附卡 rows carry a 主/附 suffix on the card field (e.g. '5678附').
-
-        Such rows must still parse, with card_last4 reduced to the 4 digits.
-        """
+        """附卡 rows carry a 主/附 suffix on the card field (e.g. '5678附')."""
         html = f"""<html>
 <body>
 <table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
@@ -245,10 +226,7 @@ class TestABCCreditProvider:
         assert transactions[1].amount == Decimal("57.00")
 
     def test_repayment_row_without_card_number(self, tmp_path):
-        """约定还款 rows leave the 卡号后四位 cell empty (account-level repayment).
-
-        Such rows must still parse, falling back to the statement's own card.
-        """
+        """约定还款 rows leave the 卡号后四位 cell empty (account-level repayment)."""
         html = f"""<html>
 <body>
 <table>
@@ -298,7 +276,6 @@ class TestABCCreditProvider:
         assert repayment.is_income
 
     def test_repayment_row_without_statement_card(self, tmp_path):
-        """A card-less row still parses when the statement card is unavailable."""
         html = f"""<html>
 <body>
 <table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
@@ -325,7 +302,6 @@ class TestABCCreditProvider:
         assert transactions[0].amount == Decimal("-76.00")
 
     def test_malformed_card_cell_is_warned(self, tmp_path, caplog):
-        """A row with an unrecognisable card field is dropped, but never silently."""
         html = f"""<html>
 <body>
 <table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
@@ -352,7 +328,6 @@ class TestABCCreditProvider:
         assert "not-a-card" in caplog.text
 
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         html = """<html>
 <body>
 <table>
@@ -372,10 +347,7 @@ class TestABCCreditProvider:
 
 
 class TestABCDateParsing:
-    """Tests for ABC date parsing edge cases."""
-
     def test_yymmdd_format(self, tmp_path):
-        """Test parsing YYMMDD date format."""
         html = f"""<html>
 <body>
 <table><tr><td><span>2030/12/01-2030/12/31</span></td></tr></table>
@@ -401,8 +373,6 @@ class TestABCDateParsing:
         assert transactions[0].date == date(2030, 12, 25)
 
     def test_cross_century_date(self, tmp_path):
-        """Test that dates with YY > 50 are treated as 1900s (edge case)."""
-        # This is a theoretical edge case - current dates use 20xx
         html = f"""<html>
 <body>
 <table><tr><td><span>2030/01/01-2030/01/31</span></td></tr></table>
@@ -429,10 +399,7 @@ class TestABCDateParsing:
 
 
 class TestABCAmountParsing:
-    """Tests for ABC amount parsing edge cases."""
-
     def test_amount_with_thousands_separator(self, tmp_path):
-        """Test parsing amounts with comma separators."""
         html = f"""<html>
 <body>
 <table><tr><td><span>2030/11/01-2030/11/30</span></td></tr></table>
@@ -458,7 +425,6 @@ class TestABCAmountParsing:
         assert transactions[0].amount == Decimal("13579.00")
 
     def test_usd_amount(self, tmp_path):
-        """Test parsing USD amounts."""
         html = f"""<html>
 <body>
 <table><tr><td><span>2030/11/01-2030/11/30</span></td></tr></table>
@@ -485,7 +451,6 @@ class TestABCAmountParsing:
         assert transactions[0].amount == Decimal("95.00")
 
     def test_positive_amount_refund(self, tmp_path):
-        """Test parsing positive amounts (refunds)."""
         html = f"""<html>
 <body>
 <table><tr><td><span>2030/11/01-2030/11/30</span></td></tr></table>
@@ -653,8 +618,6 @@ def empty_result() -> ReconcileResult:
 
 
 class TestABCPostOutput:
-    """Byte-level golden tests for the settlement report appended by post_output."""
-
     def test_post_output_golden_balanced(self, abc_eml_file):
         provider = ABCCreditProvider()
 
@@ -670,11 +633,8 @@ class TestABCPostOutput:
         assert output == EXPECTED_BALANCED_REPORT
 
     def test_post_output_ignores_date_range(self, abc_eml_file):
-        """The report counts the whole statement, not the reconciled slice.
-
-        解析消费 is compared against the statement's own 本期账单金额, so it must
-        stay the raw parse even when the run only reconciles part of the cycle.
-        """
+        """解析消费 is compared against the statement's own 本期账单金额, so it stays
+        the raw parse even when the run reconciles only part of the cycle."""
         provider = ABCCreditProvider()
 
         output = provider.post_output(
@@ -709,8 +669,6 @@ class TestABCPostOutput:
         output = ABCCreditProvider().post_output("; base\n", result, context)
 
         assert output == EXPECTED_REBATE_OUTPUT
-        # The rebate the ledger lacks counts as Missing, so the summary counts
-        # show it alongside unmatched statement rows.
         [missing] = result.match_result.missing
         assert (missing.date, missing.amount, missing.card_last4) == (
             date(2030, 1, 31),
@@ -749,14 +707,11 @@ class TestABCPostOutput:
         assert f"状态: ✅ 平账 (刷卡金 {REBATE_USED:.2f} 已记录)" in output
         assert "--- 刷卡金抵扣 ---" not in output
         assert result.match_result.missing == []
-        # The ledger's rebate settles the statement's deduction, so it leaves
-        # Extra for Matched.
         assert result.match_result.extra == []
         [(_, matched)] = result.match_result.matched
         assert matched.txn is entry
 
     def test_post_output_reports_files_assigned_to_it(self, tmp_path, abc_html_content):
-        """A statement the run assigned to ABC is reported whatever its name."""
         file_path = tmp_path / "statement.eml"
         file_path.write_text(create_abc_eml(abc_html_content), encoding="utf-8")
         other_path = tmp_path / "农业银行-other.eml"
@@ -773,7 +728,6 @@ class TestABCPostOutput:
         assert "5678" not in output
 
     def test_run_reads_each_statement_once(self, tmp_path, monkeypatch):
-        """The report reuses what parse read instead of reopening the file."""
         reads: list[Path] = []
         lines = ABCCreditProvider._lines
 
@@ -905,8 +859,6 @@ EXPECTED_TWO_CURRENCY_REPORT = f"""
 
 
 class TestABCCurrencies:
-    """账务说明 prints one row per currency; each is compared on its own."""
-
     @staticmethod
     def write(tmp_path, html: str) -> Path:
         path = tmp_path / "农业银行金穗信用卡.eml"
@@ -1060,8 +1012,6 @@ class TestABCRebateAdjustment:
 
 
 class TestABCBalanceCheck:
-    """The report compares the ledger's card balance with the statement's."""
-
     @staticmethod
     def run(tmp_path, ledger_text: str) -> str:
         file_path = tmp_path / "农业银行金穗信用卡刷卡金.eml"
@@ -1115,7 +1065,6 @@ class TestABCBalanceCheck:
         assert "余额: ✅ 一致" in output
 
     def test_over_booked_rebate_shows_the_difference(self, tmp_path):
-        """A second rebate entry still lets the first settle the deduction."""
         output = self.run(
             tmp_path,
             f"""
@@ -1142,10 +1091,7 @@ class TestABCBalanceCheck:
 
 
 class TestABCStatementPeriod:
-    """Tests for per-card statement period assignment."""
-
     def test_cycle_bounds_a_row_dated_outside_it(self, tmp_path):
-        """Test that an out-of-cycle row leaves the card's period at the cycle."""
         html = f"""<html>
 <body>
 <table>
@@ -1276,8 +1222,6 @@ def shape(txns):
 
 
 class TestABCReissue:
-    """Tests for the reissued PDF statement."""
-
     def test_rows(self, tmp_path):
         txns = ABCCreditProvider().parse(write_abc_pdf(tmp_path / "r.pdf", ROWS))
 
@@ -1511,8 +1455,6 @@ def write_old_template_eml(
 
 
 class TestABCOldTemplate:
-    """The older mail template carries the same rows as the current one."""
-
     def test_same_transactions_as_current_template(self, tmp_path):
         provider = ABCCreditProvider()
         old = provider.parse(write_old_template_eml(tmp_path / "old.eml", ROWS))

@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .types import Transaction
 
-# Core fields from Transaction model
 CORE_FIELDS = [
     "date",
     "time",
@@ -21,7 +20,6 @@ CORE_FIELDS = [
     "order_id",
 ]
 
-# Metadata fields to include (whitelist)
 METADATA_FIELDS = [
     "category",
     "peer_account",
@@ -37,7 +35,6 @@ ALL_FIELDS = CORE_FIELDS + METADATA_FIELDS
 
 
 def _transaction_to_row(txn: Transaction) -> dict[str, str]:
-    """Convert a transaction to a row dict for export."""
     row: dict[str, str] = {
         "date": txn.date.isoformat(),
         "time": txn.time.isoformat() if txn.time else "",
@@ -49,7 +46,6 @@ def _transaction_to_row(txn: Transaction) -> dict[str, str]:
         "order_id": txn.order_id or "",
     }
 
-    # Add metadata fields
     for field in METADATA_FIELDS:
         row[field] = str(txn.metadata.get(field, "")) if txn.metadata.get(field) else ""
 
@@ -57,7 +53,7 @@ def _transaction_to_row(txn: Transaction) -> dict[str, str]:
 
 
 def export_csv(transactions: list[Transaction], output_path: Path) -> None:
-    """Export transactions to CSV format (UTF-8 without BOM)."""
+    """Writes UTF-8 without a BOM."""
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=ALL_FIELDS)
         writer.writeheader()
@@ -66,7 +62,6 @@ def export_csv(transactions: list[Transaction], output_path: Path) -> None:
 
 
 def export_xlsx(transactions: list[Transaction], output_path: Path) -> None:
-    """Export transactions to XLSX format."""
     from openpyxl import Workbook
 
     wb = Workbook()
@@ -74,11 +69,9 @@ def export_xlsx(transactions: list[Transaction], output_path: Path) -> None:
     assert ws is not None
     ws.title = "Transactions"
 
-    # Write header
     for col, field in enumerate(ALL_FIELDS, 1):
         ws.cell(row=1, column=col, value=field)
 
-    # Write data
     for row_idx, txn in enumerate(transactions, 2):
         row_data = _transaction_to_row(txn)
         for col, field in enumerate(ALL_FIELDS, 1):
@@ -88,6 +81,5 @@ def export_xlsx(transactions: list[Transaction], output_path: Path) -> None:
 
 
 def generate_export_filename(input_path: Path, format: str) -> Path:
-    """Generate output filename from input filename."""
     stem = input_path.stem
     return input_path.parent / f"{stem}_export.{format}"

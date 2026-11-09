@@ -1,5 +1,3 @@
-"""Tests for the SPDB credit card transaction-detail provider."""
-
 import logging
 from datetime import date, datetime
 from decimal import Decimal
@@ -94,7 +92,6 @@ def spdb_xls_file(
     tmp_path: Path,
     sample_rows: list[list[object]],
 ) -> Path:
-    """Create a temporary synthetic SPDB report."""
     return create_spdb_xls(
         sample_rows,
         tmp_path / "测试用户203001交易明细报表00000000.xls",
@@ -102,8 +99,6 @@ def spdb_xls_file(
 
 
 class TestSPDBCreditProvider:
-    """Tests for core provider behavior."""
-
     def test_provider_registration(self) -> None:
         provider = get_provider("spdb_credit")
 
@@ -224,8 +219,6 @@ class TestSPDBCreditProvider:
 
 
 class TestSPDBCellFormats:
-    """Tests for XLS cell-type and value variations."""
-
     def test_numeric_cells_and_excel_dates(self, tmp_path: Path) -> None:
         try:
             import xlwt
@@ -341,8 +334,6 @@ class TestSPDBCellFormats:
 
 
 class TestSPDBMalformedReports:
-    """Tests for malformed workbooks and rows."""
-
     def test_invalid_rows_are_skipped_without_sensitive_logs(
         self,
         tmp_path: Path,
@@ -482,8 +473,6 @@ def spdb_pdf_file(tmp_path: Path) -> Path:
 
 
 class TestSPDBPdf:
-    """Tests for the PDF statement path."""
-
     def test_detected_by_title(self, spdb_pdf_file: Path) -> None:
         assert SPDBCreditProvider.can_handle(spdb_pdf_file)
         assert auto_detect_provider(spdb_pdf_file).provider_id == "spdb_credit"  # type: ignore[union-attr]

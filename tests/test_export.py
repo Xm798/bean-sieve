@@ -1,5 +1,3 @@
-"""Tests for export functionality."""
-
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -19,7 +17,6 @@ from bean_sieve.core.types import Transaction
 
 @pytest.fixture
 def sample_transactions():
-    """Sample transactions for testing."""
     return [
         Transaction(
             date=date(2025, 1, 15),
@@ -50,7 +47,6 @@ def sample_transactions():
 
 
 def test_core_fields():
-    """Test that core fields are defined correctly."""
     assert "date" in CORE_FIELDS
     assert "time" in CORE_FIELDS
     assert "amount" in CORE_FIELDS
@@ -62,7 +58,6 @@ def test_core_fields():
 
 
 def test_metadata_fields():
-    """Test that metadata fields whitelist is defined."""
     assert "category" in METADATA_FIELDS
     assert "peer_account" in METADATA_FIELDS
     assert "method" in METADATA_FIELDS
@@ -71,18 +66,15 @@ def test_metadata_fields():
     assert "tx_type" in METADATA_FIELDS
     assert "summary" in METADATA_FIELDS
     assert "posting_date" in METADATA_FIELDS
-    # Excluded fields
     assert "original_date" not in METADATA_FIELDS
     assert "section" not in METADATA_FIELDS
 
 
 def test_all_fields_order():
-    """Test that ALL_FIELDS = CORE_FIELDS + METADATA_FIELDS."""
     assert ALL_FIELDS == CORE_FIELDS + METADATA_FIELDS
 
 
 def test_generate_export_filename():
-    """Test export filename generation."""
     input_path = Path("/data/alipay_2025-01.csv")
     assert generate_export_filename(input_path, "csv") == Path(
         "/data/alipay_2025-01_export.csv"
@@ -93,7 +85,6 @@ def test_generate_export_filename():
 
 
 def test_export_csv(sample_transactions, tmp_path):
-    """Test CSV export."""
     output_path = tmp_path / "test_export.csv"
     export_csv(sample_transactions, output_path)
 
@@ -101,14 +92,12 @@ def test_export_csv(sample_transactions, tmp_path):
     content = output_path.read_text(encoding="utf-8")
     lines = content.strip().split("\n")
 
-    # Check header
     header = lines[0]
     assert "date" in header
     assert "amount" in header
     assert "category" in header
     assert "method" in header
 
-    # Check data rows
     assert len(lines) == 3  # header + 2 transactions
     assert "2025-01-15" in lines[1]
     assert "99.00" in lines[1]
@@ -118,32 +107,27 @@ def test_export_csv(sample_transactions, tmp_path):
 
 
 def test_export_xlsx(sample_transactions, tmp_path):
-    """Test XLSX export."""
     output_path = tmp_path / "test_export.xlsx"
     export_xlsx(sample_transactions, output_path)
 
     assert output_path.exists()
 
-    # Verify content with openpyxl
     from openpyxl import load_workbook
 
     wb = load_workbook(output_path)
     ws = wb.active
     assert ws is not None
 
-    # Check header row
     header = [cell.value for cell in ws[1]]
     assert "date" in header
     assert "amount" in header
     assert "category" in header
 
-    # Check data
     assert ws.max_row == 3  # header + 2 transactions
     assert ws.cell(row=2, column=1).value == "2025-01-15"
 
 
 def test_export_csv_empty_metadata(tmp_path):
-    """Test CSV export with empty metadata fields."""
     transactions = [
         Transaction(
             date=date(2025, 1, 15),
@@ -158,7 +142,6 @@ def test_export_csv_empty_metadata(tmp_path):
     content = output_path.read_text(encoding="utf-8")
     lines = content.strip().split("\n")
 
-    # Should have all columns even if empty
     header_count = len(lines[0].split(","))
     data_count = len(lines[1].split(","))
     assert header_count == len(ALL_FIELDS)

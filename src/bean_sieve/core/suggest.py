@@ -15,7 +15,8 @@ from ..config.schema import Config
 
 @dataclass
 class SuggestedRule:
-    """A rule suggestion extracted from ledger history."""
+    """`ratio` is the share of the payee's `count` transactions booked to
+    `contra_account`."""
 
     payee: str
     contra_account: str
@@ -30,18 +31,14 @@ def suggest_rules(
     existing_config: Config | None = None,
 ) -> list[SuggestedRule]:
     """
-    Scan ledger and suggest rules based on high-frequency payee → account mappings.
+    Suggest a rule for each payee with at least `min_count` transactions of
+    which at least `min_ratio` book their one Expenses/Income posting to the
+    same account.
 
-    Args:
-        ledger_path: Path to beancount ledger file or directory
-        min_count: Minimum number of occurrences to suggest a rule
-        min_ratio: Minimum ratio of dominant account to total
-        existing_config: Existing config for deduplication against current rules
-
-    Returns:
-        List of suggested rules sorted by count descending
+    Sorted by count, descending. A payee that a description regex of
+    `existing_config` already matches gets no suggestion.
     """
-    # Resolve ledger path
+    # A directory loads its main.bean, else its first *.bean.
     if ledger_path.is_dir():
         main_file = ledger_path / "main.bean"
         if not main_file.exists():
@@ -53,7 +50,6 @@ def suggest_rules(
 
     entries, _errors, _options = loader.load_file(str(ledger_path))
 
-    # Extract payee → contra_account pairs
     payee_accounts: dict[str, list[str]] = defaultdict(list)
 
     for entry in entries:
@@ -62,18 +58,16 @@ def suggest_rules(
         if not entry.payee:
             continue
 
-        # Find the contra posting (Expenses/Income side)
         contra_postings = [
             p for p in entry.postings if p.account.startswith(("Expenses:", "Income:"))
         ]
 
-        # Only use unambiguous transactions (exactly one contra posting)
+        # A split over several Expenses/Income postings names no single account.
         if len(contra_postings) != 1:
             continue
 
         payee_accounts[entry.payee].append(contra_postings[0].account)
 
-    # Aggregate and filter
     suggestions: list[SuggestedRule] = []
 
     for payee, accounts in payee_accounts.items():
@@ -81,7 +75,6 @@ def suggest_rules(
         if total < min_count:
             continue
 
-        # Find dominant account
         account_counts: dict[str, int] = defaultdict(int)
         for acc in accounts:
             account_counts[acc] += 1
@@ -101,10 +94,8 @@ def suggest_rules(
             )
         )
 
-    # Sort by count descending
     suggestions.sort(key=lambda s: s.count, reverse=True)
 
-    # Deduplicate against existing rules
     if existing_config and existing_config.rules:
         suggestions = _deduplicate(suggestions, existing_config)
 
@@ -115,8 +106,8 @@ def _deduplicate(
     suggestions: list[SuggestedRule],
     config: Config,
 ) -> list[SuggestedRule]:
-    """Remove suggestions already covered by existing rules."""
-    # Compile existing rule patterns
+    """Drop suggestions whose payee an existing rule's description regex
+    matches; an invalid regex is skipped."""
     patterns: list[re.Pattern] = []
     for rule in config.rules:
         if rule.condition.description:
@@ -137,7 +128,6 @@ def _deduplicate(
 
 
 def format_rules_yaml(suggestions: list[SuggestedRule]) -> str:
-    """Format suggestions as YAML rules snippet."""
     if not suggestions:
         return ""
 

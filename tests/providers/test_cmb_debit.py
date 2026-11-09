@@ -1,5 +1,3 @@
-"""Tests for CMB (招商银行) debit card statement provider."""
-
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -64,7 +62,6 @@ def create_cmb_debit_csv(
 
 @pytest.fixture
 def cmb_debit_csv(tmp_path: Path) -> Path:
-    """Create a sample CMB debit card CSV file."""
     rows = [
         {
             "date": "20260115",
@@ -99,10 +96,7 @@ def cmb_debit_csv(tmp_path: Path) -> Path:
 
 
 class TestCMBDebitProvider:
-    """Tests for CMBDebitProvider."""
-
     def test_provider_registration(self) -> None:
-        """Test that CMB debit provider is properly registered."""
         provider = get_provider("cmb_debit")
         assert isinstance(provider, CMBDebitProvider)
         assert provider.provider_id == "cmb_debit"
@@ -110,7 +104,6 @@ class TestCMBDebitProvider:
         assert ".csv" in provider.supported_formats
 
     def test_can_handle(self, tmp_path: Path) -> None:
-        """Test file format detection by filename keyword."""
         csv_file = tmp_path / "CMB_6214_test.csv"
         csv_file.write_text(f'{BOM}"# 招商银行交易记录"\n', encoding="utf-8")
 
@@ -119,13 +112,11 @@ class TestCMBDebitProvider:
         assert not CMBDebitProvider.can_handle(Path("CMB_test.xlsx"))
 
     def test_parse_transactions(self, cmb_debit_csv: Path) -> None:
-        """Test parsing all transactions."""
         provider = CMBDebitProvider()
         transactions = provider.parse(cmb_debit_csv)
         assert len(transactions) == 4
 
     def test_income_transaction(self, cmb_debit_csv: Path) -> None:
-        """Test income transactions are negative."""
         provider = CMBDebitProvider()
         transactions = provider.parse(cmb_debit_csv)
         txn = transactions[0]
@@ -138,7 +129,6 @@ class TestCMBDebitProvider:
         assert txn.provider == "cmb_debit"
 
     def test_expense_transaction(self, cmb_debit_csv: Path) -> None:
-        """Test expense transactions are positive."""
         provider = CMBDebitProvider()
         transactions = provider.parse(cmb_debit_csv)
         txn = transactions[2]
@@ -149,7 +139,6 @@ class TestCMBDebitProvider:
         assert "银联在线支付" in txn.description
 
     def test_transfer_expense(self, cmb_debit_csv: Path) -> None:
-        """Test transfer expense transaction."""
         provider = CMBDebitProvider()
         transactions = provider.parse(cmb_debit_csv)
         txn = transactions[3]
@@ -158,7 +147,6 @@ class TestCMBDebitProvider:
         assert "转账汇款" in txn.description
 
     def test_card_last4_extraction(self, cmb_debit_csv: Path) -> None:
-        """Test card_last4 is extracted from metadata header."""
         provider = CMBDebitProvider()
         transactions = provider.parse(cmb_debit_csv)
 
@@ -166,7 +154,6 @@ class TestCMBDebitProvider:
             assert txn.card_last4 == "4321"
 
     def test_source_info(self, cmb_debit_csv: Path) -> None:
-        """Test source file and line tracking."""
         provider = CMBDebitProvider()
         transactions = provider.parse(cmb_debit_csv)
 
@@ -175,14 +162,12 @@ class TestCMBDebitProvider:
         assert transactions[0].source_line > 0
 
     def test_time_parsing(self, cmb_debit_csv: Path) -> None:
-        """Test time is parsed correctly."""
         provider = CMBDebitProvider()
         transactions = provider.parse(cmb_debit_csv)
 
         assert transactions[1].time == time(18, 45, 20)
 
     def test_metadata_contains_type(self, cmb_debit_csv: Path) -> None:
-        """Test metadata includes transaction type."""
         provider = CMBDebitProvider()
         transactions = provider.parse(cmb_debit_csv)
 
@@ -191,17 +176,13 @@ class TestCMBDebitProvider:
 
 
 class TestCMBDebitEdgeCases:
-    """Tests for CMB debit edge cases."""
-
     def test_empty_statement(self, tmp_path: Path) -> None:
-        """Test handling of statement with no transactions."""
         file_path = create_cmb_debit_csv(tmp_path, [])
         provider = CMBDebitProvider()
         transactions = provider.parse(file_path)
         assert transactions == []
 
     def test_footer_lines_skipped(self, tmp_path: Path) -> None:
-        """Test that footer summary lines are not parsed."""
         rows = [
             {
                 "date": "20260101",
@@ -216,7 +197,6 @@ class TestCMBDebitEdgeCases:
         assert len(transactions) == 1
 
     def test_description_building(self, tmp_path: Path) -> None:
-        """Test description combines type and remark."""
         rows = [
             {
                 "date": "20260101",
@@ -234,7 +214,6 @@ class TestCMBDebitEdgeCases:
         assert "财付通-微信支付-企业微信红包" in desc
 
     def test_gbk_encoding_fallback(self, tmp_path: Path) -> None:
-        """Test GBK encoding fallback."""
         content = "\n".join(
             [
                 '"# 招商银行交易记录"',

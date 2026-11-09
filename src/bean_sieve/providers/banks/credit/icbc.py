@@ -71,13 +71,11 @@ _WATERMARK_SIZE = 10
 @register_provider
 class ICBCCreditProvider(BaseProvider):
     """
-    Provider for ICBC (工商银行) credit card statements.
-
     Three sources carry the same rows:
     - The mailed statement (.eml, "ICBC Peony Card Bank Statement") and the
       reissued statement PDF (信用卡对账单（补）) print the same detail table:
       卡号后四位, 交易日, 记账日, 交易类型, 商户名称/城市, 交易金额/币种,
-      记账金额/币种 with the direction in brackets ("13.40/RMB(支出)"), under a
+      记账金额/币种 with the direction in brackets ("10.00/RMB(支出)"), under a
       账单周期 line giving the cycle.
     - The online-banking history export PDF (信用卡历史明细) lists booked rows of
       an arbitrary range: 入账日期 with time, the full card number, 借/贷,

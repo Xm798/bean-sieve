@@ -1,5 +1,3 @@
-"""Tests for China Construction Bank (CCB) credit card statement provider."""
-
 import base64
 from datetime import date
 from decimal import Decimal
@@ -23,7 +21,6 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
 
 def create_ccb_eml(html_content: str) -> str:
-    """Create an EML file content with the given HTML."""
     encoded = base64.b64encode(html_content.encode("utf-8")).decode("ascii")
     return f"""From: service@vip.ccb.com
 Subject: =?utf-8?B?5Lit5Zu95bu66K6+6ZO26KGM5L+h55So5Y2h55S15a2Q6LSm5Y2V?=
@@ -38,7 +35,6 @@ Content-Transfer-Encoding: base64
 
 @pytest.fixture
 def ccb_html_content():
-    """Sample CCB statement HTML content."""
     return """<html>
 <head><title>龙卡信用卡对账单</title></head>
 <body>
@@ -107,7 +103,6 @@ def ccb_html_content():
 
 @pytest.fixture
 def ccb_eml_file(tmp_path, ccb_html_content):
-    """Create a temporary CCB EML file."""
     file_path = tmp_path / "中国建设银行信用卡电子账单.eml"
     eml_content = create_ccb_eml(ccb_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
@@ -115,10 +110,7 @@ def ccb_eml_file(tmp_path, ccb_html_content):
 
 
 class TestCCBCreditProvider:
-    """Tests for CCBCreditProvider."""
-
     def test_provider_registration(self):
-        """Test that CCB provider is properly registered."""
         provider = get_provider("ccb_credit")
         assert isinstance(provider, CCBCreditProvider)
         assert provider.provider_id == "ccb_credit"
@@ -126,25 +118,21 @@ class TestCCBCreditProvider:
         assert ".eml" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert CCBCreditProvider.can_handle(Path("中国建设银行信用卡电子账单.eml"))
         assert CCBCreditProvider.can_handle(Path("建设银行信用卡账单.eml"))
         assert not CCBCreditProvider.can_handle(Path("ccb_statement.csv"))
         assert not CCBCreditProvider.can_handle(Path("statement.eml"))
 
     def test_per_card_statement(self):
-        """Test that per_card_statement is True for CCB."""
         provider = CCBCreditProvider()
         assert provider.per_card_statement is True
 
     def test_parse_transactions(self, ccb_eml_file):
-        """Test parsing transactions from EML file."""
         provider = CCBCreditProvider()
         transactions = provider.parse(ccb_eml_file)
 
         assert len(transactions) == 4
 
-        # Check first spending transaction
         txn1 = transactions[0]
         assert txn1.date == date(2025, 11, 25)
         assert txn1.post_date == date(2025, 11, 25)
@@ -155,14 +143,12 @@ class TestCCBCreditProvider:
         assert txn1.provider == "ccb_credit"
         assert txn1.is_expense
 
-        # Check negative amount transaction (fee refund)
         txn2 = transactions[1]
         assert txn2.date == date(2025, 11, 27)
         assert txn2.amount == Decimal("-1800.00")
         assert "年费" in txn2.description
         assert txn2.is_income
 
-        # Check payment transaction
         txn3 = transactions[2]
         assert txn3.date == date(2025, 12, 4)
         assert txn3.post_date == date(2025, 12, 5)
@@ -170,14 +156,12 @@ class TestCCBCreditProvider:
         assert "还款" in txn3.description
         assert txn3.is_income
 
-        # Check small expense
         txn4 = transactions[3]
         assert txn4.date == date(2025, 12, 9)
         assert txn4.amount == Decimal("99.00")
         assert "财付通" in txn4.description
 
     def test_statement_period_extraction(self, ccb_eml_file):
-        """Test that statement period is properly extracted."""
         provider = CCBCreditProvider()
         transactions = provider.parse(ccb_eml_file)
 
@@ -188,7 +172,6 @@ class TestCCBCreditProvider:
         assert txn.statement_period[1] == date(2025, 12, 23)
 
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         html = """<html>
 <body>
 <table><tr><td>账单周期Statement Cycle</td><td>2025/11/24-2025/12/23</td></tr></table>
@@ -207,10 +190,7 @@ class TestCCBCreditProvider:
 
 
 class TestCCBAmountParsing:
-    """Tests for CCB amount parsing edge cases."""
-
     def test_amount_with_thousands_separator(self, tmp_path):
-        """Test parsing amounts with comma separators."""
         html = """<html>
 <body>
 <table><tr><td>账单周期Statement Cycle</td><td>2025/11/24-2025/12/23</td></tr></table>
@@ -238,7 +218,6 @@ class TestCCBAmountParsing:
         assert transactions[0].amount == Decimal("12345.67")
 
     def test_cross_year_statement_period(self, tmp_path):
-        """Test statement period spanning across years."""
         html = """<html>
 <body>
 <table><tr><td>账单周期Statement Cycle</td><td>2025/12/24-2026/01/23</td></tr></table>
@@ -275,7 +254,6 @@ class TestCCBAmountParsing:
         assert len(transactions) == 2
         assert transactions[0].date == date(2025, 12, 26)
         assert transactions[1].date == date(2026, 1, 6)
-        # Statement period should span years
         assert transactions[0].statement_period == (
             date(2025, 12, 24),
             date(2026, 1, 23),
@@ -283,10 +261,7 @@ class TestCCBAmountParsing:
 
 
 class TestCCBCrossYearDates:
-    """Tests for CCB handling of dates in cross-year statements."""
-
     def test_dates_parsed_correctly(self, tmp_path):
-        """Test that transaction dates are parsed correctly regardless of year."""
         html = """<html>
 <body>
 <table><tr><td>账单周期Statement Cycle</td><td>2025/12/24-2026/01/23</td></tr></table>
@@ -321,16 +296,12 @@ class TestCCBCrossYearDates:
         transactions = provider.parse(file_path)
 
         assert len(transactions) == 2
-        # CCB provides full dates (YYYY-MM-DD), so parsing is straightforward
         assert transactions[0].date == date(2025, 12, 31)
         assert transactions[1].date == date(2026, 1, 1)
 
 
 class TestCCBStatementPeriod:
-    """Tests for per-card statement period assignment."""
-
     def test_cycle_bounds_a_row_dated_outside_it(self, tmp_path):
-        """Test that an out-of-cycle row leaves the card's period at the cycle."""
         html = """<html>
 <body>
 <table>
@@ -505,8 +476,6 @@ def shape(txns):
 
 
 class TestCCBReissue:
-    """Tests for the reissued PDF statement."""
-
     def test_rows(self, tmp_path):
         txns = CCBCreditProvider().parse(
             write_ccb_pdf(tmp_path / "r.pdf", ROWS, "2030/03/01-2030/03/31")

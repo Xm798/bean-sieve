@@ -1,5 +1,3 @@
-"""Tests for Bank of China (BOC) credit card statement provider."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -16,10 +14,7 @@ EXAMPLE = Path(__file__).resolve().parents[2] / "examples" / "boc_credit"
 
 
 class TestBOCCreditProvider:
-    """Tests for BOCCreditProvider."""
-
     def test_provider_registration(self):
-        """Test that BOC provider is properly registered."""
         provider = get_provider("boc_credit")
         assert isinstance(provider, BOCCreditProvider)
         assert provider.provider_id == "boc_credit"
@@ -27,7 +22,6 @@ class TestBOCCreditProvider:
         assert ".pdf" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert BOCCreditProvider.can_handle(
             Path("中国银行信用卡电子合并账单2025年12月账单.PDF")
         )
@@ -58,37 +52,29 @@ class TestBOCCreditProvider:
         )
 
     def test_per_card_statement_flag(self):
-        """Test that per_card_statement is set correctly."""
         provider = BOCCreditProvider()
         assert provider.per_card_statement is True
 
 
 class TestBOCDateParsing:
-    """Tests for BOC date parsing methods."""
-
     def test_parse_date_valid(self):
-        """Test parsing valid date string."""
         provider = BOCCreditProvider()
         result = provider._parse_date("2025-12-15")
         assert result == date(2025, 12, 15)
 
     def test_parse_date_invalid(self):
-        """Test parsing invalid date string."""
         provider = BOCCreditProvider()
         assert provider._parse_date("invalid") is None
         assert provider._parse_date("") is None
         assert provider._parse_date(None) is None
 
     def test_parse_date_malformed(self):
-        """Test parsing malformed date string."""
         provider = BOCCreditProvider()
-        assert provider._parse_date("2025-13-01") is None  # Invalid month
-        assert provider._parse_date("2025-12-32") is None  # Invalid day
+        assert provider._parse_date("2025-13-01") is None
+        assert provider._parse_date("2025-12-32") is None
 
 
 class TestBOCStatementPeriodExtraction:
-    """Tests for statement period extraction from filename."""
-
     def test_filename_period_spans_two_months(self, tmp_path):
         """Filename fallback: span the whole previous-and-current months."""
         file_path = tmp_path / "中国银行信用卡电子合并账单2025年12月账单.PDF"
@@ -153,16 +139,12 @@ class TestBOCStatementPeriodExtraction:
 
 
 class TestBOCRowGrouping:
-    """Tests for row grouping logic."""
-
     def test_group_by_row_empty(self):
-        """Test grouping empty block list."""
         provider = BOCCreditProvider()
         result = provider._group_by_row([])
         assert result == []
 
     def test_group_by_row_single_block(self):
-        """Test grouping single block."""
         provider = BOCCreditProvider()
         blocks = [(100.0, 500.0, 50.0, "test content")]
         result = provider._group_by_row(blocks)
@@ -170,7 +152,6 @@ class TestBOCRowGrouping:
         assert result[0] == [(500.0, 50.0, "test content")]
 
     def test_group_by_row_same_row(self):
-        """Test grouping blocks on same row."""
         provider = BOCCreditProvider()
         blocks = [
             (100.0, 100.0, 50.0, "col1"),
@@ -182,7 +163,6 @@ class TestBOCRowGrouping:
         assert len(result[0]) == 3
 
     def test_group_by_row_different_rows(self):
-        """Test grouping blocks on different rows."""
         provider = BOCCreditProvider()
         blocks = [
             (100.0, 100.0, 50.0, "row1"),
@@ -210,7 +190,6 @@ class TestBOCRowGrouping:
         assert len(result) == 2
 
     def test_group_by_row_wrapped_description_attaches(self):
-        """A description wrapping onto a second visual line stays in its row."""
         provider = BOCCreditProvider()
         blocks = [
             (200.0, 260.3, 42.1, "2030-01-02\n2030-01-03\n1234"),  # anchor
@@ -223,10 +202,7 @@ class TestBOCRowGrouping:
 
 
 class TestBOCTransactionRowParsing:
-    """Tests for individual transaction row parsing."""
-
     def test_parse_transaction_row_valid(self, tmp_path):
-        """Test parsing a valid transaction row."""
         provider = BOCCreditProvider()
 
         file_path = tmp_path / "test.pdf"
@@ -255,7 +231,6 @@ class TestBOCTransactionRowParsing:
         assert "McDonald's" in result.description
 
     def test_parse_transaction_row_deposit(self, tmp_path):
-        """Test parsing a deposit (refund) transaction row."""
         provider = BOCCreditProvider()
 
         file_path = tmp_path / "test.pdf"
@@ -278,10 +253,9 @@ class TestBOCTransactionRowParsing:
         )
 
         assert result is not None
-        assert result.amount == Decimal("-100.00")  # Deposit is negative
+        assert result.amount == Decimal("-100.00")
 
     def test_parse_transaction_row_no_date(self, tmp_path):
-        """Test parsing row without date returns None."""
         provider = BOCCreditProvider()
 
         file_path = tmp_path / "test.pdf"
@@ -303,7 +277,6 @@ class TestBOCTransactionRowParsing:
         assert result is None
 
     def test_parse_transaction_row_with_comma_amount(self, tmp_path):
-        """Test parsing amount with comma separator."""
         provider = BOCCreditProvider()
 
         file_path = tmp_path / "test.pdf"
@@ -314,7 +287,7 @@ class TestBOCTransactionRowParsing:
             (180.0, 120.0, "2025-12-15"),
             (250.0, 200.0, "1234"),
             (400.0, 270.0, "Large Purchase"),
-            (560.0, 510.0, "12,345.67"),  # Amount with comma
+            (560.0, 510.0, "12,345.67"),
         ]
 
         result = provider._parse_transaction_row(
@@ -329,11 +302,7 @@ class TestBOCTransactionRowParsing:
 
 
 class TestBOCTableBoundaries:
-    """Tests for locating transaction tables in a merged statement."""
-
     def test_next_card_header_ends_table(self, tmp_path):
-        """A card section following a table on the same page is not a row."""
-
         def block(x0, y0, x1, text):
             return (x0, y0, x1, y0 + 10, text, 0, 0)
 
@@ -364,8 +333,6 @@ class TestBOCTableBoundaries:
         assert txn.card_last4 == "1111"
 
     def test_trailing_summary_without_loyalty_section_is_dropped(self, tmp_path):
-        """A summary after the last card's table stays out of its last row."""
-
         def block(x0, y0, x1, text):
             return (x0, y0, x1, y0 + 10, text, 0, 0)
 

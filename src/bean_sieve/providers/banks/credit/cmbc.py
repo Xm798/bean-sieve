@@ -53,14 +53,11 @@ _ROW_DATES_RE = re.compile(r"(\d{2}/\d{2}) ?(\d{2}/\d{2})")
 @register_provider
 class CMBCCreditProvider(BaseProvider):
     """
-    Provider for China Minsheng Bank (民生银行) credit card email statements.
+    China Minsheng Bank email statements.
 
-    Parses .eml files containing HTML statements with transaction tables. The
-    rows sit in loopBand3, laid out by one of the templates in ``_TEMPLATES``.
+    The rows sit in loopBand3, laid out by one of the templates in ``_TEMPLATES``.
     Every row starts with the 交易日 and 记账日 (MM/DD), followed by cells for
     交易摘要, 交易金额 (negative for refunds and payments) and 卡号末四位.
-
-    CMBC uses unified account management (按户管理), all cards share one statement.
     """
 
     provider_id = "cmbc_credit"
@@ -79,7 +76,6 @@ class CMBCCreditProvider(BaseProvider):
         self._statements: dict[Path, ClosingStatement | None] = {}
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse CMBC credit card email statement."""
         html = self.extract_html_from_eml(file_path)
         soup = self.parse_html(html)
 
@@ -254,11 +250,6 @@ class CMBCCreditProvider(BaseProvider):
     def _determine_year(
         self, trans_month: int, statement_year: int, statement_month: int
     ) -> int:
-        """Determine the year for a transaction based on statement month.
-
-        For December statements, transactions in January belong to next year.
-        For January statements, transactions in December belong to previous year.
-        """
         if statement_month == 12 and trans_month == 1:
             return statement_year + 1
         if statement_month == 1 and trans_month == 12:

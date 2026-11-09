@@ -15,11 +15,7 @@ from ...base import BaseProvider
 
 @register_provider
 class HXBCreditProvider(BaseProvider):
-    """
-    Provider for Huaxia Bank (华夏银行) credit card email statements.
-
-    Parses .eml files containing base64-encoded HTML statements.
-    """
+    """Huaxia Bank email statements: a base64-encoded HTML body."""
 
     provider_id = "hxb_credit"
     provider_name = "华夏银行信用卡"
@@ -28,7 +24,6 @@ class HXBCreditProvider(BaseProvider):
     content_keywords = ["华夏信用卡对账单"]
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse HXB credit card email statement."""
         html = self.extract_html_from_eml(file_path)
         text = self._html_to_text(html)
 
@@ -47,11 +42,10 @@ class HXBCreditProvider(BaseProvider):
         return transactions
 
     def _html_to_text(self, html: str) -> str:
-        """Strip HTML tags and return plain text."""
         return re.sub(r"<[^>]+>", "\n", html)
 
     def _extract_year_from_path(self, file_path: Path) -> int:
-        """Extract year from filename (e.g., '华夏信用卡-电子账单2025年11月.eml')."""
+        """The bank names the file after its month, as '华夏信用卡-电子账单2030年01月.eml'."""
         match = re.search(r"(\d{4})年", file_path.name)
         if match:
             return int(match.group(1))
@@ -60,25 +54,21 @@ class HXBCreditProvider(BaseProvider):
     def _extract_statement_period(
         self, html: str, text: str, file_path: Path
     ) -> tuple[tuple[date, date] | None, int | None]:
-        """Extract statement period from HTML content or filename.
+        """Take the period from the first source present.
 
-        Tries multiple patterns:
-        1. HTML content: 2025/11/01-2025/11/30, 2025年11月01日-2025年11月30日
-        2. HTML billing date (账单日 每月XX日) + statement month
-        3. Statement month alone -> assumes full month coverage
+        1. A printed range: YYYY/MM/DD-YYYY/MM/DD or YYYY年MM月DD日-YYYY年MM月DD日
+        2. 账单日 每月XX日 with the statement month
+        3. The statement month alone, as a calendar month
 
-        The billing day is returned only for pattern 2, whose cycle start
+        The billing day is returned only for source 2, whose cycle start
         stamp_closing_cycle derives from the run's previous statement.
         """
-        # Try to find period in HTML content
-        # Pattern: YYYY/MM/DD-YYYY/MM/DD
         match = re.search(r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})", html)
         if match:
             start = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
             end = date(int(match.group(4)), int(match.group(5)), int(match.group(6)))
             return (start, end), None
 
-        # Pattern: YYYY年MM月DD日-YYYY年MM月DD日
         match = re.search(
             r"(\d{4})年(\d{1,2})月(\d{1,2})日.*?(\d{4})年(\d{1,2})月(\d{1,2})日", html
         )
@@ -93,7 +83,8 @@ class HXBCreditProvider(BaseProvider):
         year, month = statement_month
         last_day = calendar.monthrange(year, month)[1]
 
-        # e.g., "账单日 每月26日" on the 2026/02 statement closes on Feb 26
+        # "账单日 每月15日" on the 2030/02 statement closes on 2030-02-15; a
+        # billing day past the month's end closes on its last day.
         match = re.search(r"账单日\s*每月\s*(\d{1,2})\s*日", text)
         if match:
             billing_day = int(match.group(1))
@@ -142,7 +133,6 @@ class HXBCreditProvider(BaseProvider):
         fallback_year: int,
         file_path: Path,
     ) -> list[Transaction]:
-        """Parse transactions from statement text."""
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         transactions = []
 
@@ -183,7 +173,7 @@ class HXBCreditProvider(BaseProvider):
         fallback_year: int,
         file_path: Path,
     ) -> tuple[Transaction, int] | None:
-        """Parse a single transaction starting at start_idx."""
+        """Return the transaction starting at start_idx and the index after it."""
         i = start_idx
         date1 = lines[i]
         i += 1
@@ -193,7 +183,6 @@ class HXBCreditProvider(BaseProvider):
             post_str = lines[i]
             i += 1
 
-        # Capture description
         desc_parts = []
         while i < len(lines) and not re.match(r"^\d{4}$", lines[i]):
             desc_parts.append(lines[i])
@@ -201,14 +190,12 @@ class HXBCreditProvider(BaseProvider):
 
         description = " ".join(desc_parts)
 
-        # Get card number (4 digits)
         if i >= len(lines) or not re.match(r"^\d{4}$", lines[i]):
             return None
 
         card = lines[i]
         i += 1
 
-        # Get amount
         if i >= len(lines) or not re.match(r"^[-￥＄]", lines[i]):
             return None
 
@@ -229,7 +216,6 @@ class HXBCreditProvider(BaseProvider):
             else None
         )
 
-        # Determine currency (CNY by default, USD if $ symbol)
         currency = "CNY"
         if "＄" in lines[i - 1]:
             currency = "USD"

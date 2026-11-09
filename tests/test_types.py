@@ -1,5 +1,3 @@
-"""Tests for core data types."""
-
 from datetime import date, time
 from decimal import Decimal
 
@@ -7,10 +5,7 @@ from bean_sieve.core.types import MatchSource, Transaction
 
 
 class TestTransaction:
-    """Tests for Transaction dataclass."""
-
     def test_create_basic(self):
-        """Test creating a basic transaction."""
         txn = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("99.00"),
@@ -24,7 +19,6 @@ class TestTransaction:
         assert txn.is_income is False
 
     def test_income_transaction(self):
-        """Test income transaction (negative amount)."""
         txn = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("-100.00"),
@@ -35,7 +29,6 @@ class TestTransaction:
         assert txn.is_income is True
 
     def test_match_key_with_order_id(self):
-        """Test match key prefers order_id."""
         txn = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("99.00"),
@@ -46,7 +39,6 @@ class TestTransaction:
         assert txn.match_key == ("ORDER123",)
 
     def test_match_key_without_order_id(self):
-        """Test match key fallback to date/amount/card."""
         txn = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("99.00"),
@@ -57,7 +49,6 @@ class TestTransaction:
         assert txn.match_key == (date(2025, 1, 4), Decimal("99.00"), "1234")
 
     def test_tx_datetime_property(self):
-        """Test tx_datetime property."""
         txn = Transaction(
             date=date(2025, 1, 4),
             time=time(14, 30, 0),
@@ -71,7 +62,6 @@ class TestTransaction:
         assert dt.time() == time(14, 30, 0)
 
     def test_tx_datetime_property_no_time(self):
-        """Test tx_datetime property without time."""
         txn = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("99.00"),
@@ -81,7 +71,6 @@ class TestTransaction:
         assert txn.tx_datetime is None
 
     def test_to_dict(self):
-        """Test serialization to dict."""
         txn = Transaction(
             date=date(2025, 1, 4),
             amount=Decimal("99.00"),
@@ -97,7 +86,6 @@ class TestTransaction:
         assert d["match_source"] == "rule"
 
     def test_from_dict(self):
-        """Test deserialization from dict."""
         d = {
             "date": "2025-01-04",
             "amount": "99.00",
@@ -113,7 +101,6 @@ class TestTransaction:
         assert txn.match_source == MatchSource.RULE
 
     def test_roundtrip(self, sample_transaction):
-        """Test serialization roundtrip."""
         d = sample_transaction.to_dict()
         restored = Transaction.from_dict(d)
 

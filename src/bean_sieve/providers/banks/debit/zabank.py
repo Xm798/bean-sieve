@@ -29,7 +29,6 @@ MONTH_MAP = {
     "Dec": 12,
 }
 
-# Currency section markers and their mapped currency codes
 SECTION_MARKERS: dict[str, str] = {
     "HKD Savings 港元活期储蓄": "HKD",
     "CNY 人民币": "CNY",
@@ -54,7 +53,7 @@ class ZABankProvider(BaseProvider):
     - Each section has: Date, Transaction Details, Deposit, Withdrawal, Balance
     - Statement period in header: "01 Mar 2026 - 31 Mar 2026"
     - Multi-line transaction details (currency exchange includes rate and txn number)
-    - "Opening balance 上期结余" rows should be skipped
+    - "Opening balance 上期结余" rows are skipped
     """
 
     provider_id = "zabank_debit"
@@ -77,7 +76,6 @@ class ZABankProvider(BaseProvider):
         return _TITLE in header and any(kw in header for kw in cls.content_keywords)
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse ZA Bank consolidated monthly PDF statement."""
         import fitz
 
         doc = fitz.open(file_path)
@@ -90,8 +88,7 @@ class ZABankProvider(BaseProvider):
             page = doc[page_num]
             section_positions = self._find_section_positions(page)
 
-            # Always prepend carried-forward currency at top of page
-            # so tables before the first section marker get the right currency
+            # A section continued from the previous page has no marker on this page.
             if last_currency:
                 section_positions.insert(0, (0.0, last_currency))
 
@@ -101,7 +98,6 @@ class ZABankProvider(BaseProvider):
             for table in table_finder.tables:
                 table_y = table.bbox[1]
 
-                # Skip the deposit summary table
                 if page_num == 0 and self._is_summary_table(table):
                     continue
 
@@ -127,20 +123,18 @@ class ZABankProvider(BaseProvider):
         transactions: list[Transaction],
         context: ReconcileContext,  # noqa: ARG002
     ) -> list[Transaction]:
-        """Merge paired currency exchange transactions into single entries with @@ price."""
         return self._merge_exchange_pairs(transactions)
 
     @staticmethod
     def _merge_exchange_pairs(
         transactions: list[Transaction],
     ) -> list[Transaction]:
-        """Find exchange pairs by order_id and merge into single multi-currency entries.
+        """Merge the two rows of each currency exchange into one priced entry.
 
-        Each currency exchange appears as two transactions (one per currency section).
-        We keep the "sell" side (positive amount = withdrawal) and annotate it with
-        the buy amount as price, so the output uses @@ syntax.
+        An exchange appears once per currency section, both rows sharing an
+        order_id. The sell side (positive amount) is kept with the buy amount
+        as its price, so the output uses @@.
         """
-        # Group exchange transactions by order_id
         exchange_by_id: dict[str, list[Transaction]] = {}
         result: list[Transaction] = []
 
@@ -152,18 +146,15 @@ class ZABankProvider(BaseProvider):
 
         for _order_id, group in exchange_by_id.items():
             if len(group) != 2:
-                # Unpaired — keep as-is
                 result.extend(group)
                 continue
 
-            # Identify sell (withdrawal=positive) and buy (deposit=negative) sides
             sell = next((t for t in group if t.amount > 0), None)
             buy = next((t for t in group if t.amount < 0), None)
             if not sell or not buy:
                 result.extend(group)
                 continue
 
-            # Merge: keep sell side, annotate with buy amount as price
             result.append(
                 sell.model_copy(
                     update={
@@ -174,13 +165,11 @@ class ZABankProvider(BaseProvider):
                 )
             )
 
-        # Sort by date to maintain chronological order
         result.sort(key=lambda t: t.date)
         return result
 
     @staticmethod
     def _find_section_positions(page) -> list[tuple[float, str]]:
-        """Find currency section markers and their y-positions on a page."""
         positions: list[tuple[float, str]] = []
         blocks: list = page.get_text("blocks")  # type: ignore[assignment]
 
@@ -197,16 +186,13 @@ class ZABankProvider(BaseProvider):
 
     @staticmethod
     def _is_summary_table(table) -> bool:
-        """Check if table is the deposit summary (not transaction data).
-
-        Summary tables have no date in the first column and contain
-        "Savings" with a percentage pattern like "(0.20%)".
+        """The deposit summary has no date in its first column and lists
+        "Savings" with a rate such as "(0.20%)".
         """
         data = table.extract()
         if not data:
             return False
         first_col = str(data[0][0] or "").strip()
-        # Transaction tables have a date in column 0; summary tables don't
         if re.match(r"\d{1,2}\s+\w{3}\s+\d{4}", first_col):
             return False
         first_row_text = " ".join(str(cell) for cell in data[0] if cell)
@@ -218,7 +204,6 @@ class ZABankProvider(BaseProvider):
     def _get_currency_for_position(
         y_pos: float, section_positions: list[tuple[float, str]]
     ) -> str | None:
-        """Find the currency for a given y-position based on section markers."""
         currency = None
         for marker_y, cur in section_positions:
             if marker_y <= y_pos + 5:
@@ -235,7 +220,6 @@ class ZABankProvider(BaseProvider):
         file_path: Path,
         statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
-        """Parse a single table row into a Transaction."""
         if not row or len(row) < 5:
             return None
 
@@ -257,7 +241,6 @@ class ZABankProvider(BaseProvider):
         if amount is None:
             return None
 
-        # Parse multi-line details
         lines = details.split("\n")
         description = lines[0].strip()
         detail_lines = [line.strip() for line in lines[1:] if line.strip()]
@@ -292,7 +275,6 @@ class ZABankProvider(BaseProvider):
 
     @staticmethod
     def _parse_date(date_str: str) -> date | None:
-        """Parse date from 'dd Mon yyyy' format (e.g., '28 Mar 2026')."""
         match = re.match(r"(\d{1,2})\s+(\w{3})\s+(\d{4})", date_str)
         if not match:
             return None
@@ -308,7 +290,6 @@ class ZABankProvider(BaseProvider):
 
     @staticmethod
     def _parse_amount(deposit_str: str, withdrawal_str: str) -> Decimal | None:
-        """Parse amount. Withdrawal=positive (expense), Deposit=negative (income)."""
         try:
             if withdrawal_str:
                 return Decimal(withdrawal_str.replace(",", ""))
@@ -320,7 +301,7 @@ class ZABankProvider(BaseProvider):
 
     @staticmethod
     def _extract_order_id(detail_lines: list[str]) -> str | None:
-        """Extract transaction number from detail lines."""
+        """The number after "Transaction number" / "交易编号", past a colon or on the next line."""
         for i, line in enumerate(detail_lines):
             if "Transaction number" in line or "交易编号" in line:
                 after_colon = line.split(":")[-1].strip() if ":" in line else ""
@@ -336,7 +317,6 @@ class ZABankProvider(BaseProvider):
 
     @staticmethod
     def _extract_exchange_info(detail_lines: list[str]) -> str | None:
-        """Extract sell/buy info from currency exchange details."""
         for line in detail_lines:
             if line.startswith("sell") or line.startswith("sell卖出"):
                 return line
@@ -344,7 +324,10 @@ class ZABankProvider(BaseProvider):
 
     @staticmethod
     def _extract_counterparty(detail_lines: list[str]) -> str | None:
-        """Extract counterparty name from transfer detail lines."""
+        """The first line starting with a capital or CJK letter that holds a masked "*" name.
+
+        Exchange, reversal and digit-led lines are skipped.
+        """
         for line in detail_lines:
             if any(
                 kw in line
@@ -364,7 +347,6 @@ class ZABankProvider(BaseProvider):
         return None
 
     def _extract_statement_period(self, doc) -> tuple[date, date] | None:
-        """Extract statement period from PDF header."""
         if doc.page_count < 1:
             return None
         text = doc[0].get_text()[:_HEADER_CHARS]

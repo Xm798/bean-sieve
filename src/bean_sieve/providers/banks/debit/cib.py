@@ -40,7 +40,7 @@ class CIBDebitProvider(BaseProvider):
     - Row 11+: data rows
     - Last row: disclaimer "说明..."
     - Columns: 交易时间, 记账日, 支出, 收入, 账户余额, 摘要, 对方户名, 对方银行, 对方账号, 用途, 交易渠道, 备注
-    - Cells are typically text type, but normalize_cell_str handles xlrd float values defensively
+    - Cells are text; 账户账号 goes through normalize_cell_str in case xlrd reads it as a float
     """
 
     provider_id = "cib_debit"
@@ -68,11 +68,10 @@ class CIBDebitProvider(BaseProvider):
     CONTENT_MARKERS = (TITLE_MARKER, "记账日", "对方银行")
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse CIB debit card XLS statement."""
         wb = xlrd.open_workbook(str(file_path))
         sheet = wb.sheet_by_index(0)
 
-        # Validate this is a CIB statement (guard against filename_pattern false positives)
+        # filename_pattern can also match a file that is not a CIB statement.
         if sheet.nrows > 0 and self.TITLE_MARKER not in str(sheet.cell_value(0, 0)):
             logger.warning(
                 "Row 0 does not contain '%s' in %s, skipping",
@@ -112,15 +111,13 @@ class CIBDebitProvider(BaseProvider):
         return sheet_head_contains(file_path, cls.CONTENT_MARKERS, nrows=15)
 
     def _find_header_row(self, sheet) -> int:
-        """Find header row by scanning for column header keywords."""
         for row_idx in range(min(15, sheet.nrows)):
             cell = str(sheet.cell_value(row_idx, 0)).strip()
             if any(kw in cell for kw in self.HEADER_KEYWORDS):
                 return row_idx
-        return 10  # fallback to default position
+        return 10
 
     def _extract_card_last4(self, sheet) -> str | None:
-        """Extract card last 4 digits from account number row."""
         for row_idx in range(min(10, sheet.nrows)):
             label = str(sheet.cell_value(row_idx, 0)).strip()
             if label == "账户账号":
@@ -130,7 +127,6 @@ class CIBDebitProvider(BaseProvider):
         return None
 
     def _is_footer(self, row: list) -> bool:
-        """Check if row is the footer disclaimer."""
         cell = str(row[0]).strip()
         return cell.startswith(self.FOOTER_MARKER)
 
@@ -141,7 +137,6 @@ class CIBDebitProvider(BaseProvider):
         card_last4: str | None,
         file_path: Path,
     ) -> Transaction | None:
-        """Parse a single data row."""
         tx_time_str = str(row[self.COL_TX_TIME]).strip()
         if not tx_time_str or not tx_time_str[0].isdigit():
             return None
@@ -194,7 +189,6 @@ class CIBDebitProvider(BaseProvider):
 
     @staticmethod
     def _parse_datetime(value: str) -> tuple[date | None, time | None]:
-        """Parse datetime from 'YYYY-MM-DD HH:MM:SS' string."""
         try:
             parts = value.split(" ")
             date_parts = parts[0].split("-")
@@ -212,7 +206,6 @@ class CIBDebitProvider(BaseProvider):
             return None, None
 
     def _parse_amount(self, row: list) -> Decimal | None:
-        """Parse amount. Expense=positive, income=negative."""
         expense = to_decimal(amount_cell_str(row[self.COL_EXPENSE]))
         income = to_decimal(amount_cell_str(row[self.COL_INCOME]))
 

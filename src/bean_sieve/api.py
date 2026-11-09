@@ -1,8 +1,4 @@
-"""
-API layer for Bean-Sieve.
-
-This module provides the public API for CLI and GUI frontends.
-"""
+"""Public API for the CLI and GUI frontends."""
 
 import logging
 from collections import Counter, defaultdict
@@ -53,19 +49,8 @@ def parse_statement(
     file_path: Path,
     provider_id: str | None = None,
 ) -> list[Transaction]:
-    """
-    Parse a statement file and return transactions.
-
-    Args:
-        file_path: Path to the statement file
-        provider_id: Provider ID to use, or None for auto-detection
-
-    Returns:
-        List of parsed transactions
-
-    Raises:
-        ValueError: If no suitable provider found
-    """
+    """``provider_id=None`` auto-detects the provider; ValueError when none
+    recognises the file."""
     return _parse(resolve_providers([file_path], provider_id))
 
 
@@ -73,16 +58,7 @@ def parse_statements(
     file_paths: list[Path],
     provider_id: str | None = None,
 ) -> list[Transaction]:
-    """
-    Parse multiple statement files.
-
-    Args:
-        file_paths: List of paths to statement files
-        provider_id: Provider ID to use for all files, or None for auto-detection
-
-    Returns:
-        Combined list of transactions from all files
-    """
+    """A given ``provider_id`` parses every file; None detects each file's."""
     return _parse(resolve_providers(file_paths, provider_id))
 
 
@@ -97,20 +73,7 @@ def load_ledger(
     date_tolerance: int = 2,
     rebate_account_prefixes: tuple[str, ...] | None = None,
 ) -> Sieve:
-    """
-    Load a Beancount ledger for reconciliation.
-
-    Args:
-        ledger_path: Path to main.bean or ledger directory
-        account_filter: Only include entries with this account prefix
-        date_range: Only include entries within this date range
-        date_tolerance: Days tolerance for date matching
-        rebate_account_prefixes: Rebate income accounts for the gross-amount
-            match (None keeps the SieveConfig default)
-
-    Returns:
-        Configured Sieve instance
-    """
+    """``rebate_account_prefixes=None`` keeps the SieveConfig default."""
     config = SieveConfig(date_tolerance=date_tolerance)
     if rebate_account_prefixes is not None:
         config.rebate_account_prefixes = rebate_account_prefixes
@@ -129,24 +92,13 @@ def reconcile(
     covered_groups: list[set[str]] | None = None,
 ) -> ReconcileResult:
     """
-    Reconcile transactions against ledger and apply rules.
-
-    Args:
-        transactions: List of transactions to reconcile
-        sieve: Configured Sieve instance with loaded ledger
-        config: Configuration with rules and account mappings
-        preset_rules: Preset rules from provider for automatic account lookup
-        covered_accounts: Accounts covered by this statement for Extra calculation
-        covered_ranges: Card to date ranges mapping for Extra calculation
-        covered_groups: Account sets each spoken for by one statement as a whole,
-            letting a matched leg exempt its sibling leg from Extra
-
-    Returns:
-        ReconcileResult with matched, missing, and processed transactions
+    Match the rows against the ledger, then run the rules over the missing
+    ones: ignored rows are dropped, and a row no rule gave a contra account
+    gets the default expense or income account. The ``covered_*`` arguments
+    go to ``Sieve.match``.
     """
     config = config or Config()
 
-    # Match against ledger
     match_result = sieve.match(
         transactions,
         covered_accounts=covered_accounts,
@@ -156,17 +108,13 @@ def reconcile(
         ambiguous_check=config.diagnostics.ambiguous_match,
     )
 
-    # Process missing transactions
     missing = list(match_result.missing)
 
-    # Apply rules (preset rules first, then user rules)
     rules_engine = RulesEngine(config, preset_rules=preset_rules)
     processed = [rules_engine.apply(txn) for txn in missing]
 
-    # Filter out ignored transactions
     processed = [t for t in processed if not t.metadata.get(IGNORED)]
 
-    # Apply FIXME fallback for unmatched transactions
     processed = _apply_fixme_fallback(processed, config)
 
     return ReconcileResult(match_result=match_result, processed=processed)
@@ -175,7 +123,6 @@ def reconcile(
 def _apply_fixme_fallback(
     transactions: list[Transaction], config: Config
 ) -> list[Transaction]:
-    """Apply FIXME fallback for transactions without contra accounts."""
     for txn in transactions:
         if not txn.contra_account:
             if txn.is_expense:
@@ -189,11 +136,8 @@ def _apply_fixme_fallback(
 
 
 def _build_check_scope(config: Config) -> Callable[[str], bool]:
-    """
-    Return a predicate deciding whether an account is in the card_last4
-    check scope. An account qualifies if any substring in
-    diagnostics.meta_check_accounts matches its name.
-    """
+    """An account is in the card_last4 check scope when its name contains a
+    ``diagnostics.meta_check_accounts`` entry."""
     keywords = tuple(config.diagnostics.meta_check_accounts)
     if not keywords:
         return lambda _account: False
@@ -206,18 +150,6 @@ def generate_output(
     source_info: str | None = None,
     config: Config | None = None,
 ) -> str:
-    """
-    Generate Beancount output from reconcile result.
-
-    Args:
-        result: ReconcileResult from reconcile()
-        output_path: If provided, write to this file
-        source_info: Optional source description for header
-        config: Configuration for default accounts
-
-    Returns:
-        Generated Beancount content as string
-    """
     config = config or Config()
     writer = BeancountWriter(
         default_expense=config.defaults.expense_account,
@@ -249,31 +181,19 @@ def full_reconcile(
     keep_overlap: bool = False,
 ) -> ReconcileResult:
     """
-    Complete reconciliation workflow.
+    The ``reconcile`` command: parse, select statements, match, apply rules
+    and write the output, running each provider's ``pre_reconcile`` before
+    matching and ``post_output`` on the generated text.
 
-    This is the main entry point for the reconcile command.
-    Supports provider lifecycle hooks (pre_reconcile, post_output).
-
-    Args:
-        statement_paths: List of statement files to process
-        ledger_path: Path to Beancount ledger
-        config_path: Path to bean-sieve.yaml config
-        output_path: Path for output file (optional)
-        provider_id: Provider to use (or auto-detect)
-        date_range: Filter transactions to this range
-        account_filter: Filter ledger to accounts with this prefix
-        keep_overlap: Keep every row of overlapping statement files instead
-            of adopting one file per account and period
-
-    Returns:
-        ReconcileResult with all processing results
+    ``keep_overlap`` keeps every row of overlapping statement files instead of
+    adopting one file per account and period. Without ``date_range``, the
+    ledger loads over every row date and statement period, widened by
+    ``date_tolerance``.
     """
-    # Load config
     config = load_config(config_path) if config_path else Config()
 
     pset = resolve_providers(statement_paths, provider_id)
 
-    # Create reconcile context for hooks
     context = ReconcileContext(
         statement_paths=statement_paths,
         ledger_path=ledger_path,
@@ -320,39 +240,28 @@ def full_reconcile(
         days = [t.date for t in transactions] + [day for p in periods for day in p]
         date_range = (min(days) - tolerance, max(days) + tolerance)
 
-    # Filter by date range if specified
     if date_range:
         transactions = [
             t for t in transactions if date_range[0] <= t.date <= date_range[1]
         ]
 
-    # Pre-reconcile hook: call for each provider's transactions
     transactions = _apply_pre_reconcile_hooks(transactions, context, pset)
 
     sole_accounts = _sole_accounts(transactions, pset, config)
     transactions = _carry_sole_card_key(transactions, config, sole_accounts)
 
-    # Apply provider output metadata config (posting_metadata, output_metadata)
     transactions = _apply_provider_output_config(transactions, config)
 
-    # Get preset rules from all providers involved
     preset_rules = _collect_preset_rules(transactions, pset)
 
-    # Apply negate rules BEFORE matching (sign affects matching logic)
     transactions = _apply_negate_rules(transactions, preset_rules)
 
-    # Deduplicate cross-statement transactions (e.g., same payment in both
-    # Alipay and bank card statements)
     transactions = _deduplicate_cross_statements(transactions, config, sole_accounts)
 
-    # Set target account for transactions based on provider config and preset rules
-    # Preset rules with account_keyword have highest priority
-    # This constrains matching to only consider the correct ledger account
     transactions = _set_target_accounts(
         transactions, config, preset_rules, sole_accounts
     )
 
-    # Collect covered accounts and ranges from providers
     scopes = _coverage_scopes(transactions, pset, adopted)
     covered_groups = _collect_covered_groups(scopes, config)
     covered_accounts = sorted(set().union(*covered_groups))
@@ -362,7 +271,6 @@ def full_reconcile(
             covered_accounts, covered_ranges, extra_window
         )
 
-    # Load ledger
     sieve = load_ledger(
         ledger_path,
         account_filter=account_filter,
@@ -372,7 +280,6 @@ def full_reconcile(
     )
     context.ledger_directives = sieve.directives
 
-    # Reconcile (with preset rules and covered accounts/ranges)
     result = reconcile(
         transactions,
         sieve,
@@ -384,7 +291,6 @@ def full_reconcile(
     )
     result.coverage = coverage
 
-    # Generate output
     if output_path:
         source_info = ", ".join(p.name for p in statement_paths)
         content = generate_output(result, source_info=source_info, config=config)
@@ -392,13 +298,12 @@ def full_reconcile(
         for provider in pset.providers:
             content = provider.post_output(content, result, context)
 
-        # Balance directives (from provider config balance=True)
         content += _generate_balance_directives(transactions, config)
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-        # Format with beanfmt if configured (uses project .beanfmt.toml + overrides)
+        # config=True reads the project's .beanfmt.toml; set fields override it.
         if config.format and config.format.enabled:
             import beanfmt
 
@@ -466,10 +371,9 @@ def _apply_provider_output_config(
     config: Config,
 ) -> list[Transaction]:
     """
-    Apply provider-specific output configuration.
-
-    Sets _posting_metadata, _output_metadata and _fee_account in txn.metadata
-    based on provider config. These are used by BeancountWriter to control output.
+    Copy the provider's ``fee_account``, ``posting_metadata`` and
+    ``output_metadata`` (appended to the global list) into each row's internal
+    metadata, where BeancountWriter reads them.
     """
     result = []
     for txn in transactions:
@@ -478,11 +382,9 @@ def _apply_provider_output_config(
         if txn.fee and provider_config.fee_account:
             txn.metadata[FEE_ACCOUNT] = provider_config.fee_account
 
-        # Set posting_metadata from provider config
         if provider_config.posting_metadata:
             txn.metadata[POSTING_METADATA] = provider_config.posting_metadata
 
-        # Merge output_metadata: global + provider
         if provider_config.output_metadata:
             global_meta = config.defaults.output_metadata or []
             merged = list(global_meta) + [
@@ -499,7 +401,6 @@ def _collect_preset_rules(
     transactions: list[Transaction],
     pset: ProviderSet,
 ) -> list[PresetRule]:
-    """Collect preset rules from all providers involved."""
     return [
         rule
         for provider, _batch in pset.group(transactions)
@@ -512,18 +413,15 @@ def _apply_negate_rules(
     preset_rules: list[PresetRule],
 ) -> list[Transaction]:
     """
-    Apply negate rules before matching.
+    Flip the sign of the rows a ``negate`` preset rule matches.
 
-    This is needed because amount sign affects matching logic (income vs expense).
-    Negate rules must be applied before sieve.match() to correctly match
-    refunds and other sign-inverted transactions.
+    The sign decides which postings a row can match, so refunds and other
+    sign-inverted rows are flipped before matching.
     """
-    # Filter to only negate rules
     negate_rules = [r for r in preset_rules if r.action.negate]
     if not negate_rules:
         return transactions
 
-    # Compile patterns once
     for rule in negate_rules:
         rule.compile_patterns()
 
@@ -531,7 +429,6 @@ def _apply_negate_rules(
     for txn in transactions:
         for rule in negate_rules:
             if rule.matches(txn):
-                # Negate the amount
                 txn = txn.model_copy(update={"amount": -txn.amount})
                 break
         result.append(txn)
@@ -611,17 +508,15 @@ def _set_target_accounts(
     sole_accounts: dict[str, str] | None = None,
 ) -> list[Transaction]:
     """
-    Set target account for transactions based on provider config and preset rules.
+    Give each row without an account the one ledger account it may match,
+    taken from the first source that names one:
 
-    Priority order:
-    1. Preset rules with account_keyword (highest priority)
-    2. card_last4 lookup in provider.accounts, or the provider's sole account
-       for a row from a statement that names none (see _sole_accounts)
-    3. method lookup in provider.accounts
-
-    For bank card providers: use card_last4 to look up in providers.xxx.accounts
-    For payment platforms: use method to look up in providers.xxx.accounts
-    This constrains matching to only consider the correct ledger account.
+    1. A matching preset rule's ``account_keyword``, resolved against
+       ``account_mappings``.
+    2. The account the row's own statement places it on
+       (``_provider_account``), else its ``method`` as a key of the provider's
+       ``accounts``.
+    3. Its ``method`` resolved against ``account_mappings``.
     """
     preset_rules = preset_rules or []
     sole_accounts = sole_accounts or {}
@@ -629,11 +524,9 @@ def _set_target_accounts(
 
     for txn in transactions:
         if txn.account:
-            # Already has account set
             result.append(txn)
             continue
 
-        # 1. Try preset rules first (account_keyword with highest priority)
         for preset in preset_rules:
             if preset.matches(txn) and preset.action.account_keyword:
                 account = resolve_by_keyword_regex(
@@ -651,24 +544,19 @@ def _set_target_accounts(
                     )
                     break
 
-        # If preset rules already set account, skip provider config lookup
         if txn.account:
             result.append(txn)
             continue
 
-        # 2. Try to resolve account from provider config
         provider_config = config.get_provider_config(txn.provider)
 
-        # Try card_last4 first (for bank card providers)
         if account := _provider_account(txn, config, sole_accounts):
             txn = txn.model_copy(update={"account": account})
-        # Try method (for payment platform providers like Alipay/WeChat)
         elif (
             method := txn.metadata.get("method")
         ) and method in provider_config.accounts:
             txn = txn.model_copy(update={"account": provider_config.accounts[method]})
 
-        # 3. Try account_mappings for method (payment platforms using external cards)
         if not txn.account:
             method = txn.metadata.get("method", "")
             if method:
@@ -688,39 +576,32 @@ def _deduplicate_cross_statements(
     sole_accounts: dict[str, str] | None = None,
 ) -> list[Transaction]:
     """
-    Deduplicate transactions that appear in multiple statements.
+    Drop the indirect copy of a payment two statements both list.
 
-    For example, a payment made via Alipay using a bank card will appear in both:
-    - The bank card statement (direct record)
-    - The Alipay statement (indirect record, method = "XX银行储蓄卡(1234)")
-
-    This function removes indirect records that have a matching direct record,
-    using 1:1 pairing to preserve legitimate same-day same-amount transactions.
-
-    Pairing criteria:
-    - Same date, amount, target account; a rebate top-up indirect record left
-      unpaired then takes the largest unused direct record of smaller amount
-    - Time within 5 minutes (if both have time), or same day (if no time)
-    - One is direct (card_last4 in provider's accounts), one is indirect (method)
+    A payment through Alipay with a bank card appears in the bank statement
+    (direct: ``_provider_account`` places it) and in the Alipay statement
+    (indirect: only its ``method``, such as "XX银行储蓄卡(1234)", names the
+    card). Each indirect row pairs with at most one unused direct row on the
+    same target account and date, within 5 minutes when both carry a time:
+    first at the same absolute amount, then, for a rebate top-up row left
+    unpaired, the largest direct row of smaller amount. Paired indirect rows
+    are dropped; 1:1 pairing keeps genuine same-day same-amount payments.
     """
     if len(transactions) <= 1:
         return transactions
     sole_accounts = sole_accounts or {}
 
-    # Separate direct and indirect records
     direct_records: list[Transaction] = []
     indirect_records: list[Transaction] = []
 
     for txn in transactions:
         priority = _get_dedup_priority(txn, config, sole_accounts)
         if priority >= 100:
-            # Direct record: its own statement places it on an account
             direct_records.append(txn)
         elif priority <= 10:
-            # Indirect record: payment platform using external method
             indirect_records.append(txn)
         else:
-            # Neither - keep as direct (will be preserved)
+            # A row with neither is kept like a direct one.
             direct_records.append(txn)
 
     accounts = {
@@ -773,7 +654,6 @@ def _deduplicate_cross_statements(
 
     result = [i for i in indirect_records if id(i) not in paired_indirect]
 
-    # Add all direct records (they are always kept)
     result.extend(direct_records)
 
     return result
@@ -783,23 +663,19 @@ def _resolve_target_account(
     txn: Transaction, config: Config, sole_accounts: dict[str, str]
 ) -> str | None:
     """
-    Resolve the target account for a transaction.
-
-    For bank card providers: use card_last4 to look up in providers.xxx.accounts
-    For payment platforms: use metadata['method'] to look up in account_mappings
+    The account dedup pairs on: the one the row's statement places it on,
+    else its ``method`` in ``account_mappings``, else its card_last4 in any
+    provider's ``accounts``.
     """
-    # First try provider's accounts (for bank card providers)
     if account := _provider_account(txn, config, sole_accounts):
         return account
 
-    # Try metadata['method'] in account_mappings (for payment platforms)
     method = txn.metadata.get("method", "")
     if method:
         mapping = resolve_by_method(config.account_mappings, method)
         if mapping:
             return mapping.account
 
-    # Try card_last4 in all provider accounts
     if txn.card_last4:
         for pconfig in config.providers.values():
             if txn.card_last4 in pconfig.accounts:
@@ -812,23 +688,16 @@ def _get_dedup_priority(
     txn: Transaction, config: Config, sole_accounts: dict[str, str]
 ) -> int:
     """
-    Get deduplication priority for a transaction.
-
-    Higher priority = more likely to be kept.
-    Direct records (their own statement places them on an account) have higher
-    priority.
+    100 for a direct row (its own statement places it on an account), 10 for
+    an indirect one (only a ``method`` names the account), 50 otherwise.
     """
-    # Direct record: the row's own statement places it on an account
     if _provider_account(txn, config, sole_accounts):
         return 100
 
-    # Indirect record: method points to another account (via account_mappings)
     method = txn.metadata.get("method", "")
     if method:
-        # Payment platform transaction using external payment method
         return 10
 
-    # Fallback
     return 50
 
 
@@ -887,12 +756,8 @@ def _collect_covered_ranges(
     scopes: list[_Scope],
     config: Config,
 ) -> dict[str, list[tuple[date, date]]] | None:
-    """
-    Collect covered date ranges per account from all providers involved.
-
-    Returns a dict mapping account name to list of (start, end) date ranges.
-    Returns None if no provider provides range information.
-    """
+    """Every provider's covered ranges per account; None when no provider
+    reports any."""
     all_ranges: dict[str, list[tuple[date, date]]] = defaultdict(list)
     has_ranges = False
 
@@ -926,14 +791,11 @@ def _generate_balance_directives(
     config: Config,
 ) -> str:
     """
-    Generate Beancount balance directives from transaction metadata.
+    Balance directives for providers configured with ``balance: true``.
 
-    Groups transactions by account, finds the last transaction per account,
-    and generates a balance directive dated the day after the statement end.
-    Only generates for providers with balance=True in config.
-
-    Returns:
-        Balance directives as a string, or empty string if none.
+    Per provider, account and balance currency, the ``balance`` metadata of
+    the last row in booking order is asserted the day after its statement
+    period ends, or after its booking date when it has no period.
     """
     # A row billed in a foreign currency still reports the account's balance
     # in balance_currency, so it belongs with that currency's rows.
@@ -961,12 +823,10 @@ def _generate_balance_directives(
         )
         last_txn = txns[-1]
 
-        # Get balance from metadata
         balance_str = last_txn.metadata.get("balance")
         if not balance_str:
             continue
 
-        # Parse balance value (may have commas, whitespace)
         try:
             balance_amount = Decimal(str(balance_str).replace(",", "").strip())
         except (ValueError, InvalidOperation):
@@ -995,19 +855,16 @@ def _generate_balance_directives(
 
 
 __all__ = [
-    # Main API
     "parse_statement",
     "parse_statements",
     "load_ledger",
     "reconcile",
     "generate_output",
     "full_reconcile",
-    # Utilities
     "load_config",
     "list_providers",
     "get_provider",
     "auto_detect_provider",
-    # Types (re-export for convenience)
     "Transaction",
     "MatchResult",
     "ReconcileResult",

@@ -1,5 +1,3 @@
-"""Tests for Bank of China (中国银行) debit card provider."""
-
 from decimal import Decimal
 from pathlib import Path
 
@@ -12,10 +10,7 @@ def _make_csv(rows: list[str]) -> str:
 
 
 class TestBOCDebitProvider:
-    """Tests for BOCDebitProvider."""
-
     def test_parse_expense(self, tmp_path: Path) -> None:
-        """Test parsing an expense transaction."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -41,7 +36,6 @@ class TestBOCDebitProvider:
         assert txns[0].provider == "boc_debit"
 
     def test_parse_income(self, tmp_path: Path) -> None:
-        """Test parsing an income transaction (negative amount)."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -60,7 +54,6 @@ class TestBOCDebitProvider:
         assert txns[0].payee == "测试用户A"
 
     def test_parse_interest(self, tmp_path: Path) -> None:
-        """Test parsing interest row (no counterparty)."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -80,7 +73,6 @@ class TestBOCDebitProvider:
         assert txns[0].description == "结息"
 
     def test_parse_foreign_currency(self, tmp_path: Path) -> None:
-        """Test parsing HKD transaction."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -99,7 +91,6 @@ class TestBOCDebitProvider:
         assert txns[0].amount == Decimal("-0.88")
 
     def test_parse_multiple_rows(self, tmp_path: Path) -> None:
-        """Test parsing multiple transactions."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -121,7 +112,6 @@ class TestBOCDebitProvider:
         assert txns[2].amount == Decimal("-8000.00")
 
     def test_empty_file(self, tmp_path: Path) -> None:
-        """Test parsing empty file (header only)."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(_make_csv([]), encoding="utf-8")
 
@@ -131,7 +121,6 @@ class TestBOCDebitProvider:
         assert txns == []
 
     def test_skip_invalid_rows(self, tmp_path: Path) -> None:
-        """Test that rows with missing data are skipped."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -149,7 +138,6 @@ class TestBOCDebitProvider:
         assert len(txns) == 1
 
     def test_remarks_dash_excluded(self, tmp_path: Path) -> None:
-        """Test that '--' remarks are excluded from description."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -167,7 +155,6 @@ class TestBOCDebitProvider:
         assert txns[0].description == "网上快捷支付"
 
     def test_remarks_dash_prefix_stripped(self, tmp_path: Path) -> None:
-        """Test that '--' prefix is stripped from non-empty remarks."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -185,7 +172,7 @@ class TestBOCDebitProvider:
         assert txns[0].description == "网上快捷提现 | 测试用户A余额提现-0001"
 
     def test_parse_datetime_nbsp(self, tmp_path: Path) -> None:
-        """Test non-breaking space between date and time (real data format)."""
+        """The real export separates date and time with a non-breaking space."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -204,7 +191,6 @@ class TestBOCDebitProvider:
         assert txns[0].time.hour == 10
 
     def test_unknown_currency_passthrough(self, tmp_path: Path) -> None:
-        """Test that mapped currency returns ISO code."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -222,7 +208,6 @@ class TestBOCDebitProvider:
         assert txns[0].currency == "AUD"
 
     def test_both_income_and_expense(self, tmp_path: Path) -> None:
-        """Test that expense takes priority when both columns have values."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -240,7 +225,6 @@ class TestBOCDebitProvider:
         assert txns[0].amount == Decimal("300.00")
 
     def test_header_not_at_row_zero(self, tmp_path: Path) -> None:
-        """Test parsing when header is preceded by metadata lines."""
         csv_file = tmp_path / "中国银行.csv"
         content = "\n".join(
             [
@@ -259,7 +243,6 @@ class TestBOCDebitProvider:
         assert txns[0].source_line == 4
 
     def test_gbk_encoding(self, tmp_path: Path) -> None:
-        """Test GBK encoding fallback."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_bytes(
             _make_csv(
@@ -276,7 +259,6 @@ class TestBOCDebitProvider:
         assert txns[0].amount == Decimal("500.00")
 
     def test_metadata_channel(self, tmp_path: Path) -> None:
-        """Test that channel is captured in metadata."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -294,7 +276,6 @@ class TestBOCDebitProvider:
         assert txns[0].metadata["summary"] == "互联互通"
 
     def test_can_handle_csv(self, tmp_path: Path) -> None:
-        """Test file detection."""
         csv_file = tmp_path / "中国银行.csv"
         csv_file.write_text(
             _make_csv(
@@ -308,14 +289,14 @@ class TestBOCDebitProvider:
         assert BOCDebitProvider.can_handle(csv_file)
 
     def test_no_handle_pdf(self, tmp_path: Path) -> None:
-        """Test that PDF files are not handled (BOC credit uses PDF)."""
+        """BOC credit statements are the PDFs."""
         pdf_file = tmp_path / "中国银行.pdf"
         pdf_file.write_bytes(b"%PDF-1.4")
 
         assert not BOCDebitProvider.can_handle(pdf_file)
 
     def test_parse_utf16_tab_export(self, tmp_path: Path) -> None:
-        """Test the downloaded UTF-16 LE export: tab-separated, date-only, 12 columns."""
+        """The downloaded UTF-16 LE export: tab-separated, date-only, 12 columns."""
         header = "\t".join(
             [
                 "交易日期",

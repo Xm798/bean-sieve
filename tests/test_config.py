@@ -1,5 +1,3 @@
-"""Tests for Config schema."""
-
 import json
 from pathlib import Path
 

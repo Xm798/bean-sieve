@@ -12,8 +12,8 @@ from ... import register_provider
 from ..._tabular import read_csv_rows, to_decimal
 from ...base import BaseProvider
 
-# Header variants accepted: Simplified Chinese, Traditional Chinese, English.
-# Map normalized cell text -> logical column purpose.
+# Stripped, lowercased header text per column, in Simplified Chinese,
+# Traditional Chinese and English.
 HEADER_TOKENS: dict[str, set[str]] = {
     "post_date": {"过账日", "過賬日", "post date"},
     "trans_date": {"交易日", "trans.date", "trans date"},
@@ -23,8 +23,8 @@ HEADER_TOKENS: dict[str, set[str]] = {
     "balance": {"结余", "結餘", "balance"},
 }
 
-# Balance carry-forward markers — these rows are not real transactions.
-# All entries MUST be lowercase; compared against description.lower().
+# Balance carry-forward rows, skipped. Entries are lowercase: they are
+# matched against description.lower().
 BALANCE_MARKERS: tuple[str, ...] = (
     "承上结余",
     "承上結餘",
@@ -36,7 +36,8 @@ BALANCE_MARKERS: tuple[str, ...] = (
     "c/f balance",
 )
 
-# FPS / 转数快 reference codes appear as: FICT/FOCT/FICB/FOCB + 16 digits
+# FPS (转数快) references: FI or FO, two more capitals, then 16 or more
+# digits (FICT…, FOCB…).
 ORDER_ID_PATTERN = re.compile(r"\b(F[IO][A-Z]{2}\d{16,})\b")
 DATE_PATTERN = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
 
@@ -57,7 +58,7 @@ class CNCBIDebitProvider(BaseProvider):
     - Date format: DD/MM/YYYY
     - Amount: Debit (支出) is expense (positive), Credit (收入) is income (negative)
     - "承上结余" / "转承结余" rows are balance carry-forwards and are skipped
-    - Default currency: HKD
+    - Currency: always HKD
     """
 
     provider_id = "cncbi_debit"
@@ -89,7 +90,6 @@ class CNCBIDebitProvider(BaseProvider):
 
     @staticmethod
     def _find_columns(header_row: list[str]) -> dict[str, int] | None:
-        """Identify column indices from the header row."""
         normalized = [c.strip().lower() for c in header_row]
         col_map: dict[str, int] = {}
         for purpose, tokens in HEADER_TOKENS.items():
@@ -159,7 +159,6 @@ class CNCBIDebitProvider(BaseProvider):
 
     @staticmethod
     def _parse_date(date_str: str) -> date | None:
-        """Parse DD/MM/YYYY format."""
         match = DATE_PATTERN.match(date_str)
         if not match:
             return None
@@ -170,7 +169,6 @@ class CNCBIDebitProvider(BaseProvider):
 
     @staticmethod
     def _parse_amount(debit_str: str, credit_str: str) -> Decimal | None:
-        """Debit -> positive expense, Credit -> negative income."""
         debit = to_decimal(debit_str)
         if debit is not None:
             return debit

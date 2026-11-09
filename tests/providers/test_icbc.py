@@ -1,5 +1,3 @@
-"""Tests for ICBC (工商银行) debit card statement provider."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -74,7 +72,6 @@ def create_icbc_csv(
 
 @pytest.fixture
 def icbc_csv_file(tmp_path: Path) -> Path:
-    """Create a sample ICBC debit card CSV file."""
     rows = [
         {
             "date": "2026-03-02",
@@ -111,10 +108,7 @@ def icbc_csv_file(tmp_path: Path) -> Path:
 
 
 class TestICBCDebitProvider:
-    """Tests for ICBCDebitProvider."""
-
     def test_provider_registration(self) -> None:
-        """Test that ICBC provider is properly registered."""
         provider = get_provider("icbc_debit")
         assert isinstance(provider, ICBCDebitProvider)
         assert provider.provider_id == "icbc_debit"
@@ -122,8 +116,7 @@ class TestICBCDebitProvider:
         assert ".csv" in provider.supported_formats
 
     def test_can_handle(self, tmp_path: Path) -> None:
-        """Test file format detection by filename keyword."""
-        # Create file with content keyword for content detection
+        # The file carries the content keyword for content detection
         csv_file = tmp_path / "hisdetail12345.csv"
         csv_file.write_text("明细查询文件下载\n", encoding="utf-8")
 
@@ -132,14 +125,12 @@ class TestICBCDebitProvider:
         assert not ICBCDebitProvider.can_handle(Path("hisdetail.xlsx"))
 
     def test_parse_transactions(self, icbc_csv_file: Path) -> None:
-        """Test parsing all transactions."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
 
         assert len(transactions) == 4
 
     def test_expense_transaction(self, icbc_csv_file: Path) -> None:
-        """Test expense transactions are positive."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
         txn = next(t for t in transactions if "还款" in t.description)
@@ -152,7 +143,6 @@ class TestICBCDebitProvider:
         assert txn.provider == "icbc_debit"
 
     def test_income_transaction(self, icbc_csv_file: Path) -> None:
-        """Test income transactions are negative."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
         txn = next(t for t in transactions if "他行汇入" in t.description)
@@ -162,7 +152,6 @@ class TestICBCDebitProvider:
         assert txn.is_income
 
     def test_small_amount(self, icbc_csv_file: Path) -> None:
-        """Test small amount transactions."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
         txn = next(t for t in transactions if "消费" in t.description)
@@ -170,7 +159,6 @@ class TestICBCDebitProvider:
         assert txn.amount == Decimal("0.01")
 
     def test_interest_income(self, icbc_csv_file: Path) -> None:
-        """Test interest income without counterparty."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
         txn = next(t for t in transactions if "利息" in t.description)
@@ -181,7 +169,6 @@ class TestICBCDebitProvider:
         assert txn.payee is None
 
     def test_card_last4_extraction(self, icbc_csv_file: Path) -> None:
-        """Test card_last4 is extracted from metadata header."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
 
@@ -189,7 +176,6 @@ class TestICBCDebitProvider:
             assert txn.card_last4 == "2468"
 
     def test_source_info(self, icbc_csv_file: Path) -> None:
-        """Test source file and line tracking."""
         provider = ICBCDebitProvider()
         transactions = provider.parse(icbc_csv_file)
 
@@ -199,17 +185,13 @@ class TestICBCDebitProvider:
 
 
 class TestICBCEdgeCases:
-    """Tests for ICBC edge cases."""
-
     def test_empty_statement(self, tmp_path: Path) -> None:
-        """Test handling of statement with no transactions."""
         file_path = create_icbc_csv(tmp_path, [])
         provider = ICBCDebitProvider()
         transactions = provider.parse(file_path)
         assert transactions == []
 
     def test_thousand_separator_amounts(self, tmp_path: Path) -> None:
-        """Test parsing amounts with thousand separators."""
         rows = [
             {
                 "date": "2026-01-01",
@@ -227,7 +209,6 @@ class TestICBCEdgeCases:
         assert transactions[0].amount == Decimal("123456.78")
 
     def test_summary_row_skipped(self, tmp_path: Path) -> None:
-        """Test that the summary/footer row is not parsed as a transaction."""
         rows = [
             {
                 "date": "2026-01-01",
@@ -239,11 +220,9 @@ class TestICBCEdgeCases:
         provider = ICBCDebitProvider()
         transactions = provider.parse(file_path)
 
-        # Should only get the data row, not the summary
         assert len(transactions) == 1
 
     def test_description_with_detail(self, tmp_path: Path) -> None:
-        """Test description includes detail when present."""
         rows = [
             {
                 "date": "2026-01-01",
@@ -264,7 +243,6 @@ class TestICBCEdgeCases:
         assert "网上银行" in desc
 
     def test_metadata_content(self, tmp_path: Path) -> None:
-        """Test metadata includes summary, detail, and location."""
         rows = [
             {
                 "date": "2026-01-01",
@@ -324,7 +302,6 @@ class TestICBCEdgeCases:
         assert "earlier-same-day" in same_day[0].description
 
     def test_gbk_encoding_fallback(self, tmp_path: Path) -> None:
-        """Test GBK encoding fallback."""
         header = "交易日期,摘要,交易详情,交易场所,交易国家或地区简称,钞/汇,交易金额(收入),交易金额(支出),交易币种,记账金额(收入),记账金额(支出),记账币种,余额,对方户名,对方账户"
         content = "\n".join(
             [

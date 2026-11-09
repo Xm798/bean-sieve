@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
-# Spans of one printed line have tops within this many points of each other.
+# A cell whose top lies within this many points of a line's first cell joins that line.
 _LINE_TOLERANCE = 2.0
 
 
@@ -27,7 +27,6 @@ def first_page_text(file_path: Path) -> str:
 
 
 def pdf_text(file_path: Path) -> str:
-    """Return the plain text of every page, pages joined by a newline."""
     import fitz
 
     with fitz.open(file_path) as doc:
@@ -59,8 +58,7 @@ def span_runs(
 def pdf_lines(file_path: Path) -> list[list[str]]:
     """Return the PDF's printed lines, each as its cells read left to right.
 
-    A line is the cells whose tops lie within _LINE_TOLERANCE of its first
-    cell's.
+    Cells are taken top to bottom; a line never continues onto the next page.
     """
     rows: list[list[tuple[float, float, str]]] = []
     for layout in pdf_layouts(file_path):

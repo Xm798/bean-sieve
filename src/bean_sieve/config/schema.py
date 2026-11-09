@@ -8,8 +8,6 @@ from ruamel.yaml import YAML
 
 
 class DefaultsConfig(BaseModel):
-    """Default settings."""
-
     ledger: str | None = None
     currency: str = "CNY"
     expense_account: str = "Expenses:FIXME"
@@ -18,12 +16,12 @@ class DefaultsConfig(BaseModel):
     # provider config names its own
     fee_account: str = "Expenses:FIXME"
     date_tolerance: Annotated[int, Field(ge=0, le=30)] = 2
-    # Metadata fields to include in output (None means include all)
-    # Common fields: time, order_id, source, category, method, peer_account, etc.
+    # Metadata fields written to the output; None writes all. Common fields:
+    # time, order_id, source, category, method, peer_account.
     output_metadata: list[str] | None = None
-    # Sort output by datetime: "asc" (ascending), "desc" (descending), or None (no sort)
+    # None keeps the parse order.
     sort_by_time: Annotated[str | None, Field(pattern=r"^(asc|desc)$")] = "asc"
-    # Default transaction flag: "*" (cleared) or "!" (pending)
+    # Flag of rows no rule matched: "*" (cleared) or "!" (pending).
     flag: Annotated[str, Field(pattern=r"^[*!]$")] = "!"
     # Rebate income accounts (and their sub-accounts) that the gross-amount
     # match of rebate-topped repayments adds back to the fund leg
@@ -41,7 +39,12 @@ class AccountMapping(BaseModel):
 
 
 class RuleCondition(BaseModel):
-    """Rule matching conditions."""
+    """All set fields must match.
+
+    ``description`` and ``payee`` are case-insensitive regexes, matched as a
+    substring when not a valid regex. ``time_range`` is ``HH:MM-HH:MM`` and may
+    wrap past midnight; the amount bounds compare the absolute amount.
+    """
 
     description: str | None = None
     payee: str | None = None
@@ -54,8 +57,6 @@ class RuleCondition(BaseModel):
 
 
 class RuleAction(BaseModel):
-    """Rule action to apply when matched."""
-
     contra_account: str | None = None
     payee: str | None = None
     description: str | None = None
@@ -65,7 +66,8 @@ class RuleAction(BaseModel):
 
 
 class Rule(BaseModel):
-    """A single mapping rule."""
+    """Higher ``priority`` is tried first; ``Config.from_dict`` gives earlier
+    YAML rules the higher priority."""
 
     condition: RuleCondition
     action: RuleAction
@@ -113,30 +115,24 @@ class FormatConfig(BaseModel):
 
 
 class ProviderConfig(BaseModel):
-    """Provider-specific configuration."""
-
-    # Pattern -> account mapping for this provider
-    # - Payment platforms: pattern matches metadata['method'] (e.g., "余额" -> Assets:Wallet:Alipay:Balance)
-    # - Bank cards: pattern matches card_last4 (e.g., "1029" -> Assets:Bank:PAB:1029)
-    # These accounts also define the coverage scope for Extra calculation during reconciliation
+    # Key -> account. A payment platform keys on metadata['method']
+    # ("余额" -> Assets:Wallet:Alipay:Balance), a bank on card_last4
+    # ("1234" -> Assets:Bank:PAB:1234). These accounts also bound the
+    # accounts Extra is reported for.
     accounts: dict[str, str] = Field(default_factory=dict)
-    # Additional entry-level metadata fields to output (appended to global output_metadata)
+    # Transaction-level metadata fields, appended to the global output_metadata.
     output_metadata: list[str] = Field(default_factory=list)
-    # Posting-level metadata fields to output (only at provider level)
+    # Posting-level metadata fields; there is no global counterpart.
     posting_metadata: list[str] = Field(default_factory=list)
-    # Rebate configuration: income account for rebate entries
     rebate_income_account: str | None = None
-    # Rebate configuration: keywords to identify existing rebate transactions in ledger
+    # Identify the rebate transactions already in the ledger.
     rebate_keywords: list[str] = Field(default_factory=list)
-    # Account for fees reported on this provider's transactions
     fee_account: str | None = None
-    # Generate balance directive after reconciliation (uses metadata["balance"])
+    # Append a balance directive from the last row's metadata["balance"].
     balance: bool = False
 
 
 class DiagnosticsConfig(BaseModel):
-    """Diagnostic behavior toggles."""
-
     meta_check: bool = True
     # Account-name substrings that opt into card_last4 checks and
     # posting-meta injection. Empty list = no accounts in scope.
@@ -147,8 +143,6 @@ class DiagnosticsConfig(BaseModel):
 
 
 class Config(BaseModel):
-    """Complete Bean-Sieve configuration."""
-
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     account_mappings: list[AccountMapping] = Field(default_factory=list)
     rules: list[Rule] = Field(default_factory=list)
@@ -160,7 +154,6 @@ class Config(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     def get_provider_config(self, provider_id: str) -> ProviderConfig:
-        """Get configuration for a specific provider."""
         return self.providers.get(provider_id, ProviderConfig())
 
     def rebate_account_prefixes(self) -> tuple[str, ...]:
@@ -173,7 +166,8 @@ class Config(BaseModel):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Config":
-        """Create Config from a dictionary (parsed YAML)."""
+        """Build from parsed YAML, whose rule keys (``time``, ``target_payee``,
+        ``target_description``) differ from the model's field names."""
         defaults = DefaultsConfig(**data.get("defaults", {}))
 
         account_mappings = [
@@ -243,7 +237,7 @@ def get_yaml() -> YAML:
 
 
 def load_config(path: Path) -> Config:
-    """Load configuration from YAML file."""
+    """A missing file yields the default Config."""
     if not path.exists():
         return Config()
 

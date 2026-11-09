@@ -1,5 +1,3 @@
-"""Tests for China Guangfa Bank (CGB) credit card statement provider."""
-
 import base64
 from datetime import date
 from decimal import Decimal
@@ -25,7 +23,6 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 
 
 def create_cgb_eml(html_content: str, subject: str = "statement-subject") -> str:
-    """Create an EML file content with the given HTML."""
     encoded = base64.b64encode(html_content.encode("gbk")).decode("ascii")
     encoded_subject = base64.b64encode(subject.encode("utf-8")).decode("ascii")
     return f"""From: billing@example.com
@@ -41,7 +38,6 @@ Content-Transfer-Encoding: base64
 
 @pytest.fixture
 def cgb_html_content():
-    """Sample CGB statement HTML content."""
     return f"""<!DOCTYPE html>
 <html>
 <head><title>{_ISSUER}信用卡电子账单</title></head>
@@ -75,7 +71,6 @@ def cgb_html_content():
 
 @pytest.fixture
 def cgb_eml_file(tmp_path, cgb_html_content):
-    """Create a temporary CGB EML file."""
     file_path = tmp_path / f"{_ISSUER_SHORT}信用卡 2026年01月电子账单.eml"
     eml_content = create_cgb_eml(cgb_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
@@ -83,10 +78,7 @@ def cgb_eml_file(tmp_path, cgb_html_content):
 
 
 class TestCGBCreditProvider:
-    """Tests for CGBCreditProvider."""
-
     def test_provider_registration(self):
-        """Test that CGB provider is properly registered."""
         provider = get_provider("cgb_credit")
         assert isinstance(provider, CGBCreditProvider)
         assert provider.provider_id == "cgb_credit"
@@ -94,7 +86,6 @@ class TestCGBCreditProvider:
         assert ".eml" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert CGBCreditProvider.can_handle(
             Path(f"{_ISSUER_SHORT}信用卡 2026年01月电子账单.eml")
         )
@@ -126,13 +117,11 @@ class TestCGBCreditProvider:
         assert not CGBCreditProvider.can_handle(path)
 
     def test_parse_transactions(self, cgb_eml_file):
-        """Test parsing transactions from EML file."""
         provider = CGBCreditProvider()
         transactions = provider.parse(cgb_eml_file)
 
         assert len(transactions) == 5
 
-        # Check first spending transaction
         spending1 = transactions[0]
         assert spending1.date == date(2026, 1, 15)
         assert spending1.post_date == date(2026, 1, 16)
@@ -144,26 +133,22 @@ class TestCGBCreditProvider:
         assert spending1.provider == "cgb_credit"
         assert spending1.is_expense
 
-        # Check payment transaction (should be negative)
         payment = transactions[2]
         assert payment.date == date(2026, 1, 5)
         assert payment.amount == Decimal("-1000.00")
         assert "(还款)" in payment.description
         assert payment.is_income
 
-        # Check bonus transaction (should be negative)
         bonus = transactions[3]
         assert bonus.date == date(2026, 1, 3)
         assert bonus.amount == Decimal("-20.00")
         assert "(赠送)" in bonus.description
 
-        # Check transaction from second card
         card2_txn = transactions[4]
         assert card2_txn.card_last4 == "5678"
         assert card2_txn.date == date(2025, 12, 28)
 
     def test_statement_period(self, cgb_eml_file):
-        """Test that statement period is properly extracted."""
         provider = CGBCreditProvider()
         transactions = provider.parse(cgb_eml_file)
 
@@ -172,7 +157,6 @@ class TestCGBCreditProvider:
             assert txn.statement_period == (date(2025, 12, 26), date(2026, 1, 25))
 
     def test_metadata_extraction(self, cgb_eml_file):
-        """Test that metadata is properly extracted."""
         provider = CGBCreditProvider()
         transactions = provider.parse(cgb_eml_file)
 
@@ -184,16 +168,12 @@ class TestCGBCreditProvider:
         assert payment.metadata["trans_type"] == "还款"
 
     def test_per_card_statement_flag(self):
-        """Test that per_card_statement flag is set correctly."""
         provider = CGBCreditProvider()
         assert provider.per_card_statement is True
 
 
 class TestCGBAmountParsing:
-    """Tests for CGB amount parsing edge cases."""
-
     def test_amount_with_thousands_separator(self, tmp_path):
-        """Test parsing amounts with comma separators."""
         html = """<html>
 <body>
 <table><tr><td>账单周期:2025/12/26-2026/01/25</td></tr></table>
@@ -212,7 +192,6 @@ class TestCGBAmountParsing:
         assert transactions[0].amount == Decimal("12345.67")
 
     def test_usd_amount(self, tmp_path):
-        """Test parsing USD amounts."""
         html = """<html>
 <body>
 <table><tr><td>账单周期:2025/12/26-2026/01/25</td></tr></table>
@@ -233,7 +212,7 @@ class TestCGBAmountParsing:
         assert transactions[0].original_amount is None
 
     def test_third_currency_on_usd_card(self, tmp_path):
-        """Test that HKD spending billed in USD keeps the HKD original."""
+        """HKD spending billed in USD keeps the HKD original."""
         html = """<html>
 <body>
 <table><tr><td>账单周期:2030/01/01-2030/01/31</td></tr></table>
@@ -258,7 +237,6 @@ class TestCGBAmountParsing:
         assert rebate.original_amount is None
 
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         html = """<html>
 <body>
 <table><tr><td>账单周期:2025/12/26-2026/01/25</td></tr></table>
@@ -274,10 +252,7 @@ class TestCGBAmountParsing:
 
 
 class TestCGBCrossYearDates:
-    """Tests for cross-year date handling."""
-
     def test_cross_year_statement_period(self, tmp_path):
-        """Test that transactions in cross-year period are parsed correctly."""
         html = """<html>
 <body>
 <table><tr><td>账单周期:2025/12/26-2026/01/25</td></tr></table>
@@ -299,10 +274,7 @@ class TestCGBCrossYearDates:
 
 
 class TestCGBStatementPeriod:
-    """Tests for per-card statement period assignment."""
-
     def test_cycle_bounds_a_card_dated_outside_it(self, tmp_path):
-        """Test that an out-of-cycle row leaves its card's period at the cycle."""
         html = """<!DOCTYPE html>
 <html>
 <body>
@@ -472,8 +444,6 @@ def shape(txns):
 
 
 class TestCGBReissue:
-    """Tests for the reissued PDF statement."""
-
     def test_rows(self, tmp_path):
         txns = CGBCreditProvider().parse(write_cgb_pdf(tmp_path / "r.pdf", CARDS))
 

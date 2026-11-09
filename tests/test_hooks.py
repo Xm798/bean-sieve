@@ -1,5 +1,3 @@
-"""Tests for provider lifecycle hooks."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -16,10 +14,7 @@ from bean_sieve.providers.base import BaseProvider
 
 
 class TestReconcileContext:
-    """Tests for ReconcileContext dataclass."""
-
     def test_create_minimal(self, tmp_path):
-        """Test creating context with minimal required fields."""
         ctx = ReconcileContext(statement_paths=[tmp_path / "test.csv"])
         assert ctx.statement_paths == [tmp_path / "test.csv"]
         assert ctx.ledger_path is None
@@ -28,7 +23,6 @@ class TestReconcileContext:
         assert ctx.extra == {}
 
     def test_create_full(self, tmp_path):
-        """Test creating context with all fields."""
         ctx = ReconcileContext(
             statement_paths=[tmp_path / "test.csv"],
             ledger_path=tmp_path / "ledger",
@@ -44,11 +38,8 @@ class TestReconcileContext:
 
 
 class TestBaseProviderHooks:
-    """Tests for BaseProvider lifecycle hooks."""
-
     @pytest.fixture
     def sample_transactions(self) -> list[Transaction]:
-        """Create sample transactions for testing."""
         return [
             Transaction(
                 date=date(2025, 1, 15),
@@ -66,7 +57,6 @@ class TestBaseProviderHooks:
 
     @pytest.fixture
     def sample_context(self, tmp_path) -> ReconcileContext:
-        """Create sample context for testing."""
         return ReconcileContext(
             statement_paths=[tmp_path / "test.csv"],
             ledger_path=tmp_path / "ledger",
@@ -74,7 +64,6 @@ class TestBaseProviderHooks:
 
     @pytest.fixture
     def sample_result(self, sample_transactions) -> ReconcileResult:
-        """Create sample reconcile result for testing."""
         return ReconcileResult(
             match_result=MatchResult(matched=[], missing=sample_transactions, extra=[]),
             processed=sample_transactions,
@@ -83,8 +72,6 @@ class TestBaseProviderHooks:
     def test_default_pre_reconcile_returns_unchanged(
         self, sample_transactions, sample_context
     ):
-        """Test that default pre_reconcile returns transactions unchanged."""
-
         class TestProvider(BaseProvider):
             provider_id = "test"
             provider_name = "Test"
@@ -98,8 +85,6 @@ class TestBaseProviderHooks:
         assert result == sample_transactions
 
     def test_default_post_output_returns_unchanged(self, sample_result, sample_context):
-        """Test that default post_output returns content unchanged."""
-
         class TestProvider(BaseProvider):
             provider_id = "test"
             provider_name = "Test"
@@ -115,19 +100,14 @@ class TestBaseProviderHooks:
 
 
 class TestCustomHooks:
-    """Tests for custom provider hook implementations."""
-
     @pytest.fixture
     def sample_context(self, tmp_path) -> ReconcileContext:
-        """Create sample context for testing."""
         return ReconcileContext(
             statement_paths=[tmp_path / "test.csv"],
             ledger_path=tmp_path / "ledger",
         )
 
     def test_custom_pre_reconcile_transforms_transactions(self, sample_context):
-        """Test that custom pre_reconcile can transform transactions."""
-
         class TransformingProvider(BaseProvider):
             provider_id = "transforming"
             provider_name = "Transforming"
@@ -141,7 +121,6 @@ class TestCustomHooks:
                 transactions: list[Transaction],
                 _context: ReconcileContext,
             ) -> list[Transaction]:
-                # Add a tag to all transactions
                 for txn in transactions:
                     txn.tags.append("transformed")
                 return transactions
@@ -160,8 +139,6 @@ class TestCustomHooks:
         assert "transformed" in result[0].tags
 
     def test_custom_post_output_appends_content(self, sample_context):
-        """Test that custom post_output can append content."""
-
         class AppendingProvider(BaseProvider):
             provider_id = "appending"
             provider_name = "Appending"
@@ -176,7 +153,6 @@ class TestCustomHooks:
                 _result: ReconcileResult,
                 _context: ReconcileContext,
             ) -> str:
-                # Append settlement entry
                 settlement = "\n\n; Settlement entry\n2025-01-31 * Settlement"
                 return content + settlement
 

@@ -41,7 +41,6 @@ class ICBCDebitProvider(BaseProvider):
     content_keywords: list[str] = []
     per_card_statement = True  # ICBC exports one statement per card
 
-    # Column indices (0-based, after header)
     COL_DATE = 0  # 交易日期
     COL_SUMMARY = 1  # 摘要
     COL_DETAIL = 2  # 交易详情
@@ -53,7 +52,6 @@ class ICBCDebitProvider(BaseProvider):
     COL_COUNTER_ACCOUNT = 14  # 对方账户
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse ICBC debit card CSV statement."""
         lines = read_text_lines(file_path)
         card_last4 = first_masked_card_last4(lines[:6])
         header_idx = find_header_line(lines, ("交易日期", "摘要"))
@@ -63,7 +61,7 @@ class ICBCDebitProvider(BaseProvider):
         transactions = []
         data_lines = lines[header_idx:]
         reader = csv.reader(data_lines)
-        next(reader)  # skip header row
+        next(reader)
 
         for row_num, row in enumerate(reader, header_idx + 2):
             stripped = [c.strip() for c in row]
@@ -71,10 +69,9 @@ class ICBCDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
 
-        # ICBC exports rows in reverse-chronological order (latest first).
-        # Reverse so callers receive chronological order; this matters for
-        # balance directive selection when multiple transactions share a date
-        # and the parser has no time field to disambiguate.
+        # The export lists rows newest first and has no time column, so the
+        # reversal is what keeps same-date rows in booking order for the
+        # balance directive.
         transactions.reverse()
         self.assign_statement_periods(transactions)
         return transactions
@@ -86,7 +83,6 @@ class ICBCDebitProvider(BaseProvider):
         card_last4: str | None,
         file_path: Path,
     ) -> Transaction | None:
-        """Parse a single data row."""
         if len(row) < 11:
             return None
 
@@ -94,13 +90,11 @@ class ICBCDebitProvider(BaseProvider):
         if not date_str or "合计" in date_str:
             return None
 
-        # Parse date (format: 2026-03-02)
         try:
             tx_date = date.fromisoformat(date_str)
         except ValueError:
             return None
 
-        # Parse amount: income (negative) or expense (positive)
         amount = self._parse_amount(row)
         if amount is None:
             return None
@@ -146,7 +140,6 @@ class ICBCDebitProvider(BaseProvider):
         )
 
     def _parse_amount(self, row: list[str]) -> Decimal | None:
-        """Parse amount from income/expense columns. Expense=positive, income=negative."""
         expense_str = row[self.COL_EXPENSE] if len(row) > self.COL_EXPENSE else ""
         income_str = row[self.COL_INCOME] if len(row) > self.COL_INCOME else ""
 

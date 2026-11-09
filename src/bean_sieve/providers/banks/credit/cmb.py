@@ -137,8 +137,6 @@ def _resolve_date(mmdd: str, latest: date) -> date:
 @register_provider
 class CMBCreditProvider(BaseProvider):
     """
-    Provider for China Merchants Bank (招商银行) credit card statements.
-
     Two formats carry the same table:
     - .eml: the mailed statement (正本), an HTML table whose sections each
       open with a loopHeader2 band: a row of column labels, or in older
@@ -170,7 +168,6 @@ class CMBCreditProvider(BaseProvider):
         self._statements: dict[Path, _Statement | None] = {}
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse a CMB credit card statement, mailed or reissued."""
         statement = self._statements[file_path] = self._read(file_path)
         if statement is None:
             return []
@@ -440,7 +437,7 @@ class CMBCreditProvider(BaseProvider):
                     continue
                 if name:
                     cells[name] = (cells.get(name, "") + " " + other.text).strip()
-            # 交易地金额 carries the country code, as "92.60(HK)".
+            # 交易地金额 carries the country code, as "10.00(HK)".
             original, _, country = cells.get("original_amount", "").partition("(")
             rows.append(
                 _Row(

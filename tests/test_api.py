@@ -1,5 +1,3 @@
-"""Tests for api.py."""
-
 import base64
 from datetime import date
 from decimal import Decimal
@@ -78,7 +76,7 @@ def test_generate_output_passes_check_scope_to_writer():
 
 
 def test_reconcile_honors_diagnostics_meta_check_flag(tmp_path):
-    """When diagnostics.meta_check=False, sieve uses hard filter (legacy)."""
+    """With diagnostics.meta_check=False the sieve uses the legacy hard filter."""
     from datetime import date
     from decimal import Decimal
 
@@ -112,7 +110,7 @@ def test_reconcile_honors_diagnostics_meta_check_flag(tmp_path):
     )
     cfg = Config(diagnostics=DiagnosticsConfig(meta_check=False))
     result = reconcile([txn], sieve, config=cfg)
-    # With hard filter, conflicting meta causes no match -> txn goes to missing -> processed
+    # The hard filter rejects the conflicting meta, so the txn is Missing and processed.
     assert len(result.processed) == 1
 
 
@@ -120,7 +118,7 @@ def test_account_mapping_generic_method_not_matched_to_specific_pattern():
     """A generic payment channel must NOT match a card-specific pattern.
 
     Regression: bidirectional substring matching let method='云闪付' match
-    pattern='云闪付-交通银行(6420)' (method ⊂ pattern) and wrongly resolve to a
+    a card-specific pattern (method ⊂ pattern) and wrongly resolve to a
     specific card account. Generic channels with no card info must stay
     unresolved (-> FIXME) rather than guessing a card.
     """
@@ -292,7 +290,6 @@ def test_balance_uses_the_balance_currency():
 
 
 def test_balance_follows_statement_order_among_same_moment_rows():
-    """Rows booked at one moment keep the order their statement lists them in."""
     from bean_sieve.api import _generate_balance_directives
     from bean_sieve.config.schema import Config, ProviderConfig
     from bean_sieve.core.metadata_keys import ROW_SEQ
@@ -307,7 +304,6 @@ def test_balance_follows_statement_order_among_same_moment_rows():
 
 
 def test_full_reconcile_post_output_precedes_balance_block(tmp_path, monkeypatch):
-    """Balance directives follow the post_output text, never precede it."""
     from datetime import date
     from decimal import Decimal
     from pathlib import Path

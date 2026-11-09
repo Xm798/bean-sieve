@@ -38,9 +38,7 @@ class _Row:
 @register_provider
 class BOCOMCreditProvider(BaseProvider):
     """
-    Provider for Bank of Communications (交通银行) credit card email statements.
-
-    Parses .eml files containing HTML statements with transaction tables.
+    Bank of Communications email statements.
 
     Transaction sections:
     - 还款、退货、费用返还明细: payments/refunds (negative amounts)
@@ -69,11 +67,9 @@ class BOCOMCreditProvider(BaseProvider):
     per_card_statement = True  # BOCOM sends separate statements per card
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse BOCOM credit card email statement."""
         html = self.extract_html_from_eml(file_path)
         soup = self.parse_html(html)
 
-        # Extract statement period (e.g., 2025/10/14-2025/11/13)
         text = soup.get_text()
         statement_period = self._extract_statement_period(text)
         statement_card = masked_card_last4(text)
@@ -83,11 +79,11 @@ class BOCOMCreditProvider(BaseProvider):
         row_counter = 0
 
         for table in tables:
-            # Only process leaf tables (no nested tables)
+            # Layout tables wrap the detail tables, so only a leaf table's rows
+            # are read, each once.
             if table.find_all("table"):
                 continue
 
-            # Find transaction rows in this table
             rows = table.find_all("tr")
             trans_rows: list[_Row] = []
             first_row = None
@@ -119,7 +115,6 @@ class BOCOMCreditProvider(BaseProvider):
 
             section = self._detect_section(first_row)
 
-            # Parse each transaction row
             for trans_row in trans_rows:
                 row_counter += 1
                 txn = self._parse_row(
@@ -155,7 +150,6 @@ class BOCOMCreditProvider(BaseProvider):
         return "payment" if "还款" in heading else "spending"
 
     def _extract_statement_period(self, text: str) -> tuple[date, date] | None:
-        """Extract statement period (e.g., '2025/10/14-2025/11/13')."""
         match = re.search(r"(\d{4})/(\d{2})/(\d{2})-(\d{4})/(\d{2})/(\d{2})", text)
         if match:
             start = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
@@ -171,7 +165,6 @@ class BOCOMCreditProvider(BaseProvider):
         row_idx: int,
         statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
-        """Parse a single transaction row."""
         try:
             trans_date = self._parse_row_date(row.trans_date, statement_period)
             # Some 2021 rows print a single digit in place of the post date.
@@ -187,7 +180,7 @@ class BOCOMCreditProvider(BaseProvider):
         if amount is None:
             return None
 
-        # payment section = payments to card = negative (income for cardholder)
+        # Amounts print unsigned; the section gives the direction.
         amount = -abs(amount) if section == "payment" else abs(amount)
 
         metadata: dict = {
@@ -239,7 +232,7 @@ class BOCOMCreditProvider(BaseProvider):
         return date(year, month, day)
 
     def _parse_amount(self, amount_str: str) -> tuple[Decimal | None, str]:
-        """Parse amount string like 'CNY9974.12' or 'USD 100.00'."""
+        """Read 'CNY10.00' or 'USD 10.00'; an unreadable cell gives (None, 'CNY')."""
         match = re.match(r"([A-Z]{3})\s*([\d,]+\.?\d*)", amount_str)
         if not match:
             return None, "CNY"

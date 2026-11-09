@@ -12,65 +12,58 @@ if TYPE_CHECKING:
 
 @dataclass
 class PresetRuleCondition:
-    """Condition for matching a preset rule."""
+    """Case-insensitive regexes, all of which must find a match.
 
-    # Regex pattern to match transaction description
+    A set ``payee`` fails a row without a payee; a ``metadata`` key the row
+    lacks is searched as the empty string.
+    """
+
     description: str | None = None
-
-    # Regex pattern to match payee
     payee: str | None = None
-
-    # Regex patterns to match metadata fields (e.g., {"method": r".*花呗.*"})
+    # e.g. {"method": r".*花呗.*"}
     metadata: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class PresetRuleAction:
-    """Action to take when a preset rule matches."""
-
-    # Keyword to lookup in account_mappings to set txn.account
+    # Looked up in account_mappings to set txn.account.
     account_keyword: str | None = None
 
-    # Metadata key whose value is looked up in account_mappings to set contra_account
-    # (for transfers where the destination varies per transaction)
+    # Metadata key whose value is looked up in account_mappings to set
+    # contra_account, for transfers whose destination varies per row.
     contra_account_metadata_key: str | None = None
 
-    # Negate amount (flip sign) - use for transfers where direction is inverted
+    # For transfers whose statement sign is inverted.
     negate: bool = False
 
-    # Mark transaction as ignored
     ignore: bool = False
 
 
 @dataclass
 class PresetRule:
-    """A preset rule defined in code."""
+    """A rule a provider defines in code, applied before the user's rules."""
 
-    # Unique rule ID for debugging/logging
+    # Recorded as `matched_preset_rule` metadata on the rows it sets.
     rule_id: str
 
-    # Human-readable name
     name: str
 
-    # Provider this rule applies to (None = all providers)
+    # None applies to every provider.
     provider: str | None = None
 
-    # Match condition
     condition: PresetRuleCondition = field(default_factory=PresetRuleCondition)
 
-    # Action to apply
     action: PresetRuleAction = field(default_factory=PresetRuleAction)
 
-    # Priority within preset rules (higher = first)
+    # Higher is tried first among preset rules.
     priority: int = 0
 
-    # Compiled regex patterns (set during matching)
+    # Filled by compile_patterns(); matches() compiles on the fly without it.
     _desc_pattern: re.Pattern | None = field(default=None, repr=False)
     _payee_pattern: re.Pattern | None = field(default=None, repr=False)
     _metadata_patterns: dict[str, re.Pattern] = field(default_factory=dict, repr=False)
 
     def compile_patterns(self) -> None:
-        """Compile regex patterns for performance."""
         if self.condition.description:
             self._desc_pattern = re.compile(self.condition.description, re.IGNORECASE)
         if self.condition.payee:
@@ -79,12 +72,9 @@ class PresetRule:
             self._metadata_patterns[key] = re.compile(pattern, re.IGNORECASE)
 
     def matches(self, txn: Transaction) -> bool:
-        """Check if transaction matches this rule's condition."""
-        # Provider filter
         if self.provider and txn.provider != self.provider:
             return False
 
-        # Description regex
         if self.condition.description:
             pattern = self._desc_pattern or re.compile(
                 self.condition.description, re.IGNORECASE
@@ -92,7 +82,6 @@ class PresetRule:
             if not pattern.search(txn.description):
                 return False
 
-        # Payee regex
         if self.condition.payee:
             if not txn.payee:
                 return False
@@ -102,7 +91,6 @@ class PresetRule:
             if not pattern.search(txn.payee):
                 return False
 
-        # Metadata patterns
         for key, pattern_str in self.condition.metadata.items():
             value = txn.metadata.get(key, "")
             pattern = self._metadata_patterns.get(key) or re.compile(

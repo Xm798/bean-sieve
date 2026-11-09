@@ -20,15 +20,9 @@ _CARD_HEADER_RE = re.compile(r"\(卡号[：:]\s*(\d+)\)")
 @register_provider
 class BOCCreditProvider(BaseProvider):
     """
-    Provider for Bank of China (中国银行) credit card PDF statements.
+    Bank of China PDF statements, possibly several cards merged (合并账单).
 
-    Parses PDF files containing consolidated credit card statements.
-
-    File format:
-    - PDF with text blocks
-    - Transaction table columns: 交易日, 银行记账日, 卡号后四位, 交易描述, 存入, 支出
-    - Multiple cards may appear in one statement (合并账单)
-    - Each card requires separate repayment (按卡管理)
+    Transaction table columns: 交易日, 银行记账日, 卡号后四位, 交易描述, 存入, 支出.
     """
 
     provider_id = "boc_credit"
@@ -36,10 +30,9 @@ class BOCCreditProvider(BaseProvider):
     supported_formats = [".pdf"]
     filename_keywords = ["中国银行"]
     content_keywords = ["中国银行信用卡账单"]
-    per_card_statement = True  # BOC manages cards separately
+    per_card_statement = True  # Each card is repaid separately (按卡管理).
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse BOC credit card PDF statement."""
         import fitz
 
         doc = fitz.open(file_path)
@@ -47,7 +40,6 @@ class BOCCreditProvider(BaseProvider):
 
         closing = self._find_closing_date(doc)
 
-        # Track current card
         current_card: str | None = None
         row_counter = 0
         cards: set[str] = set()
@@ -172,8 +164,6 @@ class BOCCreditProvider(BaseProvider):
     def _group_by_proximity(
         self, blocks: list[tuple[float, float, float, str]], tolerance: float
     ) -> list[list[tuple[float, float, str]]]:
-        """Group blocks by y-coordinate proximity (fallback)."""
-        # Sort by y, then x
         sorted_blocks = sorted(blocks, key=lambda b: (b[0], b[2]))
 
         rows: list[list[tuple[float, float, str]]] = []
@@ -201,8 +191,6 @@ class BOCCreditProvider(BaseProvider):
         file_path: Path,
         row_idx: int,
     ) -> Transaction | None:
-        """Parse a single transaction row from blocks."""
-        # Sort blocks by x position
         sorted_blocks = sorted(row_blocks, key=lambda b: b[1])
 
         trans_date: str | None = None
@@ -219,7 +207,6 @@ class BOCCreditProvider(BaseProvider):
                 if not line:
                     continue
 
-                # Try to match date pattern
                 if re.match(r"^\d{4}-\d{2}-\d{2}$", line):
                     if not trans_date:
                         trans_date = line
@@ -227,27 +214,22 @@ class BOCCreditProvider(BaseProvider):
                         post_date = line
                     continue
 
-                # Try to match card number (4 digits)
                 if re.match(r"^\d{4}$", line):
                     card_last4 = line
                     continue
 
-                # Try to match amount
                 amount_match = re.match(r"^[\d,]+\.\d{2}$", line)
                 if amount_match:
                     amount_str = line.replace(",", "")
-                    # x1 > 500 indicates expense column
-                    # x1 between 400-500 indicates deposit column
+                    # The 支出 column ends right of x=500, 存入 left of it.
                     if x1 > 500:
                         expense = amount_str
                     else:
                         deposit = amount_str
                     continue
 
-                # Otherwise it's description
                 description_parts.append(line)
 
-        # Validate required fields
         if not trans_date:
             return None
 
@@ -255,7 +237,6 @@ class BOCCreditProvider(BaseProvider):
         if not description:
             return None
 
-        # Determine amount and sign
         if expense:
             amount = Decimal(expense)
         elif deposit:
@@ -299,7 +280,6 @@ class BOCCreditProvider(BaseProvider):
         return start, date(year, month, calendar.monthrange(year, month)[1])
 
     def _find_closing_date(self, doc) -> date | None:
-        """Locate the Statement Closing Date on page 1."""
         if doc.page_count == 0:
             return None
 
@@ -319,7 +299,6 @@ class BOCCreditProvider(BaseProvider):
         return None
 
     def _parse_date(self, date_str: str | None) -> date | None:
-        """Parse date string in YYYY-MM-DD format."""
         if not date_str:
             return None
         try:

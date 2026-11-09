@@ -37,7 +37,7 @@ class Coverage:
         source: Provider-defined source kind, ranked by the provider's
             ``coverage_priority``.
         clip: True for a source with arbitrary bounds, such as an export:
-            losing trims its rows by post date to outside the adopted periods
+            losing trims its rows by booked date to outside the adopted periods
             instead of dropping the whole file.
     """
 

@@ -26,7 +26,6 @@ class AlipayTxType(StrEnum):
     EMPTY = ""
 
 
-# Number of header lines to skip in Alipay CSV
 ALIPAY_HEADER_LINES = 24
 
 
@@ -43,8 +42,7 @@ def _refund_original_order_id(order_id: str) -> str | None:
     return original if original and original != order_id else None
 
 
-# Regex to extract statement period from header
-# Format: 起始时间：[2025-01-01 00:00:00]    终止时间：[2025-01-31 23:59:59]
+# 起始时间：[2025-01-01 00:00:00]    终止时间：[2025-01-31 23:59:59]
 STATEMENT_PERIOD_REGEX = re.compile(
     r"起始时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?\s+"
     r"终止时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}:\d{2}\]?"
@@ -60,7 +58,7 @@ class AlipayProvider(BaseProvider):
     Provider for Alipay (支付宝) statement CSV files.
 
     Alipay exports statements as GBK-encoded CSV files with:
-    - 24 header lines (metadata, disclaimers, etc.)
+    - 24 header lines before the column header row
     - Data columns:
       0: 交易时间 (Transaction time)
       1: 交易分类 (Category)
@@ -83,7 +81,6 @@ class AlipayProvider(BaseProvider):
     content_keywords = ["支付宝交易记录明细", "支付宝（中国）"]
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse Alipay CSV statement file."""
         transactions = []
 
         with open(file_path, encoding="gbk", newline="") as f:
@@ -91,22 +88,18 @@ class AlipayProvider(BaseProvider):
 
         lines = content.splitlines()
 
-        # Extract statement period from header
         header_text = "\n".join(lines[:ALIPAY_HEADER_LINES])
         statement_period = self._extract_statement_period(header_text)
 
         reader = csv.reader(lines)
 
         for line_num, row in enumerate(reader):
-            # Skip header lines
             if line_num < ALIPAY_HEADER_LINES:
                 continue
 
-            # Skip empty rows or rows that don't look like data
             if not row or len(row) < 10:
                 continue
 
-            # Skip the title row (contains column headers)
             if row[0] == "交易时间":
                 continue
 
@@ -115,7 +108,6 @@ class AlipayProvider(BaseProvider):
                 if txn:
                     transactions.append(txn)
             except Exception as e:
-                # Log error but continue parsing other rows
                 import logging
 
                 logging.warning(
@@ -132,11 +124,8 @@ class AlipayProvider(BaseProvider):
         line_num: int,
         statement_period: tuple[date, date] | None = None,
     ) -> Transaction | None:
-        """Parse a single CSV row into a Transaction."""
-        # Clean whitespace from all fields
         row = [field.strip() for field in row]
 
-        # Extract fields
         tx_time_str = row[0]
         category = row[1]
         peer = row[2]
@@ -150,23 +139,18 @@ class AlipayProvider(BaseProvider):
         merchant_id = row[10].strip() if len(row) > 10 else ""
         remarks = row[11].strip() if len(row) > 11 else ""
 
-        # Parse transaction type
         tx_type = self._get_tx_type(tx_type_str)
         if tx_type == AlipayTxType.EMPTY:
             return None
 
-        # Parse datetime
         tx_datetime = datetime.strptime(tx_time_str, "%Y-%m-%d %H:%M:%S")
 
-        # Parse amount
         amount = Decimal(amount_str)
 
-        # Determine sign based on transaction type
-        # Convention: expense is positive, income is negative
+        # Expenses are positive, income negative.
         if tx_type == AlipayTxType.INCOME and amount > 0:
             amount = -amount
 
-        # Build description
         description = item_name if item_name else category
 
         metadata: dict[str, object] = {
@@ -205,7 +189,6 @@ class AlipayProvider(BaseProvider):
     _extract_card_last4 = staticmethod(extract_card_last4)
 
     def _get_tx_type(self, tx_type_str: str) -> AlipayTxType:
-        """Convert transaction type string to enum."""
         tx_type_str = tx_type_str.strip()
         try:
             return AlipayTxType(tx_type_str)
@@ -213,10 +196,6 @@ class AlipayProvider(BaseProvider):
             return AlipayTxType.EMPTY
 
     def _extract_statement_period(self, header_text: str) -> tuple[date, date] | None:
-        """Extract statement period from header text.
-
-        Alipay format: 起始时间：[2025-01-01 00:00:00]    终止时间：[2025-01-31 23:59:59]
-        """
         match = STATEMENT_PERIOD_REGEX.search(header_text)
         if match:
             start_date = date.fromisoformat(match.group(1))
@@ -226,18 +205,11 @@ class AlipayProvider(BaseProvider):
 
     def _post_process(self, transactions: list[Transaction]) -> list[Transaction]:
         """
-        Post-process transactions to handle special cases.
-
-        - Filter all zero-amount transactions (e.g., discounts like "碰一下立减")
-        - Filter closed transactions that never completed (不计收支 type)
-        - Keep closed transactions with 支出/收入 type (money moved, was later refunded)
-        - Link both original and refund transactions using ^order_id
+        Drop zero-amount rows (e.g. 碰一下立减) and closed orders without a refund,
+        and link each refund and its original order with ^<original order ID>.
         """
-        # First pass: filter zero-amount transactions
         filtered = [txn for txn in transactions if txn.amount != 0]
 
-        # Build set of order_ids that have refunds (for linking original transactions)
-        # Refund order_ids carry a suffix; see _refund_original_order_id for formats
         refunded_order_ids: set[str] = set()
         for txn in filtered:
             status = txn.metadata.get("status", "")
@@ -250,25 +222,20 @@ class AlipayProvider(BaseProvider):
         for txn in filtered:
             status = txn.metadata.get("status", "")
 
-            # Closed/cancelled transactions never settled — the money returns.
-            # Keep one only if it has a paired refund (money moved, then was
-            # refunded; both sides are linked for a net-zero pair); otherwise
-            # filter regardless of tx_type. This drops 闲鱼-style 收入+交易关闭
-            # orders that were cancelled before completion (no refund line).
+            # A closed order without a refund row never settled, whatever its
+            # 收/支 (e.g. a 闲鱼 收入 order cancelled before completion); one with a
+            # refund moved money and is kept so the linked pair nets to zero.
             if (
                 status in ("交易关闭", "已关闭")
                 and txn.order_id not in refunded_order_ids
             ):
                 continue
 
-            # Link both original and refund transactions
             if txn.order_id:
-                # Refund transaction: link to original order_id
                 if status == "退款成功" and (
                     original_id := _refund_original_order_id(txn.order_id)
                 ):
                     txn = txn.model_copy(update={"links": [original_id]})
-                # Original transaction that was refunded: link to itself
                 elif txn.order_id in refunded_order_ids:
                     txn = txn.model_copy(update={"links": [txn.order_id]})
 
@@ -278,9 +245,8 @@ class AlipayProvider(BaseProvider):
 
     @classmethod
     def get_preset_rules(cls) -> list[PresetRule]:
-        """Return preset rules for Alipay transactions."""
         return [
-            # 余额宝转入（资金流入余额宝，需要翻转金额符号）
+            # 余额宝转入、收益：资金流入余额宝，金额取反。
             PresetRule(
                 rule_id="alipay_yuebao_in",
                 name="余额宝转入",
@@ -289,7 +255,6 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="余额宝", negate=True),
                 priority=110,
             ),
-            # 余额宝收益（资金流入余额宝，需要翻转金额符号）
             PresetRule(
                 rule_id="alipay_yuebao_income",
                 name="余额宝收益",
@@ -298,7 +263,6 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="余额宝", negate=True),
                 priority=110,
             ),
-            # 余额宝转出（资金流出余额宝）
             PresetRule(
                 rule_id="alipay_yuebao_out",
                 name="余额宝转出",
@@ -307,7 +271,7 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="余额宝"),
                 priority=110,
             ),
-            # 基金赎回到余额宝（资金流入余额宝，需要翻转金额符号）
+            # 基金赎回、卖出的资金流入余额宝，金额取反。
             PresetRule(
                 rule_id="alipay_fund_redeem_yuebao",
                 name="基金赎回到余额宝",
@@ -319,7 +283,6 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="余额宝", negate=True),
                 priority=110,
             ),
-            # 基金卖出到余额宝（资金流入余额宝，需要翻转金额符号）
             PresetRule(
                 rule_id="alipay_fund_sell_yuebao",
                 name="基金卖出到余额宝",
@@ -328,8 +291,8 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="余额宝", negate=True),
                 priority=110,
             ),
-            # 退款：仅对收入/不计收支类型翻转。用户主动退款给他人时
-            # tx_type=支出，金额方向已正确，不能再翻转。
+            # 仅收入/不计收支的退款取反：用户退款给他人时 tx_type 为支出，
+            # 金额方向已正确。
             PresetRule(
                 rule_id="alipay_refund",
                 name="退款",
@@ -341,7 +304,7 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(negate=True),
                 priority=100,
             ),
-            # 收益发放（利息收入，需要翻转为负数表示收入）
+            # 收益发放是利息收入，取反为负数。
             PresetRule(
                 rule_id="alipay_interest",
                 name="收益发放",
@@ -350,9 +313,9 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(negate=True),
                 priority=100,
             ),
-            # 花呗还款（信用借还）：账单录为一行，但账本里是「银行卡腿 → 花呗腿」
-            # 两条余额表分录。让这一行去匹配花呗腿（流入花呗、抵消负债，需翻转符号），
-            # 银行卡腿交给对应银行流水匹配。否则花呗腿会悬空被报成 Extra。
+            # 花呗还款在账单里是一行，在账本里是银行卡和花呗两条余额表分录。
+            # 这一行匹配花呗分录（流入花呗、冲减负债，故取反），银行卡分录由
+            # 对应银行流水匹配；否则花呗分录无人匹配，报为 Extra。
             PresetRule(
                 rule_id="alipay_huabei_repay",
                 name="花呗还款",
@@ -364,7 +327,6 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="花呗", negate=True),
                 priority=95,
             ),
-            # 花呗消费
             PresetRule(
                 rule_id="alipay_huabei",
                 name="花呗消费",
@@ -375,7 +337,6 @@ class AlipayProvider(BaseProvider):
                 action=PresetRuleAction(account_keyword="花呗"),
                 priority=90,
             ),
-            # 余额支付
             PresetRule(
                 rule_id="alipay_balance",
                 name="余额支付",
@@ -394,14 +355,11 @@ class AlipayProvider(BaseProvider):
         context: ReconcileContext,  # noqa: ARG002
     ) -> list[Transaction]:
         """
-        Merge transactions with identical timestamps.
-
-        Taobao orders with multiple items are often recorded as separate
-        transactions with the same timestamp. This merges them for matching.
+        Merge rows sharing a timestamp: Taobao records a multi-item order as one
+        row per item, while the ledger books it as one transaction.
         """
         from collections import defaultdict
 
-        # Group by (date, time)
         groups: dict[tuple, list[Transaction]] = defaultdict(list)
         for txn in transactions:
             key = (txn.date, txn.time)
@@ -417,13 +375,10 @@ class AlipayProvider(BaseProvider):
         return result
 
     def _merge_transactions(self, txns: list[Transaction]) -> Transaction:
-        """Merge multiple transactions into one."""
         first = txns[0]
 
-        # Sum amounts
         total_amount = sum((t.amount for t in txns), Decimal(0))
 
-        # Merge payees (unique, preserve order)
         payees = []
         seen_payees: set[str] = set()
         for t in txns:
@@ -432,7 +387,6 @@ class AlipayProvider(BaseProvider):
                 seen_payees.add(t.payee)
         merged_payee = " ".join(payees) if payees else first.payee
 
-        # Merge descriptions (truncate to 8 chars each if too long)
         descriptions = []
         seen_desc: set[str] = set()
         for t in txns:
@@ -449,7 +403,7 @@ class AlipayProvider(BaseProvider):
             currency=first.currency,
             description=merged_desc,
             payee=merged_payee,
-            order_id=None,  # Clear order_id for merged transactions
+            order_id=None,  # The merged row stands for several orders.
             card_last4=first.card_last4,
             provider=first.provider,
             source_file=first.source_file,

@@ -1,5 +1,3 @@
-"""Tests for whole-statement coverage selection (core/coverage.py)."""
-
 from datetime import date
 from decimal import Decimal
 from pathlib import Path

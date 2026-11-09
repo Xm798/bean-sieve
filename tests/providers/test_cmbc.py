@@ -1,5 +1,3 @@
-"""Tests for China Minsheng Bank (CMBC) credit card statement provider."""
-
 import base64
 from datetime import date
 from decimal import Decimal
@@ -14,7 +12,6 @@ from bean_sieve.providers.banks.credit.cmbc import CMBCCreditProvider
 
 
 def create_cmbc_eml(html_content: str) -> str:
-    """Create an EML file content with the given HTML (base64 encoded)."""
     encoded = base64.b64encode(html_content.encode("utf-8")).decode("ascii")
     return f"""From: creditcard@cmbc.com.cn
 Subject: =?utf-8?B?5rCR55Sf5L+h55So5Y2h55S15a2Q5a+56LSm5Y2V?=
@@ -70,7 +67,6 @@ def create_cmbc_html_with_transactions(
 
 @pytest.fixture
 def cmbc_html_content():
-    """Sample CMBC statement HTML content."""
     transactions = [
         {
             "trans_date": "11/21",
@@ -99,7 +95,6 @@ def cmbc_html_content():
 
 @pytest.fixture
 def cmbc_eml_file(tmp_path, cmbc_html_content):
-    """Create a temporary CMBC EML file."""
     file_path = tmp_path / "民生信用卡2025年12月电子对账单.eml"
     eml_content = create_cmbc_eml(cmbc_html_content)
     file_path.write_text(eml_content, encoding="utf-8")
@@ -107,10 +102,7 @@ def cmbc_eml_file(tmp_path, cmbc_html_content):
 
 
 class TestCMBCCreditProvider:
-    """Tests for CMBCCreditProvider."""
-
     def test_provider_registration(self):
-        """Test that CMBC provider is properly registered."""
         provider = get_provider("cmbc_credit")
         assert isinstance(provider, CMBCCreditProvider)
         assert provider.provider_id == "cmbc_credit"
@@ -118,20 +110,17 @@ class TestCMBCCreditProvider:
         assert ".eml" in provider.supported_formats
 
     def test_can_handle(self):
-        """Test file format detection."""
         assert CMBCCreditProvider.can_handle(Path("民生信用卡2025年12月电子对账单.eml"))
         assert CMBCCreditProvider.can_handle(Path("民生银行信用卡账单.eml"))
         assert not CMBCCreditProvider.can_handle(Path("cmbc_statement.csv"))
         assert not CMBCCreditProvider.can_handle(Path("statement.eml"))
 
     def test_parse_transactions(self, cmbc_eml_file):
-        """Test parsing transactions from EML file."""
         provider = CMBCCreditProvider()
         transactions = provider.parse(cmbc_eml_file)
 
         assert len(transactions) == 3
 
-        # Check repayment transaction
         txn1 = transactions[0]
         assert txn1.date == date(2025, 11, 21)
         assert txn1.amount == Decimal("-1182.17")
@@ -141,34 +130,28 @@ class TestCMBCCreditProvider:
         assert txn1.provider == "cmbc_credit"
         assert txn1.is_income
 
-        # Check expense
         txn2 = transactions[1]
         assert txn2.date == date(2025, 12, 4)
         assert txn2.amount == Decimal("60.90")
         assert "支付宝" in txn2.description
         assert txn2.is_expense
 
-        # Check refund
         txn3 = transactions[2]
         assert txn3.amount == Decimal("-60.90")
         assert txn3.is_income
 
     def test_statement_period_extraction(self, cmbc_eml_file):
-        """Test that statement period is properly extracted."""
         provider = CMBCCreditProvider()
         transactions = provider.parse(cmbc_eml_file)
 
         assert len(transactions) > 0
         txn = transactions[0]
-        # CMBC statement period: prev statement day + 1 to current statement day
+        # The cycle runs from the day after the previous statement day to this one.
         assert txn.statement_period == (date(2025, 11, 11), date(2025, 12, 10))
 
 
 class TestCMBCDateParsing:
-    """Tests for CMBC date parsing edge cases."""
-
     def test_cross_year_january_in_december_statement(self, tmp_path):
-        """Test January transactions in December statement."""
         transactions = [
             {
                 "trans_date": "01/02",
@@ -186,11 +169,10 @@ class TestCMBCDateParsing:
         txns = provider.parse(file_path)
 
         assert len(txns) == 1
-        # January in December statement should be next year
+        # A January row on a December statement belongs to the next year.
         assert txns[0].date == date(2026, 1, 2)
 
     def test_november_transactions_in_december_statement(self, tmp_path):
-        """Test November transactions in December statement."""
         transactions = [
             {
                 "trans_date": "11/28",
@@ -212,10 +194,7 @@ class TestCMBCDateParsing:
 
 
 class TestCMBCAmountParsing:
-    """Tests for CMBC amount parsing edge cases."""
-
     def test_amount_with_thousands_separator(self, tmp_path):
-        """Test parsing amounts with thousands separator."""
         transactions = [
             {
                 "trans_date": "12/10",
@@ -236,7 +215,6 @@ class TestCMBCAmountParsing:
         assert txns[0].amount == Decimal("12345.67")
 
     def test_negative_amount(self, tmp_path):
-        """Test parsing negative amounts (refunds/repayments)."""
         transactions = [
             {
                 "trans_date": "12/10",
@@ -259,10 +237,7 @@ class TestCMBCAmountParsing:
 
 
 class TestCMBCEmptyStatement:
-    """Tests for empty statement handling."""
-
     def test_empty_statement(self, tmp_path):
-        """Test handling of statement with no transactions."""
         html = """<!DOCTYPE HTML>
 <html>
 <head><meta charset="UTF-8"></head>
@@ -281,7 +256,6 @@ class TestCMBCEmptyStatement:
         assert transactions == []
 
     def test_no_loop_band(self, tmp_path):
-        """Test handling of statement without loopBand3."""
         html = """<!DOCTYPE HTML>
 <html>
 <head><meta charset="UTF-8"></head>
@@ -299,10 +273,7 @@ class TestCMBCEmptyStatement:
 
 
 class TestCMBCStatementPeriod:
-    """Tests for per-card statement period assignment."""
-
     def test_cycle_bounds_a_card_dated_outside_it(self, tmp_path):
-        """Test that an out-of-cycle row leaves its card's period at the cycle."""
         transactions = [
             {
                 "trans_date": "02/27",
@@ -375,8 +346,6 @@ def parse_html(tmp_path: Path, html: str) -> list:
 
 
 class TestCMBCSectionedTemplate:
-    """Tests for the non-purchase sections of the sectioned template."""
-
     def test_every_refund_and_payment_row_is_parsed(self, tmp_path):
         sections = {
             "loopBand7": [
@@ -436,7 +405,7 @@ def create_single_table_html(rows: list[tuple[str, ...]]) -> str:
 
 
 class TestCMBCSingleTableTemplate:
-    """Tests for the single-table template of earlier statements."""
+    """The single-table template of earlier statements."""
 
     def test_rows_of_the_single_table_are_parsed(self, tmp_path):
         html = create_single_table_html(

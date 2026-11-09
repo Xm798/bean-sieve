@@ -25,12 +25,10 @@ class MeituanTxType(StrEnum):
     EMPTY = ""
 
 
-# Number of header lines to skip in Meituan CSV (metadata + tips + section title
-# + column header row at index 19; data rows start at index 20).
+# The column header row is at index 19; data rows start at index 20.
 MEITUAN_HEADER_LINES = 20
 
-# Regex to extract statement period from header.
-# Meituan uses date-only (no time): 起始时间：[2025-01-01] 终止时间：[2025-01-31]
+# Date only, unlike Alipay and WeChat: 起始时间：[2025-01-01] 终止时间：[2025-01-31]
 STATEMENT_PERIOD_REGEX = re.compile(
     r"起始时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\]?\s+"
     r"终止时间[：:]\s*\[?(\d{4}-\d{2}-\d{2})\]?"
@@ -58,14 +56,11 @@ class MeituanProvider(BaseProvider):
       10: 备注 (Remarks)
 
     Notes:
-    - Meituan has no dedicated counterparty column; the merchant is embedded in
-      the order title (``商户名-商品/订单号``). The prefix before the first ``-``
-      becomes the payee and the remainder becomes the description (so the
-      merchant is not repeated); titles without ``-`` leave payee empty and
-      keep the whole title as description.
-    - Refund (退款) rows are emitted as standalone income transactions tagged
-      ``#refund``. Meituan refund order IDs share no prefix with the original
-      payment, so they are only tagged, not linked back to the original order.
+    - There is no counterparty column; the order title reads
+      ``商户名-商品/订单号``, and the part before the first ``-`` is the payee.
+    - Refund (退款) rows are standalone income tagged ``#refund``: a refund's
+      order ID shares no prefix with the original payment, so it cannot be
+      linked to it.
     """
 
     provider_id = "meituan"
@@ -77,7 +72,6 @@ class MeituanProvider(BaseProvider):
     _extract_card_last4 = staticmethod(extract_card_last4)
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse Meituan CSV statement file."""
         transactions: list[Transaction] = []
 
         with open(file_path, encoding="utf-8-sig", newline="") as f:
@@ -85,22 +79,19 @@ class MeituanProvider(BaseProvider):
 
         lines = content.splitlines()
 
-        # Extract statement period from header
         header_text = "\n".join(lines[:MEITUAN_HEADER_LINES])
         statement_period = self._extract_statement_period(header_text)
 
         reader = csv.reader(lines)
 
         for line_num, row in enumerate(reader):
-            # Skip header lines
             if line_num < MEITUAN_HEADER_LINES:
                 continue
 
-            # Skip empty rows or rows that don't look like data
             if not row or len(row) < 8:
                 continue
 
-            # Skip the column header row (in case header count drifts)
+            # Guards against a header block longer than MEITUAN_HEADER_LINES.
             if row[0].strip() == "交易创建时间":
                 continue
 
@@ -123,8 +114,7 @@ class MeituanProvider(BaseProvider):
         line_num: int,
         statement_period: tuple[date, date] | None = None,
     ) -> Transaction | None:
-        """Parse a single CSV row into a Transaction."""
-        # Clean whitespace (Meituan appends a tab to order/merchant IDs)
+        # Meituan appends a tab to order and merchant IDs.
         row = [field.strip() for field in row]
 
         create_time_str = row[0]
@@ -139,28 +129,23 @@ class MeituanProvider(BaseProvider):
         merchant_id = row[9] if len(row) > 9 else ""
         remarks = row[10] if len(row) > 10 else ""
 
-        # Parse direction (收/支)
         direction = self._get_direction(direction_str)
         if direction in (MeituanTxType.EMPTY, MeituanTxType.NEUTRAL):
             return None
 
-        # Prefer success time; fall back to creation time if absent
         time_str = success_time_str or create_time_str
         tx_datetime = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
 
-        # Amount: use actual paid amount (what really left the account)
+        # 实付金额 is what left the account; 订单金额 is before discounts.
         amount = self._parse_amount(paid_amount_str)
         if amount is None:
             return None
 
-        # Convention: expense is positive, income is negative
+        # Expenses are positive, income negative.
         if direction == MeituanTxType.INCOME and amount > 0:
             amount = -amount
 
-        # Meituan titles look like "商户名-商品/订单号". Split on the first "-":
-        # the prefix is the merchant (payee), the remainder is the description.
-        # Titles without "-" (e.g. "江苏联通200元") leave payee empty and keep
-        # the whole title as the description.
+        # A title without "-" (e.g. "话费充值100元") has no payee.
         payee: str | None = None
         description = title
         if "-" in title:
@@ -176,13 +161,10 @@ class MeituanProvider(BaseProvider):
             metadata["merchant_id"] = merchant_id
         if remarks and remarks != "/":
             metadata["remarks"] = remarks
-        # Keep the nominal order amount when it differs from paid (discount/coupon)
         order_amount = self._parse_amount(order_amount_str)
         if order_amount is not None and order_amount != abs(amount):
             metadata["order_amount"] = str(order_amount)
 
-        # Tag refunds (#refund) — Meituan provides no linkable original order ID,
-        # so we only mark them rather than linking to the original payment.
         tags = ["refund"] if tx_type_str == "退款" else []
 
         return Transaction(
@@ -204,7 +186,6 @@ class MeituanProvider(BaseProvider):
 
     @staticmethod
     def _parse_amount(value: str) -> Decimal | None:
-        """Parse an amount string like '¥42.50' or '42.50' into Decimal."""
         cleaned = value.lstrip("¥￥").replace(",", "").strip()
         if not cleaned:
             return None
@@ -214,7 +195,6 @@ class MeituanProvider(BaseProvider):
             return None
 
     def _get_direction(self, direction_str: str) -> MeituanTxType:
-        """Convert 收/支 string to enum."""
         direction_str = direction_str.strip()
         try:
             return MeituanTxType(direction_str)
@@ -222,10 +202,6 @@ class MeituanProvider(BaseProvider):
             return MeituanTxType.EMPTY
 
     def _extract_statement_period(self, header_text: str) -> tuple[date, date] | None:
-        """Extract statement period from header text.
-
-        Meituan format: 起始时间：[2025-01-01] 终止时间：[2025-01-31]
-        """
         match = STATEMENT_PERIOD_REGEX.search(header_text)
         if match:
             start_date = date.fromisoformat(match.group(1))

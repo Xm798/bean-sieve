@@ -46,7 +46,7 @@ FX_REF_RE = re.compile(r"FX Ref:\s*([A-Z0-9]+)")
 # Posting date on a card spending, e.g. "Transaction Date: 7 May 2026". Despite
 # the label it is the later of the two dates: the Date column holds the trade.
 POST_DATE_RE = re.compile(r"Transaction Date:\s*(\d{1,2}\s+[A-Z][a-z]{2}\s+\d{4})")
-# Incoming-transfer description, e.g. "Receive money from <name>"
+# Transfer description, e.g. "Receive money from <name>" or "Transfer to <name>"
 _TRANSFER_RE = re.compile(r"(?:Receive money from|Transfer to)\s+(.+)")
 # Normalized description for cross-currency exchange legs (the raw cell holds
 # only the rate/value-date detail, which is kept in metadata instead).
@@ -134,7 +134,6 @@ class WeLabProvider(BaseProvider):
     content_keywords = ["WeLab", "汇立"]
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse WeLab consolidated monthly PDF statement."""
         import fitz
 
         sections: dict[str, _Section] = defaultdict(_Section)
@@ -189,8 +188,6 @@ class WeLabProvider(BaseProvider):
             transactions.extend(rows)
         return transactions
 
-    # === Page extraction ===
-
     def _page_sections(
         self, page, carried_currency: str | None
     ) -> tuple[list[tuple[str, _Grid | None, list[list[_Word]]]], str | None]:
@@ -240,7 +237,7 @@ class WeLabProvider(BaseProvider):
         """Collect row borders and shaded rows between ``top`` and ``bottom``.
 
         Both map a y position to the x spans of the cells drawn there; a shaded
-        row is keyed by its top and reports its height in the span set's key.
+        row is entered at both its top and its bottom edge.
         """
         rules: dict[float, set[tuple[float, float]]] = defaultdict(set)
         shaded: dict[float, set[tuple[float, float]]] = defaultdict(set)
@@ -317,7 +314,7 @@ class WeLabProvider(BaseProvider):
 
     @staticmethod
     def _date_text(band: list[_Word]) -> str | None:
-        """Return the row's date: the leftmost words on the leftmost word's line."""
+        """The first three words on the leftmost word's line, None unless a date."""
         first = min(band, key=lambda w: w[0])
         line = sorted((w for w in band if abs(w[1] - first[1]) < 1), key=lambda w: w[0])
         text = " ".join(w[4] for w in line[:3])
@@ -332,12 +329,10 @@ class WeLabProvider(BaseProvider):
 
     @staticmethod
     def _balance_amount(band: list[_Word]) -> Decimal:
-        """Read a balance row's figure; the statement prints "-" for nil."""
+        """The row's rightmost word; the statement prints "-" for nil, read as 0."""
         last = max(band, key=lambda w: w[2])[4]
         match = AMOUNT_RE.fullmatch(last)
         return Decimal(match.group(0).replace(",", "")) if match else Decimal(0)
-
-    # === Balances ===
 
     @staticmethod
     def _stamp_balances(
@@ -377,8 +372,6 @@ class WeLabProvider(BaseProvider):
             balance -= txn.amount
             txn.metadata["balance"] = str(balance)
 
-    # === Row -> Transaction ===
-
     def _build_transaction(
         self,
         currency: str,
@@ -387,7 +380,6 @@ class WeLabProvider(BaseProvider):
         row_idx: int,
         statement_period: tuple[date, date] | None,
     ) -> Transaction | None:
-        """Build a Transaction from extracted row cells."""
         date_str = cells.get("date", "")
         type_str = cells.get("type", "")
         desc_str = cells.get("desc", "")
@@ -402,10 +394,9 @@ class WeLabProvider(BaseProvider):
             )
             return None
 
-        # order_id is the transaction's own "Ref:" (the first one). The detail is
-        # everything before it (the merchant / rate); the tail of richer rows
-        # ("Transaction Date: ...", "FX Ref: ...") is captured separately so it
-        # doesn't clutter the description.
+        # order_id is the first "Ref:"; the detail is the text before it (the
+        # merchant or rate), and the "Transaction Date:" / "FX Ref:" tail goes
+        # to its own fields.
         ref = REF_RE.search(desc_str)
         order_id = ref.group(1) if ref else None
         detail = desc_str.split("Ref:", 1)[0].strip()
@@ -424,8 +415,6 @@ class WeLabProvider(BaseProvider):
         )
 
         if is_exchange:
-            # The raw detail is just the rate / value-date; use a stable
-            # description and keep the detail in metadata.
             description = _EXCHANGE_DESC
             if detail:
                 metadata["exchange_info"] = detail
@@ -433,12 +422,11 @@ class WeLabProvider(BaseProvider):
         else:
             description = detail or type_en or type_str
             payee = self._extract_payee(detail)
-            # For incoming transfers the payee name is also the counterparty.
+            # A transfer's payee is also its counterparty.
             if payee and _TRANSFER_RE.search(detail):
                 metadata["counterparty"] = payee
 
-        # Tag refunds with #refund and link the order id via ^<order_id> so the
-        # refund can be associated with its order in the ledger.
+        # The ^<order_id> link ties a refund to its order in the ledger.
         tags: list[str] = []
         links: list[str] = []
         if "Refund" in type_en:
@@ -466,7 +454,6 @@ class WeLabProvider(BaseProvider):
 
     @staticmethod
     def _parse_date(date_str: str) -> date | None:
-        """Parse date from 'dd Mon yyyy' format (e.g., '20 Apr 2026')."""
         match = re.match(r"(\d{1,2})\s+(\w{3})\s+(\d{4})", date_str)
         if not match:
             return None
@@ -480,11 +467,6 @@ class WeLabProvider(BaseProvider):
 
     @staticmethod
     def _parse_amount(amount_str: str) -> Decimal | None:
-        """Parse amount, negating to bean-sieve sign convention.
-
-        Statement shows debit (outflow) as negative and credit (inflow) as
-        positive. bean-sieve uses expense=positive, income=negative, so negate.
-        """
         match = AMOUNT_RE.search(amount_str)
         if not match:
             return None
@@ -505,10 +487,8 @@ class WeLabProvider(BaseProvider):
 
     @staticmethod
     def _extract_payee(detail: str) -> str | None:
-        """Extract a merchant/payee name from the description detail."""
         if not detail:
             return None
-        # "Receive money from <name>" -> "<name>"
         recv = _TRANSFER_RE.search(detail)
         if recv:
             return recv.group(1).strip()
@@ -518,10 +498,7 @@ class WeLabProvider(BaseProvider):
             return merchant or None
         return None
 
-    # === Statement period & detection ===
-
     def _extract_statement_period(self, doc) -> tuple[date, date] | None:
-        """Extract statement period from PDF header."""
         if doc.page_count < 1:
             return None
         text = doc[0].get_text()[:600]
@@ -537,9 +514,7 @@ class WeLabProvider(BaseProvider):
 
     @classmethod
     def _match_content(cls, file_path: Path) -> bool:
-        """Check if PDF content matches WeLab.
-
-        The bank name ("汇立"/"welab.bank") only appears in the notes on a later,
+        """The bank name ("汇立"/"welab.bank") only appears in the notes on a later,
         variable page. The first page always carries WeLab-specific product names
         ("Global Wallet Core Account", "智安存 Money Safe"), so detect on those.
         The time-deposit label is no marker: "GoSave 2.0" became "Time Deposit"

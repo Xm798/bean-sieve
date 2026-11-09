@@ -1,5 +1,3 @@
-"""Tests for Meituan payment provider."""
-
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -7,7 +5,7 @@ from pathlib import Path
 from bean_sieve.providers.payment.meituan import MeituanProvider
 
 # 20 header lines (indices 0-18 metadata/tips/section, index 19 column header),
-# data rows start at index 20. All values synthetic.
+# data rows start at index 20.
 HEADER = """美团交易账单明细
 美团用户名：[test_user]
 起始时间：[2030-01-01] 终止时间：[2030-01-31]
@@ -38,10 +36,7 @@ def _write(tmp_path: Path, rows: str, name: str = "美团账单.csv") -> Path:
 
 
 class TestMeituanProvider:
-    """Tests for MeituanProvider."""
-
     def test_parse_basic(self, tmp_path: Path) -> None:
-        """Basic expense row maps to a positive amount."""
         rows = (
             "2030-01-15 12:00:01,2030-01-15 12:00:05,支付,测试餐厅-代金券,支出,"
             "测试银行信用卡(8888),¥100.00,¥100.00,"
@@ -64,12 +59,11 @@ class TestMeituanProvider:
         assert tx.provider == "meituan"
         assert tx.metadata["tx_type"] == "支付"
         assert tx.metadata["merchant_id"] == "MC2000000001"
-        # "/" remarks are dropped, order == paid so no order_amount
+        # "/" remarks are dropped; order == paid, so no order_amount
         assert "remarks" not in tx.metadata
         assert "order_amount" not in tx.metadata
 
     def test_refund_is_negative(self, tmp_path: Path) -> None:
-        """退款/收入 rows become negative (income)."""
         rows = (
             "2030-01-16 09:00:00,2030-01-16 09:00:02,退款,测试餐厅-代金券,收入,"
             "测试银行信用卡(8888),¥30.00,¥30.00,"
@@ -79,10 +73,9 @@ class TestMeituanProvider:
         assert len(txns) == 1
         assert txns[0].amount == Decimal("-30.00")
         assert txns[0].metadata["tx_type"] == "退款"
-        assert "refund" in txns[0].tags  # tagged #refund
+        assert "refund" in txns[0].tags
 
     def test_discount_records_order_amount(self, tmp_path: Path) -> None:
-        """When paid differs from order amount, keep nominal order_amount."""
         rows = (
             "2030-01-17 08:00:00,2030-01-17 08:00:01,支付,测试奶茶店-果茶,支出,"
             "测试银行信用卡(8888),¥20.00,¥18.00,"
@@ -114,7 +107,7 @@ class TestMeituanProvider:
         assert txns[0].metadata["method"] == "ApplePay"
 
     def test_payee_empty_without_separator(self, tmp_path: Path) -> None:
-        """Titles without '-' leave payee empty; description keeps full title."""
+        """Titles without '-' leave payee empty; description keeps the full title."""
         rows = (
             "2030-01-21 10:00:00,2030-01-21 10:00:01,支付,测试话费充值200元,支出,"
             "云闪付,¥200.00,¥200.00,"
@@ -125,7 +118,6 @@ class TestMeituanProvider:
         assert txns[0].description == "测试话费充值200元"
 
     def test_success_time_fallback_to_create_time(self, tmp_path: Path) -> None:
-        """Empty success time falls back to creation time."""
         rows = (
             "2030-01-22 08:30:00,,支付,测试餐厅-套餐,支出,"
             "测试银行信用卡(8888),¥60.00,¥60.00,"
@@ -136,7 +128,6 @@ class TestMeituanProvider:
         assert txns[0].date == date(2030, 1, 22)
 
     def test_skip_neutral_and_empty(self, tmp_path: Path) -> None:
-        """不计收支 rows and blank/short rows are skipped."""
         rows = (
             "2030-01-19 10:00:00,2030-01-19 10:00:01,充值,测试充值,不计收支,"
             "测试银行信用卡(8888),¥100.00,¥100.00,"
@@ -148,7 +139,6 @@ class TestMeituanProvider:
         assert txns == []
 
     def test_statement_period_date_only(self, tmp_path: Path) -> None:
-        """Meituan header uses date-only statement period."""
         rows = (
             "2030-01-15 12:00:01,2030-01-15 12:00:05,支付,测试餐厅,支出,"
             "测试银行信用卡(8888),¥100.00,¥100.00,"
@@ -158,11 +148,9 @@ class TestMeituanProvider:
         assert txns[0].statement_period == (date(2030, 1, 1), date(2030, 1, 31))
 
     def test_empty_statement(self, tmp_path: Path) -> None:
-        """Header-only file returns no transactions."""
         assert MeituanProvider().parse(_write(tmp_path, "")) == []
 
     def test_thousand_separator_amount(self, tmp_path: Path) -> None:
-        """Amounts with thousand separators parse correctly."""
         rows = (
             "2030-01-20 10:00:00,2030-01-20 10:00:01,支付,测试大额消费,支出,"
             '测试银行信用卡(8888),"¥1,549.00","¥1,549.00",'
@@ -172,7 +160,6 @@ class TestMeituanProvider:
         assert txns[0].amount == Decimal("1549.00")
 
     def test_detection(self, tmp_path: Path) -> None:
-        """Filename and content keywords detect Meituan statements."""
         rows = (
             "2030-01-15 12:00:01,2030-01-15 12:00:05,支付,测试餐厅,支出,"
             "测试银行信用卡(8888),¥100.00,¥100.00,"

@@ -39,8 +39,6 @@ _PERIOD_RE = re.compile(
 
 @register_provider
 class PSBCCreditProvider(BaseProvider):
-    """Parse PSBC credit-card email statements."""
-
     provider_id = "psbc_credit"
     provider_name = "邮储银行信用卡"
     supported_formats = [".eml"]
@@ -53,7 +51,7 @@ class PSBCCreditProvider(BaseProvider):
 
     @classmethod
     def _match_content(cls, file_path: Path) -> bool:
-        """Detect PSBC markers in a decoded EML subject or HTML body."""
+        """Look for the first keyword in the decoded subject, the second in the HTML <title>."""
         try:
             with open(file_path, "rb") as file:
                 message = email.message_from_binary_file(file)
@@ -69,7 +67,6 @@ class PSBCCreditProvider(BaseProvider):
             return False
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse a PSBC credit-card email statement."""
         html = self.extract_html_from_eml(file_path)
         soup = self.parse_html(html)
         table_match = self._find_transaction_table(soup)
@@ -117,7 +114,10 @@ class PSBCCreditProvider(BaseProvider):
         self,
         soup: BeautifulSoup,
     ) -> tuple[Tag, dict[str, int], int] | None:
-        """Find the leaf table containing one complete transaction header."""
+        """Return the leaf table holding a row of exactly EXPECTED_HEADERS.
+
+        Also returns its column map and the header row's 1-based number.
+        """
         expected = set(EXPECTED_HEADERS)
         for table in soup.find_all("table"):
             if table.find("table") is not None:
@@ -144,7 +144,7 @@ class PSBCCreditProvider(BaseProvider):
         file_path: Path,
         row_number: int,
     ) -> Transaction | None:
-        """Parse one transaction row without exposing malformed content."""
+        """Return None for a malformed row, so the caller logs its number, not its content."""
         try:
             transaction_date = self._parse_date(cells[column_map["交易日"]])
             post_date = self._parse_date(cells[column_map["记账日"]])
@@ -186,7 +186,6 @@ class PSBCCreditProvider(BaseProvider):
 
     @staticmethod
     def _parse_date(value: str) -> date | None:
-        """Parse a strict YYYYMMDD date."""
         if _DATE_RE.fullmatch(value) is None:
             return None
         try:
@@ -196,7 +195,7 @@ class PSBCCreditProvider(BaseProvider):
 
     @staticmethod
     def _parse_amount(value: str) -> Decimal | None:
-        """Parse a signed CNY amount while preserving the source sign."""
+        """Keep the sign printed after ￥: it already follows the internal convention."""
         if _AMOUNT_RE.fullmatch(value) is None:
             return None
         try:
@@ -207,7 +206,7 @@ class PSBCCreditProvider(BaseProvider):
 
     @staticmethod
     def _extract_statement_period(text: str) -> tuple[date, date] | None:
-        """Extract and validate the explicit statement period."""
+        """None when 账单周期为【…】 is absent or not a valid date range."""
         match = _PERIOD_RE.search(text)
         if match is None:
             return None

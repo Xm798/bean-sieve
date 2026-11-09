@@ -14,27 +14,21 @@ from .types import (
 )
 
 __all__ = [
-    # Types
     "Transaction",
     "MatchResult",
     "ReconcileResult",
     "ReconcileContext",
     "MatchSource",
-    # Sieve
     "Sieve",
     "SieveConfig",
     "create_sieve",
-    # Preset Rules
     "PresetRule",
     "PresetRuleCondition",
     "PresetRuleAction",
-    # Rules
     "RulesEngine",
     "apply_rules",
-    # Suggest
     "SuggestedRule",
     "suggest_rules",
-    # Output
     "BeancountWriter",
     "write_output",
 ]

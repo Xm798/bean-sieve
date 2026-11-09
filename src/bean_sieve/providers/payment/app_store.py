@@ -16,9 +16,7 @@ from ..base import BaseProvider
 
 logger = logging.getLogger(__name__)
 
-# Currency symbol to ISO code mapping
-# NOTE: "¥" is ambiguous (CNY and JPY both use it). Defaults to CNY since this
-# tool is primarily used with the Chinese App Store. JPY users should verify.
+# A bare "¥" is shared by CNY and JPY; it maps to CNY, the China App Store's currency.
 CURRENCY_MAP = {
     "¥": "CNY",
     "CN¥": "CNY",
@@ -36,7 +34,7 @@ CURRENCY_MAP = {
     "₹": "INR",
 }
 
-# Regex to split currency symbol from amount: "¥19.90" -> ("¥", "19.90")
+# "¥19.90" -> ("¥", "19.90")
 AMOUNT_RE = re.compile(r"^([^\d\-]+)?\s*(-?[\d,]+\.?\d*)$")
 
 # pliDate is UTC; the ledger books App Store charges on the Beijing calendar day.
@@ -65,7 +63,6 @@ class AppStoreProvider(BaseProvider):
     content_keywords = ["reportaproblem.apple.com/api/purchase/search"]
 
     def parse(self, file_path: Path) -> list[Transaction]:
-        """Parse Apple purchase history from HAR file."""
         with open(file_path, encoding="utf-8") as f:
             har = json.load(f)
 
@@ -104,7 +101,6 @@ class AppStoreProvider(BaseProvider):
         file_path: Path,
         seen_item_ids: set[str],
     ) -> list[Transaction]:
-        """Parse a single purchase record into transactions."""
         results: list[Transaction] = []
         weborder = purchase.get("weborder", "")
 
@@ -130,13 +126,12 @@ class AppStoreProvider(BaseProvider):
         weborder: str,
         file_path: Path,
     ) -> Transaction | None:
-        """Parse a purchase line item into a Transaction."""
         amount_str = pli.get("amountPaid", "")
         amount, currency = self._parse_amount(amount_str)
         if amount is None or currency is None or amount == Decimal(0):
             return None
 
-        # isCredit means refund/credit — negate to income
+        # isCredit marks a refund or credit, booked as income.
         if pli.get("isCredit", False):
             amount = -amount
 
@@ -150,12 +145,12 @@ class AppStoreProvider(BaseProvider):
         detail = content.get("detailForDisplay", "")
         media_type = content.get("mediaType", "") or ""
 
-        # description = item name, payee = app/service name
+        # nameForDisplay is the item, detailForDisplay the app or service.
         description = name if name else detail
         payee = detail if detail and detail != name else None
 
         item_id = pli.get("itemId", "")
-        # Use composite order_id to avoid match_key collision for multi-PLI purchases
+        # The line items of one purchase share its weborder, so match_key needs the item.
         order_id = f"{weborder}-{item_id}" if weborder and item_id else weborder
 
         return Transaction(
@@ -210,11 +205,10 @@ class AppStoreProvider(BaseProvider):
 
     @staticmethod
     def _parse_date(date_str: str | None) -> datetime | None:
-        """Parse ISO datetime string like '2026-03-22T04:00:44Z'."""
+        """Parse a UTC pliDate such as '2026-03-22T04:00:44.264Z' into naive LOCAL_TZ time."""
         if not date_str:
             return None
         try:
-            # Handle both "2026-03-22T04:00:44Z" and "2026-03-22T04:00:44.264Z"
             cleaned = date_str.replace("Z", "+00:00")
             dt = datetime.fromisoformat(cleaned)
             return dt.astimezone(LOCAL_TZ).replace(tzinfo=None)

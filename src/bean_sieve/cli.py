@@ -33,7 +33,6 @@ console = Console()
 
 
 def parse_date_range(date_range: str | None) -> tuple[date, date] | None:
-    """Parse date range string (START:END) into tuple."""
     if not date_range:
         return None
 
@@ -77,7 +76,6 @@ def get_config_search_paths() -> list[Path]:
 
 
 def resolve_config_path(config_path: str | None) -> Path | None:
-    """Resolve config file path, auto-detecting default if not specified."""
     if config_path:
         return Path(config_path)
 
@@ -91,13 +89,11 @@ def resolve_config_path(config_path: str | None) -> Path | None:
 def resolve_ledger_path(
     ledger: str | None, config: Config | None, config_path: Path | None
 ) -> Path:
-    """Resolve ledger path from CLI option or config file."""
     if ledger:
         return Path(ledger).expanduser()
 
     if config and config.defaults.ledger:
         ledger_from_config = Path(config.defaults.ledger).expanduser()
-        # Resolve relative paths relative to config file location
         if config_path and not ledger_from_config.is_absolute():
             ledger_from_config = config_path.parent / ledger_from_config
         if not ledger_from_config.exists():
@@ -134,12 +130,10 @@ def completion(shell: str):
 
     from click.shell_completion import get_completion_class
 
-    # Get the completion class for the specified shell
     comp_cls = get_completion_class(shell)
     if comp_cls is None:
         raise click.ClickException(f"Unsupported shell: {shell}")
 
-    # Get package info for the prog_name
     try:
         entry_points = importlib.metadata.entry_points(group="console_scripts")
         prog_name = "bean-sieve"
@@ -203,7 +197,6 @@ def reconcile(
     and generate Beancount entries for missing transactions.
     """
     try:
-        # Parse inputs
         file_paths = [Path(f) for f in files]
         config_file = resolve_config_path(config_path)
         config = load_config(config_file) if config_file else None
@@ -214,7 +207,6 @@ def reconcile(
         if not quiet:
             console.print(f"[bold]Processing {len(file_paths)} file(s)...[/bold]")
 
-        # Run reconciliation
         result = api.full_reconcile(
             statement_paths=file_paths,
             ledger_path=ledger_path,
@@ -226,7 +218,6 @@ def reconcile(
             keep_overlap=keep_overlap,
         )
 
-        # Display results
         if not quiet:
             _display_result(result, verbose)
 
@@ -312,13 +303,11 @@ def export(files, provider, output, output_format):
                 console.print(f"[yellow]No transactions in {file_path.name}[/yellow]")
                 continue
 
-            # Determine output path
             if output and len(file_paths) == 1:
                 out_path = Path(output)
             else:
                 out_path = generate_export_filename(file_path, output_format)
 
-            # Export
             if output_format == "csv":
                 export_csv(transactions, out_path)
             else:
@@ -368,7 +357,6 @@ def check(files, ledger, config_path, provider, date_range):
         if dr:
             transactions = [t for t in transactions if dr[0] <= t.date <= dr[1]]
 
-        # Load ledger and match
         sieve = api.load_ledger(
             ledger_path,
             date_range=dr,
@@ -379,7 +367,6 @@ def check(files, ledger, config_path, provider, date_range):
         )
         match_result = sieve.match(transactions)
 
-        # Display results
         _display_check_result(match_result)
 
     except Exception as e:
@@ -476,7 +463,8 @@ def suggest_rules_cmd(ledger, config_path, output, min_count, min_ratio):
 
 
 def _merge_rules_to_file(output_path: Path, suggestions: list[SuggestedRule]) -> None:
-    """Merge suggested rules into an existing YAML config file."""
+    """Append the suggestions to the file's ``rules``, after copying an
+    existing file to ``<stem>.yaml.bak``."""
     import re
     import shutil
 
@@ -530,18 +518,16 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
     """
     Extract payment methods and generate account mappings interactively.
 
-    Parses statement files, extracts unique payment methods (e.g., "建设银行信用卡(4680)"),
+    Parses statement files, extracts unique payment methods (e.g., "建设银行信用卡(1234)"),
     and lets you select corresponding accounts using fzf fuzzy search.
     """
     try:
         file_paths = [Path(f) for f in files]
         output_path = Path(output)
 
-        # Load existing config (also used to resolve ledger path)
         existing_config = load_config(output_path) if output_path.exists() else None
         ledger_path = resolve_ledger_path(ledger, existing_config, output_path)
 
-        # Skip already-configured patterns
         existing_patterns: set[str] = set()
         if existing_config:
             existing_patterns = {m.pattern for m in existing_config.account_mappings}
@@ -550,7 +536,6 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
                     f"[dim]已有 {len(existing_patterns)} 个配置，将跳过[/dim]"
                 )
 
-        # Parse statements
         console.print(f"[bold]Parsing {len(file_paths)} file(s)...[/bold]")
         transactions = api.parse_statements(file_paths, provider)
 
@@ -558,7 +543,6 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
             console.print("[yellow]No transactions found.[/yellow]")
             return
 
-        # Extract payment methods (skip already configured, case-insensitive dedup)
         methods = extract_payment_methods(transactions, existing_patterns)
 
         if not methods:
@@ -572,7 +556,6 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
             )
         )
 
-        # Load accounts from ledger
         accounts, closed = load_accounts_from_ledger(ledger_path)
         if not accounts:
             console.print("[red]No accounts found in ledger.[/red]")
@@ -581,18 +564,15 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
         console.print(f"Loaded [cyan]{len(accounts)}[/cyan] accounts from ledger\n")
 
         if non_interactive:
-            # Non-interactive mode: just output template
             _output_template(methods, output)
             return
 
-        # Interactive mode with fzf
         mappings = _interactive_select(methods, accounts, closed)
 
         if not mappings:
             console.print("[yellow]No mappings created.[/yellow]")
             return
 
-        # Merge with existing config and save
         import shutil
 
         from .config.schema import get_yaml
@@ -601,7 +581,6 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
 
         config_data: dict = {}
         if output_path.exists():
-            # Create backup before modifying
             backup_path = output_path.with_suffix(".yaml.bak")
             shutil.copy2(output_path, backup_path)
             console.print(f"[dim]Backup saved to {backup_path}[/dim]")
@@ -609,7 +588,6 @@ def extract_accounts(files, ledger, provider, output, non_interactive):
             with open(output_path, encoding="utf-8") as f:
                 config_data = yaml.load(f) or {}
 
-        # Append new mappings
         if "account_mappings" not in config_data:
             config_data["account_mappings"] = []
 
@@ -666,7 +644,8 @@ def _fzf_pick(
     except (FileNotFoundError, OSError):
         return None, None
 
-    # Non-zero/non-one exit means abort (Ctrl-C, exit 130) -> treat as quit
+    # fzf exits 1 when nothing matched; any other code (130 for Ctrl-C) is an
+    # abort and quits.
     if proc.returncode not in (0, 1):
         return "ctrl-q", None
 
@@ -694,20 +673,16 @@ def _interactive_select(methods, accounts, closed: set[str]) -> list[tuple[str, 
     total = len(methods)
 
     for i, method in enumerate(methods, 1):
-        # Build header for fzf
         header_lines = [f"[{i}/{total}] {method.raw}"]
-        # Only show hint if we detected card type (credit/debit)
         if method.is_credit is not None:
             card_type = "信用卡" if method.is_credit else "储蓄卡"
             header_lines.append(f"  → {card_type}")
-        # Always show the hotkeys so skipping/quitting is discoverable
+        # The hotkeys are always shown so skipping and quitting are discoverable.
         header_lines.append("  ↵ 选中账户 · Esc 跳过此项 · Ctrl-Q 退出")
         header = "\n".join(header_lines)
 
-        # Smart sort accounts (closed accounts go to the end)
         sorted_accounts = smart_sort_accounts(accounts, method, closed)
 
-        # Mark closed accounts
         display_accounts = [
             acc + CLOSED_MARKER if acc in closed else acc for acc in sorted_accounts
         ]
@@ -724,7 +699,6 @@ def _interactive_select(methods, accounts, closed: set[str]) -> list[tuple[str, 
             console.print(f"[dim]{escape(method.raw)} → 已跳过[/dim]", emoji=False)
             continue
 
-        # Strip closed marker before saving
         account = selected.removesuffix(CLOSED_MARKER)
         mappings.append((method.raw, account))
         console.print(
@@ -735,7 +709,6 @@ def _interactive_select(methods, accounts, closed: set[str]) -> list[tuple[str, 
 
 
 def _output_template(methods, output_path):
-    """Output non-interactive template."""
     lines = ["# 发现以下支付方式，请补充对应账户：", "account_mappings:"]
 
     for method in methods:
@@ -752,7 +725,6 @@ def _output_template(methods, output_path):
 
 
 def _print_match_counts(match_result):
-    """Print the Matched/Missing/Extra/Ambiguous count lines."""
     console.print(f"  [green]✅ Matched:[/green] {len(match_result.matched)}")
     console.print(f"  [yellow]⚠️  Missing:[/yellow] {len(match_result.missing)}")
     console.print(f"  [red]❓ Extra:[/red] {len(match_result.extra)}")
@@ -768,7 +740,7 @@ def _coverage_label(entry: CoverageEntry) -> str:
 
 
 def _display_coverage(selection: CoverageSelection, verbose: bool = False):
-    """Display which overlapping statement files were adopted and dropped."""
+    """Without ``verbose``, only adopted files that displaced another are listed."""
     if not selection.drops and not (verbose and selection.adopted):
         return
 
@@ -797,17 +769,14 @@ def _display_coverage(selection: CoverageSelection, verbose: bool = False):
 
 
 def _display_result(result, verbose: bool = False):
-    """Display reconciliation result."""
     mr = result.match_result
 
     if result.coverage is not None:
         _display_coverage(result.coverage, verbose)
 
-    # Summary
     console.print("\n[bold]Summary:[/bold]")
     _print_match_counts(mr)
 
-    # Categorization stats
     if result.processed:
         by_source = {}
         for t in result.processed:
@@ -819,7 +788,6 @@ def _display_result(result, verbose: bool = False):
             icon = "✅" if source == "rule" else "❓"
             console.print(f"  {icon} {source}: {count}")
 
-    # Show missing transactions if verbose
     if verbose and mr.missing:
         console.print(f"\n[bold]Missing transactions ({len(mr.missing)}):[/bold]")
         for txn in sorted(mr.missing, key=lambda t: t.date)[:20]:
@@ -831,7 +799,6 @@ def _display_result(result, verbose: bool = False):
 
 
 def _display_check_result(match_result):
-    """Display check command result."""
     console.print("\n[bold]Reconciliation Check:[/bold]")
     _print_match_counts(match_result)
 
@@ -856,14 +823,13 @@ def _display_check_result(match_result):
 
 
 def _display_transactions_table(transactions):
-    """Display transactions as a table."""
     table = Table(title="Parsed Transactions")
     table.add_column("Date", style="cyan")
     table.add_column("Amount", justify="right", style="green")
     table.add_column("Description", style="white")
     table.add_column("Payee", style="yellow")
 
-    for txn in transactions[:50]:  # Limit display
+    for txn in transactions[:50]:
         table.add_row(
             str(txn.date),
             f"{txn.amount} {txn.currency}",
@@ -877,7 +843,6 @@ def _display_transactions_table(transactions):
 
 
 def _output_csv(transactions, output_path):
-    """Output transactions as CSV."""
     import contextlib
     import csv
     import sys
