@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from beancount.core.data import TxnPosting
+from beancount.core.data import Directive, TxnPosting
 from pydantic import BaseModel, ConfigDict, Field, InstanceOf, computed_field
 
 from .coverage import CoverageSelection
@@ -305,3 +305,6 @@ class ReconcileContext:
     # Per-path id of the provider that parsed it: an explicitly named provider
     # owns files that detection would not recognise.
     provider_ids: dict[Path, str] = field(default_factory=dict)
+    # The whole loaded ledger, unfiltered, so a hook can read balances
+    # outside the reconciled window; empty until the ledger loads.
+    ledger_directives: list[Directive] = field(default_factory=list)

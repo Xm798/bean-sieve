@@ -254,7 +254,10 @@ class BaseProvider(ABC):
         Hook: Called after output generation.
 
         Use this to append additional content to the generated output,
-        such as settlement entries or reconciliation summaries.
+        such as settlement entries or reconciliation summaries. An entry
+        appended for a statement item the ledger lacks also goes into
+        ``result.match_result.missing``, and an Extra posting the hook recognises
+        as such an item moves to ``matched``; the CLI counts both after every hook.
         Default implementation returns unchanged.
 
         Args:

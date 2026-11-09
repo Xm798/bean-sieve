@@ -8,6 +8,8 @@ from pathlib import Path
 
 import fitz
 import pytest
+from beancount.core import data
+from beancount.parser import parser
 
 from bean_sieve.api import full_reconcile
 from bean_sieve.config.schema import Config, ProviderConfig
@@ -540,7 +542,9 @@ REBATE_HTML = f"""<html>
 </html>"""
 
 
-def formula_rebate_html(rebate_used: str, adjustment: str) -> str:
+def formula_rebate_html(
+    rebate_used: str, adjustment: str, deposit: str = "0.00"
+) -> str:
     """Statement laid out like the real 账务说明 formula and 刷卡金统计 tables.
 
     The previous balance is repaid in full, so the balance is this cycle's
@@ -580,7 +584,7 @@ def formula_rebate_html(rebate_used: str, adjustment: str) -> str:
 <tr>
 <td><span>人民币(CNY)</span></td>
 <td><span>{balance:.2f}</span></td>
-<td><span>0.00</span></td>
+<td><span>{deposit}</span></td>
 <td><span>{previous:.2f}</span></td>
 <td><span>0.00</span></td>
 <td><span>{REBATE_SPENDING:.2f}</span></td>
@@ -636,7 +640,7 @@ EXPECTED_REBATE_OUTPUT = f"""; base
 ;   账单应还:       {REBATE_SPENDING - REBATE_USED:>12.2f} CNY
 ;   刷卡金抵扣:     {REBATE_USED:>12.2f} CNY
 ;
-;   状态: ✅ 平账 (刷卡金 {REBATE_USED:.2f})
+;   状态: ⚠️ 待补刷卡金抵扣 {REBATE_USED:.2f}
 ; ============================================================
 """
 
@@ -701,9 +705,55 @@ class TestABCPostOutput:
             ),
         )
 
-        output = ABCCreditProvider().post_output("; base\n", empty_result(), context)
+        result = empty_result()
+        output = ABCCreditProvider().post_output("; base\n", result, context)
 
         assert output == EXPECTED_REBATE_OUTPUT
+        # The rebate the ledger lacks counts as Missing, so the summary counts
+        # show it alongside unmatched statement rows.
+        [missing] = result.match_result.missing
+        assert (missing.date, missing.amount, missing.card_last4) == (
+            date(2030, 1, 31),
+            -REBATE_USED,
+            "1234",
+        )
+
+    def test_post_output_recorded_rebate_is_not_missing(self, tmp_path):
+        file_path = tmp_path / "农业银行金穗信用卡刷卡金.eml"
+        file_path.write_text(create_abc_eml(REBATE_HTML), encoding="utf-8")
+        context = ReconcileContext(
+            statement_paths=[file_path],
+            provider_ids={file_path: "abc_credit"},
+            config=Config(
+                providers={
+                    "abc_credit": ProviderConfig(
+                        accounts={"1234": "Liabilities:Credit:ABC:1234"},
+                        rebate_income_account="Income:Rebate:ABC",
+                    )
+                }
+            ),
+        )
+        [entry], _, _ = parser.parse_string(
+            f"""
+2030-01-31 * "rebate-a"
+  Liabilities:Credit:ABC:1234  {REBATE_USED:.2f} CNY
+  Income:Rebate:ABC
+"""
+        )
+        assert isinstance(entry, data.Transaction)
+        result = empty_result()
+        result.match_result.extra.append(data.TxnPosting(entry, entry.postings[0]))
+
+        output = ABCCreditProvider().post_output("", result, context)
+
+        assert f"状态: ✅ 平账 (刷卡金 {REBATE_USED:.2f} 已记录)" in output
+        assert "--- 刷卡金抵扣 ---" not in output
+        assert result.match_result.missing == []
+        # The ledger's rebate settles the statement's deduction, so it leaves
+        # Extra for Matched.
+        assert result.match_result.extra == []
+        [(_, matched)] = result.match_result.matched
+        assert matched.txn is entry
 
     def test_post_output_reports_files_assigned_to_it(self, tmp_path, abc_html_content):
         """A statement the run assigned to ABC is reported whatever its name."""
@@ -994,7 +1044,7 @@ class TestABCRebateAdjustment:
         assert "  Liabilities:Credit:ABC:1234  34.00 CNY\n" in output
         assert ";   刷卡金抵扣:            34.00 CNY\n" in output
         assert ";     (本期使用刷卡金 53.00, 本期调整 34.00)\n" in output
-        assert "状态: ✅ 平账 (刷卡金 34.00)" in output
+        assert "状态: ⚠️ 待补刷卡金抵扣 34.00" in output
 
     def test_equal_amounts_report_no_breakdown(self, tmp_path):
         output = self.run(tmp_path, "34.00", "34.00")
@@ -1007,6 +1057,88 @@ class TestABCRebateAdjustment:
 
         assert "  Liabilities:Credit:ABC:1234  34.00 CNY\n" in output
         assert "⚠️ 调整金额 53.00 超出刷卡金使用 34.00" in output
+
+
+class TestABCBalanceCheck:
+    """The report compares the ledger's card balance with the statement's."""
+
+    @staticmethod
+    def run(tmp_path, ledger_text: str) -> str:
+        file_path = tmp_path / "农业银行金穗信用卡刷卡金.eml"
+        html = formula_rebate_html("53.00", "53.00")
+        file_path.write_text(create_abc_eml(html), encoding="utf-8")
+        directives, _, _ = parser.parse_string(ledger_text)
+        context = ReconcileContext(
+            statement_paths=[file_path],
+            provider_ids={file_path: "abc_credit"},
+            config=Config(
+                providers={
+                    "abc_credit": ProviderConfig(
+                        accounts={"1234": "Liabilities:Credit:ABC:1234"},
+                        rebate_income_account="Income:Rebate:ABC",
+                    )
+                }
+            ),
+            ledger_directives=directives,
+        )
+        result = empty_result()
+        for entry in directives:
+            assert isinstance(entry, data.Transaction)
+            result.match_result.extra.append(data.TxnPosting(entry, entry.postings[0]))
+        return ABCCreditProvider().post_output("", result, context)
+
+    def test_closing_balance_nets_the_deposit(self, tmp_path):
+        file_path = tmp_path / "农业银行金穗信用卡.eml"
+        html = formula_rebate_html("53.00", "53.00", deposit="60.00")
+        file_path.write_text(create_abc_eml(html), encoding="utf-8")
+
+        summary = ABCCreditProvider()._extract_summary(file_path)
+
+        assert summary.closing_balance == Decimal("60.00") - (
+            REBATE_SPENDING - REBATE_USED
+        )
+
+    def test_matching_balance(self, tmp_path):
+        output = self.run(
+            tmp_path,
+            f"""
+2030-01-31 * "rebate-a"
+  Liabilities:Credit:ABC:1234  {REBATE_USED:.2f} CNY
+  Income:Rebate:ABC
+2030-01-10 * "payee-a"
+  Liabilities:Credit:ABC:1234  -{REBATE_SPENDING:.2f} CNY
+  Expenses:Misc
+""",
+        )
+
+        assert f"账本余额:       {REBATE_USED - REBATE_SPENDING:>12.2f} CNY" in output
+        assert "余额: ✅ 一致" in output
+
+    def test_over_booked_rebate_shows_the_difference(self, tmp_path):
+        """A second rebate entry still lets the first settle the deduction."""
+        output = self.run(
+            tmp_path,
+            f"""
+2030-01-31 * "rebate-a"
+  Liabilities:Credit:ABC:1234  {REBATE_USED:.2f} CNY
+  Income:Rebate:ABC
+2030-01-31 * "rebate-b"
+  Liabilities:Credit:ABC:1234  {REBATE_USED:.2f} CNY
+  Income:Rebate:ABC
+2030-01-10 * "payee-a"
+  Liabilities:Credit:ABC:1234  -{REBATE_SPENDING:.2f} CNY
+  Expenses:Misc
+2030-02-01 * "payee-b"
+  Liabilities:Credit:ABC:1234  -10.00 CNY
+  Expenses:Misc
+""",
+        )
+
+        assert f"刷卡金 {REBATE_USED:.2f} 已记录" in output
+        assert f"余额: ⚠️ 账本差额 +{REBATE_USED:.2f} CNY" in output
+
+    def test_no_ledger_no_balance_lines(self, tmp_path):
+        assert "账本余额" not in TestABCRebateAdjustment.run(tmp_path, "53.00", "53.00")
 
 
 class TestABCStatementPeriod:

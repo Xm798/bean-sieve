@@ -120,9 +120,11 @@ Every registered provider needs a docs page `website/content/docs/providers/<id>
 
 Both hooks run in first-seen order of the statement files. `post_output` runs once per provider in the run, receiving the whole output and passing it on to the next provider; it is dispatched from the statement paths, so a provider whose rows were all date-filtered still gets it. `pre_reconcile` runs once per provider that still has transactions, receiving that batch — or, when a provider is named explicitly, all of them. A `post_output` implementation that reads statement files must take them from `self.own_statement_paths(context)`, since `context.statement_paths` spans every provider in the run; it follows `context.provider_ids` (the run's actual assignment), so an explicitly named provider also owns files detection would not recognise.
 
+`context.ledger_directives` holds every directive the ledger loaded, before the account and date filters, so a hook can read balances outside the reconciled window (`abc_credit` compares the card's balance at the cycle's end with the statement's); it stays empty when the hook runs without a ledger.
+
 `context.parsed` maps each statement path to that file's parse output, captured before date filtering, hooks and rules run, so a hook can compare against the whole statement instead of re-parsing it. Amounts stay at their parsed values (the pipeline only changes them via `model_copy`); other fields are shared objects and may show later in-place edits.
 
-`post_output` returns text by design: its only implementer emits a comment report, which no Beancount directive shape can carry. Directive formatting for hooks will be revisited when a second implementer needs real directives.
+`post_output` returns text by design: its only implementer emits a comment report, which no Beancount directive shape can carry. Directive formatting for hooks will be revisited when a second implementer needs real directives. A `post_output` that books an entry the ledger lacks appends a matching `Transaction` to `result.match_result.missing`, and an Extra ledger posting it recognises as settling a statement item moves to `matched`, so the CLI's counts show both (`abc_credit` does this for its 刷卡金 deduction); the CLI prints the counts after every hook has run.
 
 ### Configuration (bean-sieve.yaml)
 
@@ -138,7 +140,7 @@ account_mappings:  # map payment methods to asset accounts
 
 rules:  # map transactions to expense/income accounts
   - description: ".*瑞幸.*"
-    payee: 瑞幸咖啡
+    target_payee: 瑞幸咖啡
     contra_account: Expenses:Food:Coffee
 
 providers:

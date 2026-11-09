@@ -12,6 +12,9 @@ from itertools import dropwhile
 from pathlib import Path
 from typing import NamedTuple
 
+from beancount.core import data
+from beancount.core.data import Directive, TxnPosting
+
 from ....config.schema import ProviderConfig
 from ....core.coverage import Coverage
 from ....core.types import ReconcileContext, ReconcileResult, Transaction
@@ -50,6 +53,11 @@ class _MailTemplate(NamedTuple):
     header: tuple[str, ...]
     new_charges_label: str
     adjustment_label: str | None
+    # The closing balance cell; read as debt when debt_label is set, else
+    # with the bank's sign (欠款为-).
+    balance_label: str
+    debt_label: bool
+    deposit_label: str | None
 
 
 _TEMPLATES: tuple[_MailTemplate, ...] = (
@@ -64,6 +72,9 @@ _TEMPLATES: tuple[_MailTemplate, ...] = (
         ),
         new_charges_label="本期账单金额",
         adjustment_label="本期调整金额",
+        balance_label="本期应还金额",
+        debt_label=True,
+        deposit_label="本期账户溢缴款",
     ),
     # Older mails split the description into 交易摘要 and 交易地点 and print
     # no 本期调整金额; their 刷卡金 arrives as itemised 刷卡金转入 rows.
@@ -79,6 +90,9 @@ _TEMPLATES: tuple[_MailTemplate, ...] = (
         ),
         new_charges_label="本期新增应还款额",
         adjustment_label=None,
+        balance_label="本期账户全部余额",
+        debt_label=False,
+        deposit_label=None,
     ),
 )
 
@@ -96,6 +110,9 @@ class StatementSummary:
     new_charges: dict[str, Decimal] = field(default_factory=dict)
     adjustment: Decimal | None = None  # CNY 本期调整金额, where 刷卡金 lands
     rebate_used: Decimal = Decimal(0)  # 本期使用刷卡金
+    # CNY account balance at the cycle's end, debt negative like the ledger's
+    # liability; None when no 账务说明 formula is printed.
+    closing_balance: Decimal | None = None
 
     @property
     def rebate_offset(self) -> Decimal:
@@ -403,7 +420,7 @@ class ABCCreditProvider(BaseProvider):
             return content
 
         # Collect rebate entries and summary lines
-        rebate_entries: list[str] = []
+        rebate_entries: list[Transaction] = []
         summary_lines = ["\n; " + "=" * 60]
         summary_lines.append(f"; {self.provider_name} 账单核对")
         summary_lines.append("; " + "=" * 60)
@@ -454,8 +471,11 @@ class ABCCreditProvider(BaseProvider):
         # Combine: rebate entries first, then summary
         output_parts = [content]
         if rebate_entries:
+            # Each entry is a statement item the ledger lacks, so it counts
+            # as Missing like any unmatched statement row.
+            result.match_result.missing.extend(rebate_entries)
             output_parts.append("\n; --- 刷卡金抵扣 ---\n")
-            output_parts.append("\n".join(rebate_entries))
+            output_parts.append("\n".join(map(_format_rebate, rebate_entries)))
         output_parts.append("\n".join(summary_lines) + "\n")
 
         return "".join(output_parts)
@@ -467,7 +487,7 @@ class ABCCreditProvider(BaseProvider):
         txns: list[Transaction],
         result: ReconcileResult,
         context: ReconcileContext,
-        rebate_entries: list[str],
+        rebate_entries: list[Transaction],
     ) -> list[str]:
         """Compare one currency's parsed spending with its 本期账单金额.
 
@@ -517,88 +537,111 @@ class ABCCreditProvider(BaseProvider):
         if stmt_balance == Decimal(0) and expenses == Decimal(0) and not new_charges:
             lines.append(";   状态: ✅ 无消费")
         elif abs(diff) < Decimal("0.01"):
-            if rebate > 0 and summary.statement_period is None:
+            period = summary.statement_period
+            card_number = summary.card_number
+            if rebate <= 0:
+                lines.append(";   状态: ✅ 平账")
+            elif period is None:
                 # The entry is dated on the cycle's last day.
                 lines.append(
                     f";   状态: ✅ 平账 (刷卡金 {rebate:.2f}，"
                     "账单周期未读出，未生成分录)"
                 )
-            elif rebate > 0:
-                rebate_entry = self._generate_rebate_entry(
-                    summary, rebate, result, context
+            elif not card_number:
+                lines.append(
+                    f";   状态: ✅ 平账 (刷卡金 {rebate:.2f}，卡号未读出，未生成分录)"
                 )
-                if rebate_entry:
-                    lines.append(f";   状态: ✅ 平账 (刷卡金 {rebate:.2f})")
+            else:
+                rebate_entry = self._rebate_entry(
+                    card_number[-4:], period[1], rebate, context
+                )
+                recorded = self._recorded_rebate(rebate_entry, period, result, context)
+                if recorded is None:
+                    lines.append(f";   状态: ⚠️ 待补刷卡金抵扣 {rebate:.2f}")
                     rebate_entries.append(rebate_entry)
                 else:
+                    # The ledger's entry settles the statement's deduction.
+                    result.match_result.extra.remove(recorded)
+                    result.match_result.matched.append((rebate_entry, recorded))
                     lines.append(f";   状态: ✅ 平账 (刷卡金 {rebate:.2f} 已记录)")
-            else:
-                lines.append(";   状态: ✅ 平账")
         else:
             lines.append(f";   差额: {diff:>+.2f} {currency}")
+        if is_cny:
+            lines.extend(self._balance_report(summary, context))
         return lines
 
-    def _generate_rebate_entry(
-        self,
-        summary: StatementSummary,
-        rebate: Decimal,
-        result: ReconcileResult,
-        context: ReconcileContext,
-    ) -> str | None:
-        """Generate a beancount entry for rebate usage.
+    def _balance_report(
+        self, summary: StatementSummary, context: ReconcileContext
+    ) -> list[str]:
+        """Compare the ledger's card balance at the cycle's end with the bank's.
 
-        Returns None if rebate already recorded in ledger (matched by keywords/account).
+        Catches what the per-row match cannot, such as a 刷卡金 deduction
+        booked for more than the bank applied.
         """
-        if rebate <= 0:
-            return None
-
-        card_last4 = summary.card_number[-4:] if summary.card_number else None
-        if not card_last4:
-            return None
-
-        # Get provider config
-        provider_config = None
-        if context.config:
-            provider_config = context.config.get_provider_config(self.provider_id)
-
-        # Check if rebate already recorded in ledger
+        closing = summary.closing_balance
         period = summary.statement_period
-        if period is None or self._rebate_exists_in_ledger(
-            card_last4, rebate, period, result, provider_config
+        if (
+            closing is None
+            or period is None
+            or not summary.card_number
+            or not context.ledger_directives
         ):
-            return None
+            return []
+        account = self._card_account(summary.card_number[-4:], context)
+        ledger = _ledger_balance(context.ledger_directives, account, period[1])
+        lines = [
+            f";   账单余额:       {closing:>12.2f} CNY",
+            f";   账本余额:       {ledger:>12.2f} CNY",
+        ]
+        if ledger == closing:
+            lines.append(";   余额: ✅ 一致")
+        else:
+            lines.append(f";   余额: ⚠️ 账本差额 {ledger - closing:+.2f} CNY")
+        return lines
 
-        entry_date = period[1]
-
-        # Get liability account from config
-        liability_account = f"Liabilities:Credit:ABC:{card_last4}"
-        if provider_config:
-            accounts = provider_config.accounts or {}
-            if card_last4 in accounts:
-                liability_account = accounts[card_last4]
-
-        # Get income account from config or use default
+    def _rebate_entry(
+        self,
+        card_last4: str,
+        cycle_end: date,
+        rebate: Decimal,
+        context: ReconcileContext,
+    ) -> Transaction:
+        """The statement's rebate deduction, booked on the cycle's last day."""
+        provider_config = self._provider_config(context)
         income_account = "Income:Rebate:ABC"
         if provider_config and provider_config.rebate_income_account:
             income_account = provider_config.rebate_income_account
 
-        # Generate entry
-        lines = [
-            f'{entry_date} * "农业银行" "刷卡金抵扣 (尾号{card_last4})"',
-            f"  {liability_account}  {rebate:.2f} CNY",
-            f"  {income_account}",
-        ]
-        return "\n".join(lines)
+        return Transaction(
+            date=cycle_end,
+            amount=-rebate,
+            currency="CNY",
+            description=f"刷卡金抵扣 (尾号{card_last4})",
+            payee="农业银行",
+            card_last4=card_last4,
+            provider=self.provider_id,
+            account=self._card_account(card_last4, context),
+            contra_account=income_account,
+        )
 
-    def _rebate_exists_in_ledger(
+    def _provider_config(self, context: ReconcileContext) -> ProviderConfig | None:
+        if context.config is None:
+            return None
+        return context.config.get_provider_config(self.provider_id)
+
+    def _card_account(self, card_last4: str, context: ReconcileContext) -> str:
+        provider_config = self._provider_config(context)
+        accounts = (provider_config.accounts if provider_config else None) or {}
+        return accounts.get(card_last4, f"Liabilities:Credit:ABC:{card_last4}")
+
+    def _recorded_rebate(
         self,
-        card_last4: str,
-        rebate: Decimal,
+        entry: Transaction,
         period: tuple[date, date],
         result: ReconcileResult,
-        provider_config: ProviderConfig | None,
-    ) -> bool:
-        """Check if rebate transaction already exists in ledger.
+        context: ReconcileContext,
+    ) -> TxnPosting | None:
+        """Find the Extra ledger posting that already books the rebate entry.
 
         Matches by:
         1. Keywords in narration (from rebate_keywords config)
@@ -606,7 +649,9 @@ class ABCCreditProvider(BaseProvider):
         3. Amount matches (within 0.01)
         4. Account contains card_last4
         """
-        # Get keywords and income account from config
+        provider_config = self._provider_config(context)
+        card_last4 = entry.card_last4 or ""
+        rebate = -entry.amount
         keywords: list[str] = []
         income_account: str | None = None
         if provider_config:
@@ -615,7 +660,7 @@ class ABCCreditProvider(BaseProvider):
 
         # If no keywords or income account configured, can't detect existing rebates
         if not keywords and not income_account:
-            return False
+            return None
 
         # Check extra entries (ledger entries not matched to statement)
         for txn_posting in result.match_result.extra:
@@ -642,15 +687,42 @@ class ABCCreditProvider(BaseProvider):
             text = f"{payee} {narration}"
 
             if keywords and any(kw in text for kw in keywords):
-                return True
+                return txn_posting
 
             # Check if any posting uses the rebate income account
-            if income_account:
-                for p in txn.postings:
-                    if p.account == income_account:
-                        return True
+            if income_account and any(
+                p.account == income_account for p in txn.postings
+            ):
+                return txn_posting
 
-        return False
+        return None
+
+
+def _ledger_balance(directives: list[Directive], account: str, end: date) -> Decimal:
+    """CNY units the account holds after the postings dated up to ``end``."""
+    return sum(
+        (
+            posting.units.number
+            for entry in directives
+            if isinstance(entry, data.Transaction) and entry.date <= end
+            for posting in entry.postings
+            if posting.account == account
+            and posting.units is not None
+            and posting.units.currency == "CNY"
+            and isinstance(posting.units.number, Decimal)
+        ),
+        Decimal(0),
+    )
+
+
+def _format_rebate(txn: Transaction) -> str:
+    return "\n".join(
+        [
+            f'{txn.date} * "{txn.payee}" "{txn.description}"',
+            f"  {txn.account}  {-txn.amount:.2f} {txn.currency}",
+            f"  {txn.contra_account}",
+        ]
+    )
 
 
 def _parse_cycle(text: str) -> tuple[date, date] | None:
@@ -709,12 +781,25 @@ def _read_summary(lines: list[list[str]]) -> StatementSummary:
             new_charges = _formula_value(row, template.new_charges_label)
             if new_charges is not None:
                 summary.new_charges[currency] = new_charges
-        if template.adjustment_label and "CNY" in formula:
-            summary.adjustment = _formula_value(
-                formula["CNY"], template.adjustment_label
-            )
+        if "CNY" in formula:
+            cny = formula["CNY"]
+            if template.adjustment_label:
+                summary.adjustment = _formula_value(cny, template.adjustment_label)
+            summary.closing_balance = _closing_balance(cny, template)
         break
     return summary
+
+
+def _closing_balance(
+    formula: list[tuple[str, str]], template: _MailTemplate
+) -> Decimal | None:
+    balance = _formula_value(formula, template.balance_label)
+    if balance is None or not template.debt_label:
+        return balance
+    deposit = Decimal(0)
+    if template.deposit_label:
+        deposit = _formula_value(formula, template.deposit_label) or Decimal(0)
+    return deposit - balance
 
 
 def _amount_after(cells: list[str], label: str) -> Decimal | None:

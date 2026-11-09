@@ -37,6 +37,8 @@ class Sieve:
     def __init__(self, config: SieveConfig | None = None):
         self.config = config or SieveConfig()
         self._ledger_entries: list[TxnPosting] = []
+        # Every directive the ledger loaded, before any account or date filter.
+        self.directives: list[Directive] = []
         self._ledger_index: dict[tuple, list[TxnPosting]] = {}
         self._rebate_index: dict[tuple, list[TxnPosting]] = {}
         self._postings_by_txn: dict[int, list[TxnPosting]] = {}
@@ -73,6 +75,7 @@ class Sieve:
             for error in errors[:5]:  # limit error output
                 print(f"Warning: {error}")
 
+        self.directives = entries
         self._process_entries(entries, account_filter, date_range)
 
     def _process_entries(

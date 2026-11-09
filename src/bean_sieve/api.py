@@ -370,6 +370,7 @@ def full_reconcile(
         date_tolerance=config.defaults.date_tolerance,
         rebate_account_prefixes=config.rebate_account_prefixes(),
     )
+    context.ledger_directives = sieve.directives
 
     # Reconcile (with preset rules and covered accounts/ranges)
     result = reconcile(
