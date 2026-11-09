@@ -4,10 +4,10 @@ from decimal import Decimal
 
 from bean_sieve.api import (
     _apply_provider_output_config,
-    _build_check_scope,
     generate_output,
 )
 from bean_sieve.config.schema import AccountMapping, Config, DiagnosticsConfig
+from bean_sieve.core.output import build_check_scope
 from bean_sieve.core.types import MatchResult, ReconcileResult, Transaction
 
 
@@ -23,7 +23,7 @@ def test_check_scope_empty_without_explicit_config():
             ),
         ]
     )
-    scope = _build_check_scope(cfg)
+    scope = build_check_scope(cfg)
     assert scope("Liabilities:Credit:HXB") is False
 
 
@@ -31,14 +31,14 @@ def test_check_scope_matches_explicit_keywords():
     cfg = Config(
         diagnostics=DiagnosticsConfig(meta_check_accounts=["SPDB", "HXB"]),
     )
-    scope = _build_check_scope(cfg)
+    scope = build_check_scope(cfg)
     assert scope("Liabilities:Credit:SPDB") is True
     assert scope("Liabilities:Credit:HXB") is True
     assert scope("Assets:Bank:ICBC:9999") is False
 
 
 def test_check_scope_empty_when_no_config():
-    scope = _build_check_scope(Config())
+    scope = build_check_scope(Config())
     assert scope("Liabilities:Credit:HXB") is False
 
 

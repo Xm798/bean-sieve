@@ -15,6 +15,9 @@ class DefaultsConfig(BaseModel):
     # Account for fees a provider reports on a transaction, unless the
     # provider config names its own
     fee_account: str = "Expenses:FIXME"
+    # Account for a rebate whose payment method's mapping names no
+    # rebate_account
+    rebate_account: str = "Income:Rebate:FIXME"
     date_tolerance: Annotated[int, Field(ge=0, le=30)] = 2
     # Metadata fields written to the output; None writes all. Common fields:
     # time, order_id, source, category, method, peer_account.
@@ -161,7 +164,11 @@ class Config(BaseModel):
         configured rebate account, deduplicated in first-seen order."""
         configured = [m.rebate_account for m in self.account_mappings]
         configured += [p.rebate_income_account for p in self.providers.values()]
-        merged = [*self.defaults.rebate_account_prefixes, *configured]
+        merged = [
+            *self.defaults.rebate_account_prefixes,
+            *configured,
+            self.defaults.rebate_account,
+        ]
         return tuple(dict.fromkeys(a for a in merged if a))
 
     @classmethod

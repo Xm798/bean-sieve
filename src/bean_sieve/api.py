@@ -2,7 +2,6 @@
 
 import logging
 from collections import Counter, defaultdict
-from collections.abc import Callable
 from datetime import date, time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -20,7 +19,6 @@ from .core import (
     Transaction,
 )
 from .core.accounts import (
-    apply_rebate_account,
     resolve_by_keyword_regex,
     resolve_by_method,
 )
@@ -135,31 +133,13 @@ def _apply_fixme_fallback(
     return transactions
 
 
-def _build_check_scope(config: Config) -> Callable[[str], bool]:
-    """An account is in the card_last4 check scope when its name contains a
-    ``diagnostics.meta_check_accounts`` entry."""
-    keywords = tuple(config.diagnostics.meta_check_accounts)
-    if not keywords:
-        return lambda _account: False
-    return lambda account: any(kw in account for kw in keywords)
-
-
 def generate_output(
     result: ReconcileResult,
     output_path: Path | None = None,
     source_info: str | None = None,
     config: Config | None = None,
 ) -> str:
-    config = config or Config()
-    writer = BeancountWriter(
-        default_expense=config.defaults.expense_account,
-        default_income=config.defaults.income_account,
-        default_fee=config.defaults.fee_account,
-        output_metadata=config.defaults.output_metadata,
-        sort_by_time=config.defaults.sort_by_time,
-        default_flag=config.defaults.flag,
-        check_scope=_build_check_scope(config),
-    )
+    writer = BeancountWriter.from_config(config or Config())
 
     content = writer.format_result(result, source_info=source_info)
 
@@ -565,7 +545,6 @@ def _set_target_accounts(
                 mapping = resolve_by_method(config.account_mappings, method)
                 if mapping:
                     txn = txn.model_copy(update={"account": mapping.account})
-                    apply_rebate_account(txn, mapping)
 
         result.append(txn)
 

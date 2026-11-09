@@ -33,6 +33,11 @@
           "default": "Expenses:FIXME",
           "description": "Account for fees a provider reports on a transaction (e.g. a WeChat withdrawal service fee), unless providers.<id>.fee_account names one"
         },
+        "rebate_account": {
+          "type": "string",
+          "default": "Income:Rebate:FIXME",
+          "description": "Account for a rebate on a transaction (e.g. a WeChat 立减优惠) whose payment method's account_mappings entry names no rebate_account; also added to rebate_account_prefixes"
+        },
         "date_tolerance": {
           "type": "integer",
           "minimum": 0,

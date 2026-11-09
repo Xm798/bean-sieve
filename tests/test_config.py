@@ -57,7 +57,7 @@ def test_psbc_example_config_and_schema_are_synchronized() -> None:
 def test_rebate_account_prefixes_default():
     cfg = Config()
     assert cfg.defaults.rebate_account_prefixes == ["Income:Rebate:"]
-    assert cfg.rebate_account_prefixes() == ("Income:Rebate:",)
+    assert cfg.rebate_account_prefixes() == ("Income:Rebate:", "Income:Rebate:FIXME")
 
 
 def test_rebate_account_prefixes_parsed_and_merged_with_configured_accounts():
@@ -73,4 +73,8 @@ def test_rebate_account_prefixes_parsed_and_merged_with_configured_accounts():
         }
     )
     assert cfg.defaults.rebate_account_prefixes == ["Income:Cashback:"]
-    assert cfg.rebate_account_prefixes() == ("Income:Cashback:", "Income:R:B")
+    assert cfg.rebate_account_prefixes() == (
+        "Income:Cashback:",
+        "Income:R:B",
+        "Income:Rebate:FIXME",
+    )

@@ -64,7 +64,7 @@ providers:
 - 服务费：备注里的 `服务费¥0.10` 会另记一条手续费 posting，记到 `providers.wechat.fee_account`，没配时用 `defaults.fee_account`（默认 `Expenses:FIXME`）。提现 100 元、服务费 0.10 元时，零钱记 -100.00，银行卡记 +99.90，手续费记 0.10。收款带服务费时，零钱记到账的净额，对方科目记扣费前的金额。账本里把提现按到账金额记成 -99.90 / +99.90 的旧条目，对账时照样能匹配上。
 - 零钱通转出：交易类型形如 `零钱通转出-到招商银行(5678)`，从零钱通转出。目标卡写成 `银行名(后四位)`，`account_mappings` 里只要有一个 `pattern` 同时含银行名和这四位数字就能对上，比如上面的 `招商银行储蓄卡(5678)`。
 - 收到的红包和转账：状态为「已存入零钱」，记入零钱。
-- 立减优惠：备注里的 `已优惠¥5.00` 会另记一条返利 posting，记到该支付方式对应 `account_mappings` 条目的 `rebate_account`。没写 `rebate_account` 时记到 `Rebate:FIXME`。
+- 立减优惠：备注里的 `已优惠¥5.00` 会另记一条返利 posting，记到该支付方式对应 `account_mappings` 条目的 `rebate_account`。没写 `rebate_account` 时记到 `defaults.rebate_account`（默认 `Income:Rebate:FIXME`）。
 
 ## 解析出的元数据字段
 

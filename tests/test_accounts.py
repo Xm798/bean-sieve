@@ -332,7 +332,12 @@ class TestApiCallSites:
         assert result.account == "Assets:Bank"
         assert result.metadata["matched_preset_rule"] == "probe_keyword"
 
-    def test_method_lookup_sets_rebate_account(self):
+
+class TestRulesCallSites:
+    """rules resolves methods case-insensitively and preset keywords as substrings."""
+
+    @pytest.mark.parametrize("account", [None, "Assets:Placed"])
+    def test_method_mapping_sets_rebate_account(self, account):
         cfg = Config(
             account_mappings=[
                 AccountMapping(
@@ -343,13 +348,12 @@ class TestApiCallSites:
             ]
         )
         txn = _txn(metadata={"method": "CardX(0001)", "rebate": "0.50"})
+        txn.account = account
 
-        [result] = _set_target_accounts([txn], cfg)
+        result = RulesEngine(cfg).apply(txn)
+
+        assert result.account == (account or "Assets:X")
         assert result.metadata["_rebate_account"] == "Income:Rebate:X"
-
-
-class TestRulesCallSites:
-    """rules resolves methods case-insensitively and preset keywords as substrings."""
 
     def test_method_lookup_is_case_insensitive(self):
         cfg = Config(

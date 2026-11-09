@@ -8,6 +8,9 @@ defaults:
   # 账单里单列的手续费（如微信零钱提现服务费）记到这个账户；
   # providers.<id>.fee_account 可以按 provider 单独指定
   fee_account: Expenses:FIXME
+  # 交易自带的返利（如微信立减优惠），支付方式对应的 account_mappings 条目没写
+  # rebate_account 时记到这个账户
+  rebate_account: Income:Rebate:FIXME
   date_tolerance: 0
   # 交易标志：* 表示已核对，! 表示待处理
   flag: "!"

@@ -7,6 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from beancount.parser import printer
 
@@ -27,6 +28,9 @@ from .types import (
     Transaction,
 )
 
+if TYPE_CHECKING:
+    from ..config import Config
+
 
 def _sort_key(t: Transaction) -> tuple:
     return (t.date, t.time or dt.time.min)
@@ -46,7 +50,7 @@ class BeancountWriter:
         self,
         default_expense: str = "Expenses:FIXME",
         default_income: str = "Income:FIXME",
-        default_rebate: str = "Rebate:FIXME",
+        default_rebate: str = "Income:Rebate:FIXME",
         default_fee: str = "Expenses:FIXME",
         output_metadata: list[str] | None = None,
         sort_by_time: str | None = "asc",
@@ -66,6 +70,20 @@ class BeancountWriter:
         # True for accounts in the meta_check scope: their card_last4 goes on
         # the posting, and only their metadata diagnostics are written.
         self.check_scope: Callable[[str], bool] = check_scope or (lambda _: False)
+
+    @classmethod
+    def from_config(cls, config: "Config") -> "BeancountWriter":
+        defaults = config.defaults
+        return cls(
+            default_expense=defaults.expense_account,
+            default_income=defaults.income_account,
+            default_rebate=defaults.rebate_account,
+            default_fee=defaults.fee_account,
+            output_metadata=defaults.output_metadata,
+            sort_by_time=defaults.sort_by_time,
+            default_flag=defaults.flag,
+            check_scope=build_check_scope(config),
+        )
 
     def format_transaction(self, txn: Transaction) -> str:
         lines = []
@@ -362,19 +380,24 @@ class BeancountWriter:
         return body
 
 
+def build_check_scope(config: "Config") -> Callable[[str], bool]:
+    """An account is in the card_last4 check scope when its name contains a
+    ``diagnostics.meta_check_accounts`` entry."""
+    keywords = tuple(config.diagnostics.meta_check_accounts)
+    if not keywords:
+        return lambda _account: False
+    return lambda account: any(kw in account for kw in keywords)
+
+
 def write_output(
     result: ReconcileResult,
     output_path: Path,
     source_info: str | None = None,
-    default_expense: str = "Expenses:FIXME",
-    default_income: str = "Income:FIXME",
-    output_metadata: list[str] | None = None,
+    config: "Config | None" = None,
 ) -> None:
-    writer = BeancountWriter(
-        default_expense=default_expense,
-        default_income=default_income,
-        output_metadata=output_metadata,
-    )
+    from ..config import Config
+
+    writer = BeancountWriter.from_config(config or Config())
     content = writer.format_result(result, source_info=source_info)
 
     with open(output_path, "w", encoding="utf-8") as f:

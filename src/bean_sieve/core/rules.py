@@ -62,13 +62,12 @@ class RulesEngine:
         Fill the row's accounts in three steps:
 
         1. The first matching preset rule.
-        2. When no account is set yet, the account mapping of its method.
+        2. The account mapping of its method: its account when none is set
+           yet, and its rebate account either way.
         3. The first matching user rule.
         """
         txn = self._apply_preset_rules(txn)
-
-        if not txn.account:
-            txn = self._apply_account_mapping(txn)
+        txn = self._apply_account_mapping(txn)
 
         for i, rule in enumerate(self._rules):
             if self._matches_condition(txn, rule, i):
@@ -122,16 +121,16 @@ class RulesEngine:
         return txn
 
     def _apply_account_mapping(self, txn: Transaction) -> Transaction:
-        if txn.account:
-            return txn
-
         method = txn.metadata.get("method", "")
         if not method:
             return txn
 
         mapping = resolve_by_method_ci(self.config.account_mappings, method)
         if mapping:
-            txn.account = mapping.account
+            if not txn.account:
+                txn.account = mapping.account
+            # The rebate account belongs to the payment method, whichever
+            # source (preset rule, provider accounts) placed the row.
             apply_rebate_account(txn, mapping)
 
         return txn

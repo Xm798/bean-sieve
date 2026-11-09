@@ -507,3 +507,39 @@ def test_exchange_fee_account_on_the_transaction_overrides_the_default():
     txn = _exchange_txn("100.00", "1.35", metadata={"_fee_account": "Expenses:Fee:Fx"})
     output = BeancountWriter(default_fee="Expenses:Fee").format_transaction(txn)
     assert "    Expenses:Fee:Fx  1.35 HKD" in output.split("\n")
+
+
+def _rebate_row() -> Transaction:
+    return Transaction(
+        date=date(2030, 1, 2),
+        amount=Decimal("9.00"),
+        currency="CNY",
+        description="item-a",
+        payee="payee-a",
+        account="Assets:Wallet",
+        contra_account="Expenses:Shopping",
+        metadata={"rebate": "1.00"},
+    )
+
+
+def test_rebate_without_mapping_account_posts_to_valid_default():
+    from bean_sieve.config.schema import Config
+
+    output = BeancountWriter.from_config(Config()).format_transaction(_rebate_row())
+
+    assert "    Income:Rebate:FIXME  -1.00 CNY" in output
+
+
+def test_rebate_fallback_follows_defaults_rebate_account(tmp_path):
+    from bean_sieve.config.schema import Config, DefaultsConfig
+    from bean_sieve.core.output import write_output
+    from bean_sieve.core.types import MatchResult, ReconcileResult
+
+    config = Config(defaults=DefaultsConfig(rebate_account="Income:Cashback"))
+    result = ReconcileResult(match_result=MatchResult(), processed=[_rebate_row()])
+    out = tmp_path / "out.bean"
+
+    write_output(result, out, config=config)
+
+    assert "    Income:Cashback  -1.00 CNY" in out.read_text(encoding="utf-8")
+    assert "Income:Cashback" in config.rebate_account_prefixes()
