@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import read_csv_rows
+from ..._tabular import header_columns, read_csv_rows
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ class HSBCHKCreditProvider(BaseProvider):
         if not rows:
             return []
 
-        col_map = self._find_columns(rows[0])
+        col_map = header_columns(rows[0], self.REQUIRED_COLUMNS)
         if col_map is None:
             raise ValueError(f"Cannot identify HSBC HK credit header in {file_path}")
 
@@ -77,14 +77,6 @@ class HSBCHKCreditProvider(BaseProvider):
         self.assign_statement_periods(transactions)
 
         return transactions
-
-    @classmethod
-    def _find_columns(cls, header_row: list[str]) -> dict[str, int] | None:
-        """Map every header cell to its index, after verifying required columns exist."""
-        normalized = [c.strip().lower() for c in header_row]
-        if not all(col.lower() in normalized for col in cls.REQUIRED_COLUMNS):
-            return None
-        return {original.strip(): idx for idx, original in enumerate(header_row)}
 
     @staticmethod
     def _extract_card_last4(file_path: Path) -> str | None:
@@ -105,36 +97,36 @@ class HSBCHKCreditProvider(BaseProvider):
                 return ""
             return row[idx].strip()
 
-        trans_date_str = cell("Transaction date")
-        billing_amount = cell("Billing amount")
+        trans_date_str = cell("transaction date")
+        billing_amount = cell("billing amount")
         if not trans_date_str or not billing_amount:
             return None
 
         trans_date = self._parse_date(trans_date_str)
         if trans_date is None:
             return None
-        post_date = self._parse_date(cell("Post date"))
+        post_date = self._parse_date(cell("post date"))
 
         amount = self._parse_amount(billing_amount)
         if amount is None or amount == 0:
             return None
         amount = -amount  # source: -expense / +credit → sieve: +expense / -income
 
-        currency = cell("Billing currency") or "HKD"
-        description = self.clean_text(cell("Description"))
-        merchant = cell("Merchant name") or None
+        currency = cell("billing currency") or "HKD"
+        description = self.clean_text(cell("description"))
+        merchant = cell("merchant name") or None
 
         metadata: dict[str, str] = {}
-        status = cell("Transaction status")
+        status = cell("transaction status")
         if status:
             metadata["transaction_status"] = status
-        country = cell("Country / region")
+        country = cell("country / region")
         if country:
             metadata["country"] = country
-        district = cell("Area / district")
+        district = cell("area / district")
         if district:
             metadata["district"] = district
-        direction = cell("Credit / Debit")
+        direction = cell("credit / debit")
         if direction:
             metadata["direction"] = direction
 

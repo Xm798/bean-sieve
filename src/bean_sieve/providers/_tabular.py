@@ -260,6 +260,20 @@ def _read_sheet_head(path: Path, nrows: int) -> list[list[str]]:
     ]
 
 
+def header_columns(
+    header_row: Sequence[str], required: Iterable[str]
+) -> dict[str, int] | None:
+    """Map each header cell to its index, or None unless every required column is present.
+
+    Keys are stripped and lowercased, so callers look columns up in lowercase
+    whatever case the export spells its header in.
+    """
+    columns = {cell.strip().lower(): idx for idx, cell in enumerate(header_row)}
+    if not all(name.lower() in columns for name in required):
+        return None
+    return columns
+
+
 def sheet_head_contains(path: Path, keywords: Iterable[str], nrows: int) -> bool:
     """Return whether every keyword is a substring of some cell in the first rows.
 

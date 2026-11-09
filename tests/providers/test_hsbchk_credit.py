@@ -201,3 +201,17 @@ class TestHSBCHKCreditEdgeCases:
         ]
         f = write_csv(tmp_path, body)
         assert HSBCHKCreditProvider().parse(f) == []
+
+
+def test_header_case_is_ignored(tmp_path: Path) -> None:
+    f = tmp_path / "TransactionHistory.csv"
+    f.write_text(
+        HEADER.upper() + "\n"
+        "02/04/2030,03/04/2030,QR       merchant-a                CHN          CN,"
+        '"-100.00"\t,CNY,POSTED,merchant-a,CHINA,CHN,DEBIT\n',
+        encoding="utf-8",
+    )
+    (txn,) = HSBCHKCreditProvider().parse(f)
+    assert txn.date == date(2030, 4, 2)
+    assert txn.amount == Decimal("100.00")
+    assert txn.currency == "CNY"

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ....core.types import Transaction
 from ... import register_provider
-from ..._tabular import read_csv_rows
+from ..._tabular import header_columns, read_csv_rows
 from ...base import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class HSBCHKDebitProvider(BaseProvider):
         if not rows:
             return []
 
-        col_map = self._find_columns(rows[0])
+        col_map = header_columns(rows[0], self.REQUIRED_COLUMNS)
         if col_map is None:
             raise ValueError(f"Cannot identify HSBC HK debit header in {file_path}")
 
@@ -66,17 +66,6 @@ class HSBCHKDebitProvider(BaseProvider):
             if txn:
                 transactions.append(txn)
         return transactions
-
-    @classmethod
-    def _find_columns(cls, header_row: list[str]) -> dict[str, int] | None:
-        """None unless every required column is present, compared case-insensitively.
-
-        Keys keep the header's own spelling.
-        """
-        normalized = [c.strip().lower() for c in header_row]
-        if not all(col.lower() in normalized for col in cls.REQUIRED_COLUMNS):
-            return None
-        return {original.strip(): idx for idx, original in enumerate(header_row)}
 
     def _parse_row(
         self,
@@ -91,8 +80,8 @@ class HSBCHKDebitProvider(BaseProvider):
                 return ""
             return row[idx].strip()
 
-        date_str = cell("Date")
-        billing_amount = cell("Billing amount")
+        date_str = cell("date")
+        billing_amount = cell("billing amount")
         if not date_str or not billing_amount:
             return None
 
@@ -105,15 +94,15 @@ class HSBCHKDebitProvider(BaseProvider):
             return None
         amount = -amount  # source: +inflow / -outflow → sieve: +expense / -income
 
-        currency = cell("Billing currency") or "HKD"
-        description = self.clean_text(cell("Description"))
+        currency = cell("billing currency") or "HKD"
+        description = self.clean_text(cell("description"))
         order_id = self._extract_order_id(description)
 
         metadata: dict[str, str] = {}
-        balance = cell("Balance")
+        balance = cell("balance")
         if balance:
             metadata["balance"] = balance
-        balance_currency = cell("Balance currency")
+        balance_currency = cell("balance currency")
         if balance_currency and balance_currency != currency:
             metadata["balance_currency"] = balance_currency
 

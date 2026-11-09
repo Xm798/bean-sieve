@@ -156,3 +156,15 @@ class TestHSBCHKDebitEdgeCases:
         body = ['02/04/2030,placeholder,"0.00"\t,HKD,"100.00"\t,HKD']
         f = write_csv(tmp_path, body)
         assert HSBCHKDebitProvider().parse(f) == []
+
+
+def test_header_case_is_ignored(tmp_path: Path) -> None:
+    f = tmp_path / "TransactionHistory.csv"
+    f.write_text(
+        HEADER.upper() + '\n02/04/2030,Interest credit,"5.00"\t,HKD,"10.00"\t,HKD\n',
+        encoding="utf-8",
+    )
+    (txn,) = HSBCHKDebitProvider().parse(f)
+    assert txn.date == date(2030, 4, 2)
+    assert txn.amount == Decimal("-5.00")
+    assert txn.currency == "HKD"
